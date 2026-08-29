@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Portfolio · BetterTradingAgents</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+  <link rel="icon" type="image/svg+xml" href="/static/logo.svg">
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div class="brand">
+        <img src="/static/logo.svg" alt="BetterTradingAgents logo" class="logo-img">
+        <div>
+          <h1>Demo Portfolio</h1>
+          <p class="tagline">Simulated positions: no real money, no order execution</p>
+        </div>
+      </div>
+      <nav>
+        <a href="/" class="nav-link">← Analysis</a>
+      </nav>
+    </header>
+
+    <div class="summary-grid" id="summary-grid">
+      <div class="summary-card"><div class="sc-label">Starting cash</div><div class="sc-value" id="sc-start">…</div></div>
+      <div class="summary-card"><div class="sc-label">Cash remaining</div><div class="sc-value" id="sc-cash">…</div></div>
+      <div class="summary-card"><div class="sc-label">Positions value</div><div class="sc-value" id="sc-value">…</div></div>
+      <div class="summary-card"><div class="sc-label">Total equity</div><div class="sc-value" id="sc-equity">…</div></div>
+      <div class="summary-card"><div class="sc-label">Total P&L</div><div class="sc-value" id="sc-pnl">…</div></div>
+    </div>
+
+    <div class="card" style="padding: 6px 4px;">
+      <table id="positions-table">
+        <thead>
+          <tr>
+            <th>Ticker</th>
+            <th class="num">Qty</th>
+            <th class="num">Entry</th>
+            <th class="num">Current</th>
+            <th class="num">Cost</th>
+            <th class="num">Value</th>
+            <th class="num">P&L</th>
+            <th class="num">P&L %</th>
+            <th>Added</th>
+          </tr>
+        </thead>
+        <tbody id="positions-body"></tbody>
+      </table>
+      <p class="empty-note hidden" id="empty-note">
+        No positions yet. Run an analysis and click <strong>Add to Demo Portfolio</strong> on a BUY recommendation.
+      </p>
+    </div>
+  </div>
+
+  <div id="toast" class="toast hidden"></div>
+  <script>
+    const fmt = (value) => (value == null ? "n/a" : `$${Number(value).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`);
+
+    async function loadPortfolio() {
+      try {
+        const response = await fetch("/api/portfolio");
+        if (!response.ok) throw new Error(`failed (${response.status})`);
+        const data = await response.json();
+        render(data);
+      } catch (error) {
+        showToast(`Could not load portfolio: ${error.message}`, true);
+      }
+    }
+
+    function render(data) {
+      $("sc-start").textContent = fmt(data.starting_cash);
+      $("sc-cash").textContent = fmt(data.cash);
+      $("sc-value").textContent = fmt(data.positions_value);
+      $("sc-equity").textContent = fmt(data.total_equity);
+      const pnl = $("sc-pnl");
+      pnl.textContent = fmt(data.total_pnl);
+      pnl.className = `sc-value ${data.total_pnl == null ? "" : data.total_pnl >= 0 ? "green" : "red"}`;
+
+      const body = $("positions-body");
+      body.innerHTML = "";
+      $("empty-note").classList.toggle("hidden", data.positions.length > 0);
+      for (const position of data.positions) {
+        const pnlClass = position.pnl == null ? "" : position.pnl >= 0 ? "pnl-green" : "pnl-red";
+        const row = document.createElement("tr");
+        row.innerHTML = `
+          <td><strong>${position.ticker}</strong></td>
+          <td class="num">${position.quantity % 1 === 0 ? position.quantity : position.quantity.toFixed(4)}</td>
+          <td class="num">${fmt(position.entry_price)}</td>
+          <td class="num">${fmt(position.current_price)}</td>
+          <td class="num">${fmt(position.cost)}</td>
+          <td class="num">${fmt(position.value)}</td>
+          <td class="num ${pnlClass}">${fmt(position.pnl)}</td>
+          <td class="num ${pnlClass}">${position.pnl_pct == null ? "n/a" : `${position.pnl_pct >= 0 ? "+" : ""}${position.pnl_pct}%`}</td>
+          <td class="muted">${position.added_at || ""}</td>`;
+        body.appendChild(row);
+      }
+    }
+
+    const $ = (id) => document.getElementById(id);
+    let toastTimer = null;
+    function showToast(message, isError = false) {
+      const toast = $("toast");
+      toast.textContent = message;
+      toast.className = `toast${isError ? " error" : ""}`;
+      window.clearTimeout(toastTimer);
+      toastTimer = window.setTimeout(() => toast.classList.add("hidden"), 3200);
+    }
+
+    document.addEventListener("DOMContentLoaded", loadPortfolio);
+  </script>
+</body>
+</html>

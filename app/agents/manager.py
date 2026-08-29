@@ -1,0 +1,96 @@
+"""Portfolio Manager: final BUY / HOLD / SELL decision."""
+
+import json
+
+from app.agents import clamp_conf, clip
+from app.models import AgentResult, ManagerResult
+
+NAME = "manager"
+DISPLAY = "Portfolio Manager"
+
+
+def build_agent(llm):
+    from crewai import Agent
+
+    return Agent(
+        role="Portfolio Manager",
+        goal="Weigh all research and the bull/bear debate into one clear decision.",
+        backstory=(
+            "You are a disciplined portfolio manager. You weigh evidence, not "
+            "narratives. When evidence is mixed or missing you default to HOLD. "
+            "You only decide BUY, HOLD or SELL - nothing else."
+        ),
+        llm=llm,
+        allow_delegation=False,
+    )
+
+
+def build_task(agent, ticker: str, payload: dict):
+    from crewai import Task
+
+    return Task(
+        description=f"""Make the final call for ticker {ticker}.
+
+Full research dossier (values of null or "FAILED" mean that input is unavailable - explicitly account for missing information by being more conservative):
+{json.dumps(payload, indent=2, default=str)}
+
+Decision rules:
+- BUY requires the bull case to clearly outweigh the bear case on the available evidence.
+- SELL requires clear deterioration or dominant risk.
+- When in doubt, or when key inputs are missing, decide HOLD.
+
+Respond with ONLY a JSON object, no markdown fences, no text outside the JSON:
+{{"ticker": "{ticker}", "decision": "BUY" | "HOLD" | "SELL", "confidence": <number 0.0-1.0>, "summary": "<at most 3 sentences explaining the decision>", "bull_case": "<at most 2 sentences>", "bear_case": "<at most 2 sentences>"}}""",
+        expected_output=(
+            "A JSON object with keys: ticker, decision (BUY|HOLD|SELL), confidence "
+            "(0.0-1.0), summary, bull_case, bear_case."
+        ),
+        agent=agent,
+        output_pydantic=ManagerResult,
+    )
+
+
+def to_result(data: dict, ticker: str) -> AgentResult:
+    manager = to_manager_result(data, ticker)
+    return AgentResult(
+        agent=NAME,
+        signal={"BUY": "bullish", "SELL": "bearish"}.get(manager.decision, "neutral"),
+        confidence=manager.confidence,
+        summary=manager.summary,
+    )
+
+
+def to_manager_result(data: dict, ticker: str) -> ManagerResult:
+    decision = str(data.get("decision", "HOLD")).strip().upper()
+    if "BUY" in decision:
+        decision = "BUY"
+    elif "SELL" in decision:
+        decision = "SELL"
+    else:
+        decision = "HOLD"
+    return ManagerResult(
+        ticker=ticker,
+        decision=decision,
+        confidence=clamp_conf(data.get("confidence")),
+        summary=clip(data.get("summary", ""), 600),
+        bull_case=clip(data.get("bull_case", ""), 400),
+        bear_case=clip(data.get("bear_case", ""), 400),
+    )
+
+
+def mock(ticker: str, payload: dict) -> dict:
+    """Fallback: net score of the bull/bear debate decides."""
+    bull = payload.get("bull") or {}
+    bear = payload.get("bear") or {}
+    bull_score = bull.get("confidence", 0.5) if isinstance(bull, dict) else 0.5
+    bear_score = bear.get("confidence", 0.5) if isinstance(bear, dict) else 0.5
+    net = bull_score - bear_score
+    decision = "BUY" if net >= 0.15 else "SELL" if net <= -0.15 else "HOLD"
+    return {
+        "ticker": ticker,
+        "decision": decision,
+        "confidence": round(0.5 + abs(net), 2),
+        "summary": f"[mock] Bull {bull_score:.2f} vs bear {bear_score:.2f} -> {decision}.",
+        "bull_case": "[mock] See bull researcher summary.",
+        "bear_case": "[mock] See bear researcher summary.",
+    }

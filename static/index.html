@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BetterTradingAgents</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+  <link rel="icon" type="image/svg+xml" href="/static/logo.svg">
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div class="brand">
+        <img src="/static/logo.svg" alt="BetterTradingAgents logo" class="logo-img">
+        <div>
+          <h1>BetterTradingAgents</h1>
+          <p class="tagline">Fast multi-agent stock analysis</p>
+        </div>
+      </div>
+      <nav>
+        <span id="mode-chip" class="chip hidden" title="No LLM_API_KEY configured, agents run with rule-based fallbacks">mock mode</span>
+        <a href="/portfolio" class="nav-link">Portfolio</a>
+      </nav>
+    </header>
+
+    <section class="card search-card">
+      <label for="ticker-input">Stocks</label>
+      <div class="search-row">
+        <input id="ticker-input" type="text" placeholder="NVDA, AMD, META" autocomplete="off"
+               spellcheck="false" autofocus>
+        <button id="analyze-btn">Analyze Stocks</button>
+      </div>
+      <div class="chips" id="example-chips">
+        <span class="chips-label">Try:</span>
+        <button class="chip-btn" data-tickers="NVDA">NVDA</button>
+        <button class="chip-btn" data-tickers="MSFT, AAPL">MSFT, AAPL</button>
+        <button class="chip-btn" data-tickers="NVDA, AMD, META">NVDA, AMD, META</button>
+        <button class="chip-btn" data-tickers="TSLA">TSLA</button>
+      </div>
+      <p class="hint">Up to 5 tickers, comma-separated. Six AI agents research each one in parallel, debate the case, and deliver a BUY, HOLD or SELL call.</p>
+      <p id="error-msg" class="error hidden"></p>
+    </section>
+
+    <section id="how-section">
+      <div class="how-grid">
+        <div class="how-card">
+          <div class="how-num">1</div>
+          <div>
+            <div class="how-title">Research</div>
+            <div class="how-text">Technical, Fundamental and News analysts work on your ticker at the same time.</div>
+          </div>
+        </div>
+        <div class="how-card">
+          <div class="how-num">2</div>
+          <div>
+            <div class="how-title">Debate</div>
+            <div class="how-text">A bull and a bear researcher argue opposite sides of the trade.</div>
+          </div>
+        </div>
+        <div class="how-card">
+          <div class="how-num">3</div>
+          <div>
+            <div class="how-title">Decision</div>
+            <div class="how-text">The Portfolio Manager weighs it all and calls BUY, HOLD or SELL with a confidence score.</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="live-section" class="hidden">
+      <h2>Live analysis <span id="run-timer" class="muted"></span></h2>
+      <div id="live-grid"></div>
+    </section>
+
+    <section id="results-section" class="hidden">
+      <h2>Results</h2>
+      <div id="results-list"></div>
+    </section>
+
+    <footer>
+      <span id="provider-line" class="muted"></span>
+      <span class="muted">Not investment advice.</span>
+    </footer>
+  </div>
+
+  <div id="toast" class="toast hidden"></div>
+  <script src="/static/app.js"></script>
+</body>
+</html>

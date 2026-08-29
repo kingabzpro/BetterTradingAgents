@@ -1,0 +1,378 @@
+"""Market data for one ticker, merged from three providers:
+
+- Finnhub  -> company profile, fundamental metrics and company news ("info")
+- Olostep  -> web news search + article scraping (fallback when Finnhub is thin)
+- yfinance -> historical daily closes (all technical indicators are computed
+              from these) and as a general fallback for fundamentals/news
+
+Everything degrades gracefully: a missing key or a failing provider just means
+we fall back to the next source.
+"""
+
+import asyncio
+import json
+import logging
+from dataclasses import dataclass, field
+from datetime import datetime, timedelta, timezone
+from time import monotonic
+from urllib.parse import urlparse
+
+import httpx
+import yfinance as yf
+
+from app.config import settings
+
+logger = logging.getLogger("market")
+
+FINNHUB_BASE = "https://finnhub.io/api/v1"
+OLOSTEP_SEARCH = "https://api.olostep.com/v1/searches"
+OLOSTEP_SCRAPE = "https://api.olostep.com/v1/scrapes"
+
+_price_cache: dict[str, tuple[float, float]] = {}  # ticker -> (price, fetched_at)
+_CACHE_TTL = 60.0
+
+# Finnhub /stock/metric keys -> normalized fundamentals keys (all percents as numbers).
+FINNHUB_METRICS = {
+    "peTTM": "pe_ratio_ttm",
+    "forwardPE": "pe_ratio_forward",
+    "pbQuarterly": "price_to_book",
+    "revenueGrowthTTMYoy": "revenue_growth_ttm_pct",
+    "epsGrowthTTMYoy": "earnings_growth_ttm_pct",
+    "grossMarginTTM": "gross_margin_pct",
+    "netProfitMarginTTM": "net_margin_pct",
+    "operatingMarginTTM": "operating_margin_pct",
+    "roeTTM": "roe_pct",
+    "beta": "beta",
+    "dividendYieldIndicatedAnnual": "dividend_yield_pct",
+    "52WeekHigh": "week_52_high",
+    "52WeekLow": "week_52_low",
+}
+FINNHUB_EPS_KEYS = ("epsTTM", "epsExclExtraTTM", "epsAnnual")
+
+
+@dataclass
+class MarketData:
+    ticker: str
+    price: float | None = None
+    company_name: str = ""
+    closes: list[float] = field(default_factory=list)
+    fundamentals: dict = field(default_factory=dict)
+    news: list[dict] = field(default_factory=list)
+    sources: dict = field(default_factory=dict)  # prices / fundamentals / news
+
+
+async def get_stock_data(ticker: str) -> MarketData:
+    """Fetch everything the agents need for one ticker, concurrently."""
+    yf_task = asyncio.create_task(asyncio.to_thread(_yf_all, ticker))
+    fundamentals_task = asyncio.create_task(_finnhub_fundamentals(ticker))
+    news_task = asyncio.create_task(_finnhub_news(ticker))
+
+    yf_data, finnhub_fund, finnhub_news = await asyncio.gather(
+        yf_task, fundamentals_task, news_task
+    )
+
+    data = MarketData(ticker=ticker)
+    data.closes = yf_data["closes"]
+    data.price = yf_data["price"]
+    if data.price is None:
+        raise ValueError(f"no price data found for '{ticker}'")
+
+    data.company_name = (
+        finnhub_fund.pop("company_name", "") or yf_data["name"] or ticker
+    )
+
+    # Fundamentals: Finnhub wins on conflicts, yfinance fills the gaps.
+    merged = {**yf_data["fundamentals"], **finnhub_fund}
+    data.fundamentals = {k: v for k, v in merged.items() if v is not None}
+    data.sources["fundamentals"] = (
+        "finnhub" if finnhub_fund else ("yfinance" if data.fundamentals else "none")
+    )
+
+    # News: Finnhub -> Olostep search/scrape -> yfinance.
+    if finnhub_news:
+        data.news, data.sources["news"] = finnhub_news, "finnhub"
+    else:
+        olostep_news = await _olostep_news(ticker, data.company_name)
+        if olostep_news:
+            data.news, data.sources["news"] = olostep_news, "olostep"
+        else:
+            data.news, data.sources["news"] = yf_data["news"], "yfinance"
+    data.sources["prices"] = "yfinance"
+
+    logger.info(
+        "[%s] data ready: fundamentals=%s news=%s (%d items)",
+        ticker,
+        data.sources["fundamentals"],
+        data.sources["news"],
+        len(data.news),
+    )
+    return data
+
+
+async def get_current_price(ticker: str) -> float | None:
+    """Lightweight price lookup with a short cache (used by the portfolio)."""
+    cached = _price_cache.get(ticker)
+    if cached and monotonic() - cached[1] < _CACHE_TTL:
+        return cached[0]
+    price = await asyncio.to_thread(_yf_price, ticker)
+    if price is not None:
+        _price_cache[ticker] = (price, monotonic())
+    return price
+
+
+# --------------------------------------------------------------------------
+# yfinance: price history (always required) + fallback fundamentals/news
+# --------------------------------------------------------------------------
+
+
+def _yf_all(ticker: str) -> dict:
+    out = {"closes": [], "price": None, "name": ticker, "fundamentals": {}, "news": []}
+    stock = yf.Ticker(ticker)
+
+    hist = stock.history(period="6mo", interval="1d")
+    if not hist.empty:
+        out["closes"] = [round(float(c), 4) for c in hist["Close"].dropna().tolist()]
+        if out["closes"]:
+            out["price"] = out["closes"][-1]
+    if out["price"] is None:
+        out["price"] = _yf_price(ticker)
+
+    try:
+        info = stock.info or {}
+        out["name"] = info.get("shortName") or info.get("longName") or ticker
+        out["fundamentals"] = _map_yf_fundamentals(info)
+    except Exception as exc:  # noqa: BLE001 - yfinance raises many shapes
+        logger.warning("[%s] yfinance info failed: %s", ticker, exc)
+
+    try:
+        out["news"] = _normalize_yf_news(stock.news or [])[:6]
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("[%s] yfinance news failed: %s", ticker, exc)
+
+    return out
+
+
+def _yf_price(ticker: str) -> float | None:
+    try:
+        price = yf.Ticker(ticker).fast_info.get("lastPrice")
+        return float(price) if price else None
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("[%s] price fetch failed: %s", ticker, exc)
+        return None
+
+
+def _map_yf_fundamentals(info: dict) -> dict:
+    """Normalize yfinance fractions (0.31) to percents (31) and unify keys."""
+    out: dict = {}
+    pairs = [
+        ("marketCap", "market_cap", 1),
+        ("trailingPE", "pe_ratio_ttm", 1),
+        ("forwardPE", "pe_ratio_forward", 1),
+        ("priceToBook", "price_to_book", 1),
+        ("trailingEps", "eps_ttm", 1),
+        ("revenueGrowth", "revenue_growth_ttm_pct", 100),
+        ("earningsGrowth", "earnings_growth_ttm_pct", 100),
+        ("grossMargins", "gross_margin_pct", 100),
+        ("profitMargins", "net_margin_pct", 100),
+        ("returnOnEquity", "roe_pct", 100),
+        ("beta", "beta", 1),
+        ("dividendYield", "dividend_yield_pct", 100),
+        ("fiftyTwoWeekHigh", "week_52_high", 1),
+        ("fiftyTwoWeekLow", "week_52_low", 1),
+    ]
+    for key, name, scale in pairs:
+        value = info.get(key)
+        if isinstance(value, (int, float)):
+            out[name] = round(float(value) * scale, 2)
+    return out
+
+
+def _normalize_yf_news(items: list) -> list[dict]:
+    """yfinance changed its news payload shape; support both."""
+    out = []
+    for item in items:
+        if isinstance(item, dict) and isinstance(item.get("content"), dict):
+            content = item["content"]
+            out.append(
+                {
+                    "title": content.get("title", ""),
+                    "source": (content.get("provider") or {}).get("displayName", ""),
+                    "published": content.get("pubDate", ""),
+                    "summary": "",
+                }
+            )
+        elif isinstance(item, dict) and item.get("title"):
+            out.append(
+                {
+                    "title": item.get("title", ""),
+                    "source": item.get("publisher", ""),
+                    "published": "",
+                    "summary": "",
+                }
+            )
+    return [n for n in out if n["title"]]
+
+
+# --------------------------------------------------------------------------
+# Finnhub: profile + metrics + company news
+# --------------------------------------------------------------------------
+
+
+async def _finnhub_get(
+    client: httpx.AsyncClient, path: str, ticker: str, extra: dict | None = None
+) -> dict:
+    params = {"symbol": ticker, "token": settings.finnhub_api_key, **(extra or {})}
+    response = await client.get(f"{FINNHUB_BASE}{path}", params=params)
+    response.raise_for_status()
+    return response.json()
+
+
+async def _finnhub_fundamentals(ticker: str) -> dict:
+    if not settings.finnhub_api_key:
+        return {}
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            profile, metrics = await asyncio.gather(
+                _finnhub_get(client, "/stock/profile2", ticker),
+                _finnhub_get(client, "/stock/metric", ticker, {"metric": "all"}),
+            )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("[%s] finnhub fundamentals failed: %s", ticker, exc)
+        return {}
+
+    out: dict = {}
+    name = profile.get("name")
+    if name:
+        out["company_name"] = name
+    cap = profile.get("marketCapitalization")
+    if isinstance(cap, (int, float)):  # reported in millions
+        out["market_cap"] = round(float(cap) * 1_000_000)
+
+    metric = metrics.get("metric", {})
+    for src, dst in FINNHUB_METRICS.items():
+        value = metric.get(src)
+        if isinstance(value, (int, float)):
+            out[dst] = round(float(value), 2)
+    for key in FINNHUB_EPS_KEYS:
+        if isinstance(metric.get(key), (int, float)):
+            out["eps_ttm"] = round(float(metric[key]), 2)
+            break
+    return out
+
+
+async def _finnhub_news(ticker: str) -> list[dict]:
+    if not settings.finnhub_api_key:
+        return []
+    today = datetime.now(timezone.utc).date()
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            response = await client.get(
+                f"{FINNHUB_BASE}/company-news",
+                params={
+                    "symbol": ticker,
+                    "from": (today - timedelta(days=14)).isoformat(),
+                    "to": today.isoformat(),
+                    "token": settings.finnhub_api_key,
+                },
+            )
+            response.raise_for_status()
+            items = response.json()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("[%s] finnhub news failed: %s", ticker, exc)
+        return []
+
+    items = sorted(items, key=lambda i: i.get("datetime", 0), reverse=True)
+    out = []
+    for item in items[:6]:
+        published = ""
+        if item.get("datetime"):
+            try:
+                published = datetime.fromtimestamp(
+                    int(item["datetime"]), tz=timezone.utc
+                ).isoformat()
+            except (ValueError, OverflowError):
+                pass
+        out.append(
+            {
+                "title": item.get("headline", ""),
+                "source": item.get("source", ""),
+                "published": published,
+                "summary": (item.get("summary") or "")[:300],
+            }
+        )
+    return [n for n in out if n["title"]]
+
+
+# --------------------------------------------------------------------------
+# Olostep: web search (+ scrape of the top article) for news
+# --------------------------------------------------------------------------
+
+
+async def _olostep_news(ticker: str, company_name: str) -> list[dict]:
+    if not settings.olostep_api_key:
+        return []
+    headers = {"Authorization": f"Bearer {settings.olostep_api_key}"}
+    query = f"{company_name or ticker} {ticker} stock news latest".strip()
+    try:
+        async with httpx.AsyncClient(timeout=45) as client:
+            response = await client.post(
+                OLOSTEP_SEARCH,
+                headers=headers,
+                json={"query": query, "num_results": 6},
+            )
+            response.raise_for_status()
+            links = _olostep_links(response.json())
+
+            items = []
+            for link in links[:6]:
+                url = link.get("url", "")
+                items.append(
+                    {
+                        "title": link.get("title", ""),
+                        "source": urlparse(url).netloc.replace("www.", ""),
+                        "published": "",
+                        "summary": (link.get("description") or "")[:300],
+                        "url": url,
+                    }
+                )
+            items = [n for n in items if n["title"]]
+
+            # Enrich the top hit with the actual article text (search + scrape).
+            if items and items[0].get("url"):
+                markdown = await _olostep_scrape(client, headers, items[0]["url"])
+                if markdown:
+                    items[0]["content"] = markdown[:1500]
+            return items
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("[%s] olostep news failed: %s", ticker, exc)
+        return []
+
+
+def _olostep_links(payload: dict) -> list[dict]:
+    result = payload.get("result") or {}
+    if isinstance(result.get("links"), list):
+        return result["links"]
+    raw = result.get("json_content")
+    if isinstance(raw, str):
+        try:
+            parsed = json.loads(raw)
+            return parsed.get("links", [])
+        except ValueError:
+            return []
+    return []
+
+
+async def _olostep_scrape(
+    client: httpx.AsyncClient, headers: dict, url: str
+) -> str | None:
+    try:
+        response = await client.post(
+            OLOSTEP_SCRAPE,
+            headers=headers,
+            json={"url_to_scrape": url, "formats": ["markdown"]},
+        )
+        response.raise_for_status()
+        return (response.json().get("result") or {}).get("markdown_content")
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("olostep scrape failed for %s: %s", url, exc)
+        return None
