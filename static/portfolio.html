@@ -33,7 +33,7 @@
       <div class="summary-card"><div class="sc-label">Total P&L</div><div class="sc-value" id="sc-pnl">…</div></div>
     </div>
 
-    <div class="card" style="padding: 6px 4px;">
+    <div class="card table-wrap">
       <table id="positions-table">
         <thead>
           <tr>
@@ -45,7 +45,7 @@
             <th class="num">Value</th>
             <th class="num">P&L</th>
             <th class="num">P&L %</th>
-            <th>Added</th>
+            <th class="col-added">Added</th>
           </tr>
         </thead>
         <tbody id="positions-body"></tbody>
@@ -95,7 +95,7 @@
           <td class="num">${fmt(position.value)}</td>
           <td class="num ${pnlClass}">${fmt(position.pnl)}</td>
           <td class="num ${pnlClass}">${position.pnl_pct == null ? "n/a" : `${position.pnl_pct >= 0 ? "+" : ""}${position.pnl_pct}%`}</td>
-          <td class="muted">${position.added_at || ""}</td>`;
+          <td class="muted col-added">${position.added_at || ""}</td>`;
         body.appendChild(row);
       }
     }
