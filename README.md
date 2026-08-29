@@ -1,8 +1,6 @@
 <div align="center">
 
-<img src="static/logo.svg" width="96" alt="BetterTradingAgents logo"/>
-
-# BetterTradingAgents
+<img src="static/logo-full.png" width="460" alt="BetterTradingAgents"/>
 
 **A fast multi-agent stock research app powered by CrewAI.**
 
@@ -154,8 +152,9 @@ static/                   # vanilla HTML + CSS + JS, no build step
 ├── index.html            # analysis page
 ├── portfolio.html        # demo portfolio page
 ├── app.js                # SSE client and rendering
-├── style.css             # modern dark theme
-└── logo.svg              # three agent candlesticks -> decision arrow
+├── style.css             # modern dark theme in the logo's green + navy palette
+├── logo.png              # logo mark (header + favicon)
+└── logo-full.png         # full logo lockup
 ```
 
 ## Roadmap ideas
