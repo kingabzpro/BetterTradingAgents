@@ -194,6 +194,38 @@ curl -X POST http://localhost:8000/api/analyze \
 
 </details>
 
+Each result in `GET /api/runs/{run_id}` carries the decision (`BUY`/`HOLD`/`SELL`), confidence,
+per-agent reports (including both rebuttal rounds), and the risk gate's output:
+`suggested_size_usd` (the volatility-scaled position size) and `risk_flags` (why a BUY was
+downgraded or confidence capped, if it was).
+
+## Development
+
+```bash
+# Offline sanity suite: indicators, portfolio accounting + migration, risk gate
+PYTHONPATH=. uv run python scripts/check_quick_wins.py
+PYTHONPATH=. uv run python scripts/check_risk.py
+
+# One-shot check that the configured LLM endpoint answers
+PYTHONPATH=. uv run python scripts/smoke_llm.py
+```
+
+`check_risk.py` also runs a full mock-mode analysis end-to-end, so it needs network access for
+market data. The layout is intentionally small:
+
+```
+app/
+  main.py        FastAPI routes, SSE stream
+  workflow.py    3-stage pipeline (research -> debate -> manager) + risk gate
+  risk.py        deterministic sizing + exposure caps
+  agents/        one module per agent (prompt, schema, mock fallback)
+  tools/         market data (Finnhub/Olostep/yfinance), indicators
+  runs.py        in-memory run store with event fan-out
+  portfolio.py   SQLite positions, closes, realized P&L
+static/          vanilla HTML/CSS/JS, no build step
+scripts/         sanity checks
+```
+
 ## Roadmap
 
 Detailed, research-backed plans for everything below live in [docs/ROADMAP.md](docs/ROADMAP.md).
