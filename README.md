@@ -152,6 +152,9 @@ optional; without an LLM key, the app starts in mock mode.
 | `STARTING_CASH` | `100000` | Initial simulated portfolio balance |
 | `DEFAULT_POSITION_SIZE` | `10000` | Suggested position value |
 | `DB_PATH` | `portfolio.db` | SQLite portfolio database path |
+| `MAX_POSITION_PCT` | `0.10` | Risk gate: max fraction of equity in one ticker |
+| `MAX_INVESTED_PCT` | `0.60` | Risk gate: max fraction of equity invested |
+| `MIN_CASH_PCT` | `0.10` | Risk gate: min cash buffer after a BUY |
 
 ## Demo portfolio
 
@@ -190,7 +193,7 @@ curl -X POST http://localhost:8000/api/analyze \
 Detailed, research-backed plans for everything below live in [docs/ROADMAP.md](docs/ROADMAP.md).
 
 - [ ] Decision memory: learn from realized returns and SPY alpha across runs
-- [ ] Risk layer: volatility-scaled position sizing and exposure caps
+- [x] Risk layer: volatility-scaled position sizing and exposure caps
 - [x] Rebuttal round in the bull/bear debate
 - [ ] Backtest agent decisions against buy-and-hold (walk-forward)
 - [ ] Stream agent reasoning while each agent works

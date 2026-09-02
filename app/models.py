@@ -62,6 +62,8 @@ class StockAnalysis(BaseModel):
     bear: AgentResult | None = None
     duration_s: float = 0.0
     error: str | None = None
+    suggested_size_usd: float | None = None
+    risk_flags: list[str] = Field(default_factory=list)
 
 
 class AnalysisRequest(BaseModel):

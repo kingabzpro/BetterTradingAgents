@@ -247,7 +247,8 @@ function renderResultCard(analysis) {
   }[analysis.decision] || { cls: "hold", icon: "■" };
   const confidencePct = Math.round((analysis.confidence || 0) * 100);
   const canAdd = analysis.decision === "BUY" && analysis.price;
-  const defaultQty = analysis.price ? Math.floor(10000 / analysis.price) : 0;
+  const positionSize = analysis.suggested_size_usd || 10000;
+  const defaultQty = analysis.price ? Math.floor(positionSize / analysis.price) : 0;
 
   card.innerHTML = `
     <div class="result-summary" onclick="this.parentElement.classList.toggle('open')">
@@ -264,6 +265,7 @@ function renderResultCard(analysis) {
         <span class="muted">${confidencePct}% confidence${analysis.price ? ` · $${Number(analysis.price).toFixed(2)}` : ""}</span>
       </div>
       <p class="thesis">${escapeHtml(analysis.summary || "")}</p>
+      ${(analysis.risk_flags || []).length ? `<div class="risk-flags">${analysis.risk_flags.map((f) => `⚠ ${escapeHtml(f)}`).join("<br>")}</div>` : ""}
       <div class="grid-3">
         ${miniCard("Technical", analysis.technical?.signal, labelFor("technical", analysis.technical?.signal), analysis.technical?.summary)}
         ${miniCard("Fundamentals", analysis.fundamental?.signal, labelFor("fundamental", analysis.fundamental?.signal), analysis.fundamental?.summary)}
@@ -286,6 +288,7 @@ function renderResultCard(analysis) {
           ? `<label for="qty-${analysis.ticker}">Shares</label>
              <input id="qty-${analysis.ticker}" type="number" min="1" step="1" value="${defaultQty}">
              <button class="add-btn" id="add-${analysis.ticker}" onclick="addToPortfolio('${analysis.ticker}', ${analysis.price})">Add to Demo Portfolio</button>
+             <span class="muted">risk-sized ${fmtUsd(positionSize)}</span>
              <span class="added-note hidden" id="added-${analysis.ticker}"></span>`
           : `<span class="muted">Demo portfolio additions are offered for BUY recommendations.</span>`}
       </div>
@@ -326,6 +329,10 @@ async function addToPortfolio(ticker, price) {
 }
 
 /* ---------- utils ---------- */
+
+function fmtUsd(value) {
+  return `$${Number(value).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
+}
 
 function showError(message) { $("error-msg").textContent = message; $("error-msg").classList.remove("hidden"); }
 function hideError() { $("error-msg").classList.add("hidden"); }

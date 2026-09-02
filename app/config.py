@@ -42,6 +42,11 @@ class Settings:
     default_position_size: float = float(_env("DEFAULT_POSITION_SIZE", "10000"))
     db_path: Path = Path(_env("DB_PATH", str(BASE_DIR / "portfolio.db")))
 
+    # Risk gate (docs/ROADMAP.md 1.2) - fractions of total equity
+    max_position_pct: float = float(_env("MAX_POSITION_PCT", "0.10"))
+    max_invested_pct: float = float(_env("MAX_INVESTED_PCT", "0.60"))
+    min_cash_pct: float = float(_env("MIN_CASH_PCT", "0.10"))
+
     @property
     def llm_configured(self) -> bool:
         return bool(self.llm_api_key)

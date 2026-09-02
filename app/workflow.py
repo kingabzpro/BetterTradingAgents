@@ -12,9 +12,10 @@ import re
 import time
 from typing import Any, Awaitable, Callable
 
+from app import risk
 from app.agents import bear, bull, fundamental, manager, news, technical
 from app.config import settings
-from app.models import AgentResult, StockAnalysis
+from app.models import AgentResult, PortfolioSummary, StockAnalysis
 from app.tools.indicators import compute_indicators
 from app.tools.market_data import get_stock_data
 
@@ -132,14 +133,20 @@ async def _run_agent(
         return None
 
 
-async def _portfolio_snapshot() -> list[dict] | str:
-    """Compact view of open positions for the manager prompt; never fails the run."""
+async def _portfolio_summary() -> PortfolioSummary | None:
+    """Fetch the portfolio for the manager prompt and the risk gate; best-effort."""
     try:
         from app import portfolio
 
-        summary = await portfolio.get_portfolio()
+        return await portfolio.get_portfolio()
     except Exception as exc:  # noqa: BLE001 - portfolio context is best-effort
-        logger.warning("[portfolio] snapshot failed: %s", exc)
+        logger.warning("[portfolio] summary failed: %s", exc)
+        return None
+
+
+def _portfolio_context(summary: PortfolioSummary | None) -> list[dict] | str:
+    """Compact view of open positions for the manager prompt."""
+    if summary is None:
         return "UNAVAILABLE - portfolio lookup failed"
     if not summary.positions:
         return "no open positions (flat)"
@@ -262,6 +269,7 @@ async def analyze_ticker(ticker: str, emit: Emit) -> StockAnalysis:
     # Stage 3: portfolio manager (sees existing holdings so decisions account
     # for exposure already taken; the debate transcript shows how the final
     # positions were reached).
+    portfolio_summ = await _portfolio_summary()
     full_context = {
         **context,
         "bull": bull_r.model_dump() if bull_r else "FAILED - unavailable",
@@ -273,7 +281,7 @@ async def analyze_ticker(ticker: str, emit: Emit) -> StockAnalysis:
             "bull_rebuttal": bull_rebuttal,
             "bear_rebuttal": bear_rebuttal,
         },
-        "current_portfolio": await _portfolio_snapshot(),
+        "current_portfolio": _portfolio_context(portfolio_summ),
     }
     mgr_data = await _run_agent(manager, ticker, emit, payload=full_context)
 
@@ -292,6 +300,20 @@ async def analyze_ticker(ticker: str, emit: Emit) -> StockAnalysis:
         bull_case = bull_r.summary if bull_r else ""
         bear_case = bear_r.summary if bear_r else ""
 
+    # Risk gate: deterministic sizing and exposure caps (ROADMAP 1.2).
+    size_usd, risk_flags = None, []
+    if mgr_data:
+        decision, confidence, size_usd, risk_flags = risk.evaluate(
+            decision,
+            confidence,
+            ticker,
+            analysts=(tech, fund, news_r),
+            vol_ann_pct=indicators.get("volatility_annualized_pct"),
+            portfolio=portfolio_summ,
+        )
+    else:
+        risk_flags = ["portfolio manager failed - defaulted to HOLD"]
+
     analysis = StockAnalysis(
         ticker=ticker,
         company_name=market.company_name,
@@ -307,6 +329,8 @@ async def analyze_ticker(ticker: str, emit: Emit) -> StockAnalysis:
         bull=bull_r,
         bear=bear_r,
         duration_s=round(time.perf_counter() - started, 1),
+        suggested_size_usd=size_usd,
+        risk_flags=risk_flags,
     )
     logger.info(
         "[analysis] %s completed in %.1fs (%s)", ticker, analysis.duration_s, decision

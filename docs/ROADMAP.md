@@ -10,6 +10,11 @@ acceptance criteria. Last updated: 2026-09-02.
 - Portfolio: close positions, realized P&L, trade history, cash-balance guard
 - Portfolio Manager sees current holdings (`current_portfolio` in its dossier)
 - Old SQLite schemas migrate automatically via `ALTER TABLE`
+- **1.2 Risk layer + sizing**: deterministic gate in `app/risk.py` — BUYs get a
+  vol-scaled size (`default × confidence × min(1, 15/vol)`, floored at 0.25×) and
+  are downgraded to HOLD when they would breach `MAX_POSITION_PCT` (10%),
+  `MAX_INVESTED_PCT` (60%) or `MIN_CASH_PCT` (10%); 2+ failed analysts cap
+  confidence at 0.5; results carry `suggested_size_usd` + `risk_flags`
 - **2.1 Rebuttal round**: `DEBATE_ROUNDS >= 2` runs a second bull/bear exchange
   where each side answers the other; the manager sees the full transcript and the
   final positions are the post-rebuttal ones
