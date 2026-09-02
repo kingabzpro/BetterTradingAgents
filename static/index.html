@@ -10,20 +10,23 @@
   <link rel="icon" href="/static/favicon.ico?v=2" sizes="any">
   <link rel="icon" type="image/png" href="/static/favicon.png?v=2">
   <link rel="apple-touch-icon" href="/static/favicon.png?v=2">
-  <link rel="stylesheet" href="/static/style.css">
+  <link rel="stylesheet" href="/static/style.css?v=8">
 </head>
 <body>
   <div class="container">
     <header>
       <div class="brand">
-        <img src="/static/logo.png" alt="BetterTradingAgents eagle mascot" class="logo-img">
+        <a href="/" class="logo-home" aria-label="Go to BetterTradingAgents home">
+          <img src="/static/logo.png" alt="" class="logo-img">
+        </a>
         <div>
           <h1>BetterTradingAgents</h1>
           <p class="tagline">Fast multi-agent stock analysis</p>
         </div>
       </div>
       <nav>
-        <span id="mode-chip" class="chip hidden" title="No LLM_API_KEY configured, agents run with rule-based fallbacks">mock mode</span>
+        <span id="mode-chip" class="chip hidden" aria-label="Mock mode: agents use rule-based fallbacks">mock mode</span>
+        <a href="/history" class="nav-link">Runs</a>
         <a href="/portfolio" class="nav-link">Portfolio</a>
       </nav>
     </header>
@@ -43,7 +46,8 @@
         <button class="chip-btn" data-tickers="TSLA">TSLA</button>
       </div>
       <p class="hint">Up to 5 tickers, comma-separated. AI agents research each one in parallel, debate the case, and deliver a BUY, HOLD or SELL call.</p>
-      <p id="error-msg" class="error hidden"></p>
+      <p id="error-msg" class="error hidden" role="alert"></p>
+      <p id="restore-notice" class="restore-notice hidden" role="status"></p>
     </section>
 
     <section id="how-section">
@@ -73,12 +77,22 @@
     </section>
 
     <section id="live-section" class="hidden">
-      <h2>Live analysis <span id="run-timer" class="muted"></span></h2>
+      <div class="section-heading-row">
+        <h2>Live analysis <span id="run-timer" class="muted"></span></h2>
+        <span id="overall-status" class="muted" role="status" aria-live="polite">Preparing analysis</span>
+      </div>
+      <div id="overall-progress" class="overall-progress" role="progressbar" aria-label="Overall analysis progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+        <span id="overall-progress-fill"></span>
+      </div>
       <div id="live-grid"></div>
     </section>
 
     <section id="results-section" class="hidden">
-      <h2>Results</h2>
+      <div class="section-heading-row">
+        <h2 id="results-heading" tabindex="-1">Results</h2>
+        <button id="analyze-another-btn" class="secondary-btn hidden" type="button">Analyze another</button>
+      </div>
+      <div id="summary-panel"></div>
       <div id="results-list"></div>
     </section>
 
@@ -88,7 +102,7 @@
     </footer>
   </div>
 
-  <div id="toast" class="toast hidden"></div>
-  <script src="/static/app.js"></script>
+  <div id="toast" class="toast hidden" role="status" aria-live="polite" aria-atomic="true"></div>
+  <script src="/static/app.js?v=8"></script>
 </body>
 </html>

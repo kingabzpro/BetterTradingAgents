@@ -1,8 +1,9 @@
 """Pydantic models shared across the app."""
 
 from typing import Literal
+from urllib.parse import urlparse
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 Decision = Literal["BUY", "HOLD", "SELL"]
 Signal = Literal["bullish", "bearish", "neutral", "positive", "negative", "unknown"]
@@ -44,6 +45,33 @@ class ManagerResult(BaseModel):
     bear_case: str = ""
 
 
+class SourceReference(BaseModel):
+    """A safe, display-ready reference to evidence used by the analysis."""
+
+    kind: Literal["price", "fundamentals", "news"]
+    title: str
+    provider: str
+    url: str = ""
+    published_at: str | None = None
+
+    @field_validator("url", mode="before")
+    @classmethod
+    def allow_only_web_urls(cls, value: object) -> str:
+        """Never send script, data, or local URLs to the browser."""
+        if not isinstance(value, str):
+            return ""
+        candidate = value.strip()
+        try:
+            parsed = urlparse(candidate)
+        except ValueError:
+            return ""
+        return (
+            candidate
+            if parsed.scheme in {"http", "https"} and parsed.netloc
+            else ""
+        )
+
+
 class StockAnalysis(BaseModel):
     """Everything we know about one ticker after a full run."""
 
@@ -60,14 +88,22 @@ class StockAnalysis(BaseModel):
     news: AgentResult | None = None
     bull: AgentResult | None = None
     bear: AgentResult | None = None
+    bull_rebuttal: AgentResult | None = None
+    bear_rebuttal: AgentResult | None = None
     duration_s: float = 0.0
     error: str | None = None
     suggested_size_usd: float | None = None
     risk_flags: list[str] = Field(default_factory=list)
+    as_of: str = ""
+    providers: dict[str, str] = Field(default_factory=dict)
+    source_references: list[SourceReference] = Field(default_factory=list)
 
 
 class AnalysisRequest(BaseModel):
     tickers: list[str] = Field(min_length=1)
+    client_id: str | None = Field(
+        default=None, min_length=8, max_length=64, pattern=r"^[A-Za-z0-9_-]+$"
+    )
 
     def normalized(self) -> list[str]:
         seen: dict[str, None] = {}
@@ -93,6 +129,25 @@ class RunStatus(BaseModel):
     duration_s: float = 0.0
     error: str | None = None
     results: dict[str, StockAnalysis] = Field(default_factory=dict)
+
+
+class RunHistoryItem(BaseModel):
+    """Compact metadata for the analysis-history list."""
+
+    run_id: str
+    tickers: list[str]
+    status: Literal["running", "completed", "failed"]
+    mock_mode: bool = False
+    started_at: float
+    duration_s: float = 0.0
+    error: str | None = None
+    result_count: int = 0
+    has_errors: bool = False
+    decisions: dict[str, Decision] = Field(default_factory=dict)
+
+
+class ClearHistoryResponse(BaseModel):
+    deleted: int
 
 
 class PortfolioPosition(BaseModel):

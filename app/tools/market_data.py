@@ -62,6 +62,7 @@ class MarketData:
     fundamentals: dict = field(default_factory=dict)
     news: list[dict] = field(default_factory=list)
     sources: dict = field(default_factory=dict)  # prices / fundamentals / news
+    as_of: str = ""
 
 
 async def get_stock_data(ticker: str) -> MarketData:
@@ -104,6 +105,7 @@ async def get_stock_data(ticker: str) -> MarketData:
         else:
             data.news, data.sources["news"] = yf_data["news"], "yfinance"
     data.sources["prices"] = "yfinance"
+    data.as_of = datetime.now(timezone.utc).isoformat()
 
     logger.info(
         "[%s] data ready: fundamentals=%s news=%s (%d items)",
@@ -218,12 +220,17 @@ def _normalize_yf_news(items: list) -> list[dict]:
     for item in items:
         if isinstance(item, dict) and isinstance(item.get("content"), dict):
             content = item["content"]
+            canonical = (
+                content.get("canonicalUrl") or content.get("clickThroughUrl") or {}
+            )
+            article_url = canonical.get("url", "") if isinstance(canonical, dict) else canonical
             out.append(
                 {
                     "title": content.get("title", ""),
                     "source": (content.get("provider") or {}).get("displayName", ""),
                     "published": content.get("pubDate", ""),
                     "summary": "",
+                    "url": _safe_http_url(article_url),
                 }
             )
         elif isinstance(item, dict) and item.get("title"):
@@ -233,6 +240,7 @@ def _normalize_yf_news(items: list) -> list[dict]:
                     "source": item.get("publisher", ""),
                     "published": "",
                     "summary": "",
+                    "url": _safe_http_url(item.get("link", "")),
                 }
             )
     return [n for n in out if n["title"]]
@@ -323,6 +331,7 @@ async def _finnhub_news(ticker: str) -> list[dict]:
                 "source": item.get("source", ""),
                 "published": published,
                 "summary": (item.get("summary") or "")[:300],
+                "url": _safe_http_url(item.get("url", "")),
             }
         )
     return [n for n in out if n["title"]]
@@ -350,7 +359,7 @@ async def _olostep_news(ticker: str, company_name: str) -> list[dict]:
 
             items = []
             for link in links[:6]:
-                url = link.get("url", "")
+                url = _safe_http_url(link.get("url", ""))
                 items.append(
                     {
                         "title": link.get("title", ""),
@@ -388,6 +397,20 @@ def _olostep_links(payload: dict) -> list[dict]:
         except ValueError:
             return []
     return []
+
+
+def _safe_http_url(value: object) -> str:
+    """Return a normal web URL, or an empty string for unsafe schemes."""
+    if not isinstance(value, str):
+        return ""
+    candidate = value.strip()
+    try:
+        parsed = urlparse(candidate)
+    except ValueError:
+        return ""
+    return (
+        candidate if parsed.scheme in {"http", "https"} and parsed.netloc else ""
+    )
 
 
 async def _olostep_scrape(

@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Run History · BetterTradingAgents</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+  <link rel="icon" href="/static/favicon.ico?v=2" sizes="any">
+  <link rel="icon" type="image/png" href="/static/favicon.png?v=2">
+  <link rel="apple-touch-icon" href="/static/favicon.png?v=2">
+  <link rel="stylesheet" href="/static/style.css?v=8">
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div class="brand">
+        <a href="/" class="logo-home" aria-label="Go to BetterTradingAgents home">
+          <img src="/static/logo.png" alt="" class="logo-img">
+        </a>
+        <div>
+          <h1>Run History</h1>
+          <p class="tagline">Revisit earlier research and decisions</p>
+        </div>
+      </div>
+      <nav aria-label="Primary navigation">
+        <a href="/" class="nav-link">Analysis</a>
+        <a href="/portfolio" class="nav-link">Portfolio</a>
+      </nav>
+    </header>
+
+    <main>
+      <section class="history-intro" aria-labelledby="history-heading">
+        <div>
+          <span class="eyebrow">Saved automatically</span>
+          <h2 id="history-heading" tabindex="-1">Analysis runs</h2>
+          <p>Completed, partial, and interrupted runs are stored on this server. Open any run to review its decision, evidence, debate, and sources.</p>
+        </div>
+        <div class="history-toolbar">
+          <button id="refresh-history" class="secondary-btn" type="button">Refresh</button>
+          <button id="clear-history" class="danger-btn" type="button">Clear history</button>
+        </div>
+      </section>
+
+      <p id="history-status" class="history-status" role="status" aria-live="polite">Loading run history…</p>
+      <section id="history-list" class="history-list" aria-label="Saved analysis runs"></section>
+      <div id="history-empty" class="history-empty hidden">
+        <strong>No saved runs yet</strong>
+        <p>Your completed analyses will appear here automatically.</p>
+        <a href="/" class="secondary-btn">Start an analysis</a>
+      </div>
+    </main>
+  </div>
+
+  <div id="toast" class="toast hidden" role="alert" aria-live="assertive" aria-atomic="true"></div>
+  <script src="/static/history.js?v=3"></script>
+</body>
+</html>

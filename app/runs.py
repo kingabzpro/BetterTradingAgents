@@ -6,20 +6,23 @@ import time
 import uuid
 
 from app.config import settings
-from app.models import RunStatus, StockAnalysis
+from app.models import RunHistoryItem, RunStatus, StockAnalysis
+from app import run_history
 from app.workflow import analyze_ticker, fetch_portfolio_summary
 
 logger = logging.getLogger("analysis")
 
 
 class Run:
-    def __init__(self, tickers: list[str]):
+    def __init__(self, tickers: list[str], client_id: str = ""):
         self.run_id = uuid.uuid4().hex[:12]
         self.tickers = tickers
+        self.client_id = client_id
         self.status = "running"
         self.mock_mode = not settings.llm_configured
         self.started_at = time.time()
         self.completed_at: float | None = None
+        self.error: str | None = None
         self.events: list[dict] = []
         self.queues: list[asyncio.Queue] = []
         self.results: dict[str, StockAnalysis] = {}
@@ -39,50 +42,91 @@ class Run:
             mock_mode=self.mock_mode,
             started_at=self.started_at,
             duration_s=round(finished - self.started_at, 1),
+            error=self.error,
             results=self.results,
         )
 
 
 class RunStore:
-    """Holds all runs; only completed results survive here (no DB - by design)."""
+    """Coordinates active runs in memory and completed runs in SQLite."""
 
     def __init__(self) -> None:
         self.runs: dict[str, Run] = {}
 
-    def create(self, tickers: list[str]) -> Run:
-        run = Run(tickers)
+    async def init(self) -> None:
+        await run_history.init()
+
+    async def create(self, tickers: list[str], client_id: str = "") -> Run:
+        run = Run(tickers, client_id)
         self.runs[run.run_id] = run
+        await self._persist(run)
         asyncio.create_task(self._execute(run))
         return run
 
     def get(self, run_id: str) -> Run | None:
         return self.runs.get(run_id)
 
+    async def get_status(self, run_id: str) -> RunStatus | None:
+        run = self.get(run_id)
+        return run.to_status() if run is not None else await run_history.get(run_id)
+
+    async def list_history(
+        self, client_id: str, limit: int = 50
+    ) -> list[RunHistoryItem]:
+        return await run_history.list_runs(client_id, limit)
+
+    async def clear_history(self, client_id: str) -> int:
+        removed_ids = set(await run_history.clear(client_id))
+        removed_ids.update(
+            run_id
+            for run_id, run in self.runs.items()
+            if run.client_id == client_id and run.status != "running"
+        )
+        for run_id in removed_ids:
+            self.runs.pop(run_id, None)
+        return len(removed_ids)
+
+    async def _persist(self, run: Run) -> None:
+        try:
+            await run_history.save(
+                run.to_status(), completed_at=run.completed_at, owner_id=run.client_id
+            )
+        except Exception as exc:  # noqa: BLE001 - analysis must survive DB trouble
+            logger.error("[history] could not save run %s: %s", run.run_id, exc)
+
     async def _execute(self, run: Run) -> None:
-        semaphore = asyncio.Semaphore(settings.max_tickers)
-        # One portfolio snapshot per run, shared by every ticker's manager
-        # prompt and risk gate (instead of one fetch per ticker).
-        portfolio_summary = await fetch_portfolio_summary()
+        try:
+            semaphore = asyncio.Semaphore(settings.max_tickers)
+            # One portfolio snapshot per run, shared by every ticker's manager
+            # prompt and risk gate (instead of one fetch per ticker).
+            portfolio_summary = await fetch_portfolio_summary()
 
-        async def analyze_one(ticker: str) -> StockAnalysis:
-            async with semaphore:
-                try:
-                    return await analyze_ticker(
-                        ticker, run.emit, portfolio_summary=portfolio_summary
-                    )
-                except Exception as exc:  # noqa: BLE001 - last-resort guard
-                    logger.error("[analysis] %s crashed: %s", ticker, exc)
-                    return StockAnalysis(ticker=ticker, error=str(exc)[:300])
+            async def analyze_one(ticker: str) -> StockAnalysis:
+                async with semaphore:
+                    try:
+                        return await analyze_ticker(
+                            ticker, run.emit, portfolio_summary=portfolio_summary
+                        )
+                    except Exception as exc:  # noqa: BLE001 - last-resort guard
+                        logger.error("[analysis] %s crashed: %s", ticker, exc)
+                        return StockAnalysis(ticker=ticker, error=str(exc)[:300])
 
-        results = await asyncio.gather(*(analyze_one(t) for t in run.tickers))
-        run.results = {result.ticker: result for result in results}
-        run.status = "completed"
+            results = await asyncio.gather(*(analyze_one(t) for t in run.tickers))
+            run.results = {result.ticker: result for result in results}
+            run.status = "completed"
+        except Exception as exc:  # noqa: BLE001 - preserve an interrupted run
+            run.status = "failed"
+            run.error = str(exc)[:300]
+            logger.error("[analysis] run %s failed: %s", run.run_id, exc)
         run.completed_at = time.time()
+        await self._persist(run)
         await run.emit(
             "analysis_completed",
             {
                 "run_id": run.run_id,
                 "duration_s": round(time.time() - run.started_at, 1),
+                "status": run.status,
+                "error": run.error,
             },
         )
 

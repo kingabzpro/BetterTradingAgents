@@ -6,7 +6,7 @@ import logging
 import re
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, Header, HTTPException, Query
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -15,8 +15,11 @@ from app.config import settings
 from app.models import (
     AnalysisRequest,
     AnalysisResponse,
+    ClearHistoryResponse,
     PortfolioAddRequest,
     PortfolioCloseRequest,
+    RunHistoryItem,
+    RunStatus,
 )
 from app.runs import store
 
@@ -25,6 +28,7 @@ logger = logging.getLogger("analysis")
 
 STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
 TICKER_RE = re.compile(r"^[A-Z0-9.\-]{1,10}$")
+CLIENT_ID_RE = re.compile(r"^[A-Za-z0-9_-]{8,64}$")
 
 app = FastAPI(title="BetterTradingAgents")
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
@@ -33,6 +37,7 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 @app.on_event("startup")
 async def startup() -> None:
     await portfolio.init()
+    await store.init()
     mode = "mock (no LLM_API_KEY)" if not settings.llm_configured else settings.llm_model
     logger.info("[startup] BetterTradingAgents ready | llm=%s", mode)
 
@@ -45,6 +50,11 @@ async def index():
 @app.get("/portfolio")
 async def portfolio_page():
     return FileResponse(STATIC_DIR / "portfolio.html")
+
+
+@app.get("/history")
+async def history_page():
+    return FileResponse(STATIC_DIR / "history.html")
 
 
 @app.get("/api/health")
@@ -79,19 +89,40 @@ async def analyze(request: AnalysisRequest):
         raise HTTPException(
             status_code=400, detail=f"invalid ticker symbol(s): {', '.join(invalid)}"
         )
-    run = store.create(tickers)
+    run = await store.create(tickers, request.client_id or "")
     logger.info(
         "[analysis] run %s started: %s", run.run_id, ", ".join(tickers)
     )
     return AnalysisResponse(run_id=run.run_id, tickers=tickers)
 
 
-@app.get("/api/runs/{run_id}")
+@app.get("/api/runs", response_model=list[RunHistoryItem])
+async def run_history(
+    limit: int = Query(default=50, ge=1, le=100),
+    client_id: str | None = Header(default=None, alias="X-Client-ID"),
+):
+    if client_id is None:
+        return []
+    if not CLIENT_ID_RE.match(client_id):
+        raise HTTPException(status_code=400, detail="invalid client id")
+    return await store.list_history(client_id, limit)
+
+
+@app.delete("/api/runs", response_model=ClearHistoryResponse)
+async def clear_run_history(
+    client_id: str | None = Header(default=None, alias="X-Client-ID"),
+):
+    if client_id is None or not CLIENT_ID_RE.match(client_id):
+        raise HTTPException(status_code=400, detail="invalid client id")
+    return ClearHistoryResponse(deleted=await store.clear_history(client_id))
+
+
+@app.get("/api/runs/{run_id}", response_model=RunStatus)
 async def run_status(run_id: str):
-    run = store.get(run_id)
-    if run is None:
+    status = await store.get_status(run_id)
+    if status is None:
         raise HTTPException(status_code=404, detail="run not found")
-    return run.to_status()
+    return status
 
 
 @app.get("/api/runs/{run_id}/events")

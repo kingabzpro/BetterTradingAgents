@@ -1,134 +1,295 @@
-/* BetterTradingAgents - main page logic (vanilla JS, no dependencies). */
+/* BetterTradingAgents - decision cockpit and resilient run recovery. */
 
 const ICONS = {
-  technical: '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 12.5 6 8l2.5 2.5L13.5 4"/></svg>',
-  fundamental: '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M3 3.5h10M3 7h10M3 10.5h6"/><circle cx="12.4" cy="10.7" r="1.6"/></svg>',
-  news: '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="8" cy="8" r="5.7"/><path d="M2.3 8h11.4M8 2.3c-1.8 1.6-2.7 3.5-2.7 5.7s.9 4.1 2.7 5.7c1.8-1.6 2.7-3.5 2.7-5.7S9.8 3.9 8 2.3z"/></svg>',
-  bull: '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 12.5 12.5 3.5M6.5 3.5h6v6"/></svg>',
-  bear: '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 3.5l9 9M12.5 6.5v6h-6"/></svg>',
-  bull_rebuttal: '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 12.5 12.5 3.5M6.5 3.5h6v6"/><path d="M2.5 5.5h3M2.5 8h2"/></svg>',
-  bear_rebuttal: '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 3.5l9 9M12.5 6.5v6h-6"/><path d="M2.5 5.5h3M2.5 8h2"/></svg>',
-  manager: '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="5" width="11" height="8" rx="2"/><path d="M6 5V3.6A1.6 1.6 0 0 1 7.6 2h.8A1.6 1.6 0 0 1 10 3.6V5M2.5 8.5h11"/></svg>',
+  technical: '<svg aria-hidden="true" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 12.5 6 8l2.5 2.5L13.5 4"/></svg>',
+  fundamental: '<svg aria-hidden="true" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M3 3.5h10M3 7h10M3 10.5h6"/><circle cx="12.4" cy="10.7" r="1.6"/></svg>',
+  news: '<svg aria-hidden="true" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="8" cy="8" r="5.7"/><path d="M2.3 8h11.4M8 2.3c-1.8 1.6-2.7 3.5-2.7 5.7s.9 4.1 2.7 5.7c1.8-1.6 2.7-3.5 2.7-5.7S9.8 3.9 8 2.3z"/></svg>',
+  bull: '<svg aria-hidden="true" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 12.5 12.5 3.5M6.5 3.5h6v6"/></svg>',
+  bear: '<svg aria-hidden="true" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 3.5l9 9M12.5 6.5v6h-6"/></svg>',
+  bull_rebuttal: '<svg aria-hidden="true" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 12.5 12.5 3.5M6.5 3.5h6v6"/><path d="M2.5 5.5h3M2.5 8h2"/></svg>',
+  bear_rebuttal: '<svg aria-hidden="true" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 3.5l9 9M12.5 6.5v6h-6"/><path d="M2.5 5.5h3M2.5 8h2"/></svg>',
+  manager: '<svg aria-hidden="true" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="5" width="11" height="8" rx="2"/><path d="M6 5V3.6A1.6 1.6 0 0 1 7.6 2h.8A1.6 1.6 0 0 1 10 3.6V5M2.5 8.5h11"/></svg>',
 };
 
 const AGENTS = [
-  { key: "technical", label: "Technical", tip: "Reads trend, momentum (RSI/MACD), volatility and volume from numbers computed in Python" },
-  { key: "fundamental", label: "Fundamentals", tip: "Weighs growth, margins and valuation multiples" },
-  { key: "news", label: "News", tip: "Scans recent headlines for market-moving stories" },
-  { key: "bull", label: "Bull", stage2: true, tip: "Argues the strongest case for buying" },
-  { key: "bear", label: "Bear", stage2: true, tip: "Argues the strongest case against buying" },
-  { key: "bull_rebuttal", label: "Bull Rebuttal", stage2: true, rebuttal: true, tip: "Answers the bear's strongest points" },
-  { key: "bear_rebuttal", label: "Bear Rebuttal", stage2: true, rebuttal: true, tip: "Answers the bull's strongest points" },
-  { key: "manager", label: "Portfolio Manager", stage2: true, tip: "Weighs the debate and your portfolio, then calls BUY, HOLD or SELL" },
+  { key: "technical", label: "Technical", stage: "Research" },
+  { key: "fundamental", label: "Fundamentals", stage: "Research" },
+  { key: "news", label: "News", stage: "Research" },
+  { key: "bull", label: "Bull", stage: "Debate" },
+  { key: "bear", label: "Bear", stage: "Debate" },
+  { key: "bull_rebuttal", label: "Bull rebuttal", stage: "Debate", rebuttal: true },
+  { key: "bear_rebuttal", label: "Bear rebuttal", stage: "Debate", rebuttal: true },
+  { key: "manager", label: "Portfolio manager", stage: "Decision" },
 ];
 
+const LAST_RUN_KEY = "bta:lastRunId";
+const CLIENT_ID_KEY = "bta:clientId";
 const $ = (id) => document.getElementById(id);
-const state = { running: false, es: null, tickers: new Map(), runStartedAt: null, timer: null, debateRounds: 1 };
+const state = {
+  running: false,
+  finishing: false,
+  es: null,
+  runId: null,
+  tickers: new Map(),
+  runStartedAtMs: null,
+  timer: null,
+  debateRounds: 1,
+  streamWarningShown: false,
+};
 
-/* ---------- boot ---------- */
+/* ---------- boot and recovery ---------- */
 
-document.addEventListener("DOMContentLoaded", () => {
-  $("analyze-btn").addEventListener("click", startAnalysis);
+document.addEventListener("DOMContentLoaded", async () => {
+  $("analyze-btn").addEventListener("click", () => startAnalysis());
+  $("analyze-another-btn").addEventListener("click", () => analyzeAnother());
   $("ticker-input").addEventListener("keydown", (event) => {
     if (event.key === "Enter") startAnalysis();
   });
   document.querySelectorAll(".chip-btn").forEach((chip) => {
-    chip.addEventListener("click", () => {
-      $("ticker-input").value = chip.dataset.tickers;
-      $("ticker-input").focus();
-    });
+    chip.addEventListener("click", () => analyzeAnother(chip.dataset.tickers));
   });
-  fetch("/api/health")
-    .then((response) => response.json())
-    .then((health) => {
-      if (health.mock_mode) $("mode-chip").classList.remove("hidden");
-      state.debateRounds = health.debate_rounds || 1;
-      const providers = health.providers || {};
-      $("provider-line").textContent =
-        `data: ${providers.prices || "?"} prices, ${providers.fundamentals || "?"} fundamentals, ` +
-        `${providers.news_search || "?"} news search. model: ${health.llm_model || "mock"}`;
-    })
-    .catch(() => {});
+
+  try {
+    const response = await fetch("/api/health");
+    const health = await response.json();
+    if (health.mock_mode) $("mode-chip").classList.remove("hidden");
+    state.debateRounds = health.debate_rounds || 1;
+    const providers = health.providers || {};
+    $("provider-line").textContent =
+      `data: ${providers.prices || "?"} prices, ${providers.fundamentals || "?"} fundamentals, ` +
+      `${providers.news_search || "?"} news search. model: ${health.llm_model || "mock"}`;
+  } catch (_) {
+    // The analysis request will show a concrete error if the server is unavailable.
+  }
+  await restoreSavedRun();
 });
+
+function savedRunId() {
+  const queryRun = new URL(window.location.href).searchParams.get("run");
+  if (queryRun) return queryRun;
+  try { return localStorage.getItem(LAST_RUN_KEY); } catch (_) { return null; }
+}
+
+function persistRun(runId) {
+  state.runId = runId;
+  const url = new URL(window.location.href);
+  url.searchParams.set("run", runId);
+  window.history.replaceState({}, "", url);
+  try { localStorage.setItem(LAST_RUN_KEY, runId); } catch (_) {}
+}
+
+function clearSavedRun(runId) {
+  try {
+    if (!runId || localStorage.getItem(LAST_RUN_KEY) === runId) localStorage.removeItem(LAST_RUN_KEY);
+  } catch (_) {}
+  const url = new URL(window.location.href);
+  if (!runId || url.searchParams.get("run") === runId) {
+    url.searchParams.delete("run");
+    window.history.replaceState({}, "", url);
+  }
+}
+
+async function restoreSavedRun() {
+  const runId = savedRunId();
+  if (!runId) return;
+  try {
+    const response = await fetch(`/api/runs/${encodeURIComponent(runId)}`);
+    if (response.status === 404) {
+      clearSavedRun(runId);
+      showRestoreNotice("Your previous analysis is no longer available on this server. Start a new run when you’re ready.");
+      return;
+    }
+    if (!response.ok) throw new Error(`status ${response.status}`);
+    const run = await response.json();
+    persistRun(run.run_id);
+    beginRun(run.tickers, { startedAtMs: Number(run.started_at) * 1000, restoring: true });
+    if (run.status === "running") {
+      $("overall-status").textContent = "Restored active run · reconnecting";
+      openStream(run.run_id);
+      return;
+    }
+    hydrateResults(run.results || {}, true);
+    finishRun({ duration: run.duration_s, focusResults: false, failed: run.status === "failed" });
+    showRestoreNotice(run.status === "failed" ? "Restored an interrupted analysis. You can retry any ticker below." : "Restored your latest completed analysis.");
+  } catch (_) {
+    showRestoreNotice("We couldn’t restore the previous analysis. You can start a new run.");
+  }
+}
+
+function showRestoreNotice(message) {
+  const notice = $("restore-notice");
+  notice.textContent = message;
+  notice.classList.remove("hidden");
+}
 
 /* ---------- analysis ---------- */
 
-async function startAnalysis() {
+async function startAnalysis(prefilledTickers = null) {
   if (state.running) return;
-  const input = $("ticker-input").value.trim();
+  const input = Array.isArray(prefilledTickers) ? prefilledTickers.join(", ") : $("ticker-input").value.trim();
   if (!input) return;
-
-  const tickers = [...new Set(input.split(",").map((t) => t.trim().toUpperCase()).filter(Boolean))];
-  if (tickers.length > 5) { showError(`Max 5 tickers at once (you entered ${tickers.length}).`); return; }
+  const tickers = [...new Set(input.split(",").map((ticker) => ticker.trim().toUpperCase()).filter(Boolean))];
+  if (tickers.length > 5) {
+    showError(`Max 5 tickers at once (you entered ${tickers.length}).`);
+    return;
+  }
 
   hideError();
+  $("restore-notice").classList.add("hidden");
   try {
     const response = await fetch("/api/analyze", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ tickers }),
+      body: JSON.stringify({ tickers, client_id: getClientId() }),
     });
     if (!response.ok) {
       const body = await response.json().catch(() => ({}));
       showError(body.detail || `Analysis failed (${response.status})`);
       return;
     }
-    const { run_id: runId } = await response.json();
+    const payload = await response.json();
+    persistRun(payload.run_id);
     beginRun(tickers);
-    openStream(runId);
+    openStream(payload.run_id);
   } catch (error) {
     showError(`Could not reach the server: ${error.message}`);
   }
 }
 
-function beginRun(tickers) {
+function beginRun(tickers, options = {}) {
+  if (state.es) state.es.close();
+  state.es = null;
   state.running = true;
-  state.expandedAny = false;
-  const agentTotal = state.debateRounds >= 2 ? 8 : 6;
-  state.tickers = new Map(tickers.map((ticker) => [ticker, { agents: {}, done: 0, total: agentTotal }]));
-  state.runStartedAt = performance.now();
+  state.finishing = false;
+  state.streamWarningShown = false;
+  const agents = activeAgents();
+  state.tickers = new Map(tickers.map((ticker) => [ticker, {
+    agents: {}, completedAgents: new Set(), done: 0, total: agents.length, failed: false,
+  }]));
+  state.runStartedAtMs = options.startedAtMs || Date.now();
   $("analyze-btn").disabled = true;
   $("how-section").classList.add("hidden");
   $("results-section").classList.add("hidden");
+  $("analyze-another-btn").classList.add("hidden");
   $("results-list").innerHTML = "";
+  $("summary-panel").innerHTML = "";
   $("live-section").classList.remove("hidden");
   $("live-grid").innerHTML = "";
+  $("overall-status").textContent = options.restoring ? "Restoring analysis" : "Starting research";
   for (const ticker of tickers) renderProgressCard(ticker);
-  state.timer = window.setInterval(() => {
-    const seconds = ((performance.now() - state.runStartedAt) / 1000).toFixed(1);
-    $("run-timer").textContent = `· ${seconds}s`;
-  }, 100);
+  updateOverallProgress();
+  window.clearInterval(state.timer);
+  updateRunTimer();
+  state.timer = window.setInterval(updateRunTimer, 1000);
+}
+
+function activeAgents() {
+  return state.debateRounds >= 2 ? AGENTS : AGENTS.filter((agent) => !agent.rebuttal);
+}
+
+function updateRunTimer() {
+  const seconds = Math.max(0, (Date.now() - state.runStartedAtMs) / 1000).toFixed(0);
+  $("run-timer").textContent = `· ${seconds}s`;
 }
 
 function openStream(runId) {
-  if (state.es) state.es.close();
-  const source = new EventSource(`/api/runs/${runId}/events`);
+  const source = new EventSource(`/api/runs/${encodeURIComponent(runId)}/events`);
   state.es = source;
-  source.onmessage = (event) => {
-    const data = JSON.parse(event.data);
-    handleEvent(data);
-    if (data.type === "analysis_completed") {
+  source.onopen = () => {
+    if (state.running) $("overall-status").textContent = "Analysis in progress";
+    state.streamWarningShown = false;
+  };
+  source.onmessage = async (message) => {
+    const event = JSON.parse(message.data);
+    handleEvent(event);
+    if (event.type === "analysis_completed" && !state.finishing) {
+      state.finishing = true;
       source.close();
       state.es = null;
-      finishRun();
+      await syncRunResults(runId);
+      const failed = event.status === "failed";
+      finishRun({ duration: event.duration_s, focusResults: true, failed });
+      if (failed) showToast(event.error || "The run stopped before it could complete.", true);
     }
   };
   source.onerror = () => {
-    source.close();
-    if (state.running) {
-      state.es = null;
-      finishRun();
-      showToast("Stream interrupted, showing results gathered so far", true);
+    if (!state.running) return;
+    $("overall-status").textContent = "Connection interrupted · reconnecting";
+    if (!state.streamWarningShown) {
+      showToast("Live connection interrupted. Reconnecting automatically.", true);
+      state.streamWarningShown = true;
     }
   };
 }
 
-function finishRun() {
+async function syncRunResults(runId) {
+  try {
+    const response = await fetch(`/api/runs/${encodeURIComponent(runId)}`);
+    if (!response.ok) return;
+    const run = await response.json();
+    hydrateResults(run.results || {}, false);
+  } catch (_) {}
+}
+
+function hydrateResults(results, restored) {
+  Object.entries(results).forEach(([ticker, analysis]) => {
+    const entry = state.tickers.get(ticker);
+    if (!entry) return;
+    entry.analysis = analysis;
+    entry.done = entry.total;
+    entry.failed = Boolean(analysis.error);
+    setHeader(ticker, analysis.price, analysis.company_name, analysis.providers);
+    activeAgents().forEach((agent) => {
+      const result = analysis[agent.key];
+      const legacyRebuttal = agent.rebuttal && !(agent.key in analysis);
+      if (legacyRebuttal && !restored) return;
+      const available = agent.key === "manager" ? !analysis.error : Boolean(result);
+      const statusClass = legacyRebuttal ? "neutral" : available ? "done" : "failed";
+      const resultLabel = agent.key === "manager"
+        ? analysis.decision
+        : labelFor(agent.key, result?.signal, result?.confidence);
+      const statusText = legacyRebuttal
+        ? "Not recorded"
+        : available
+          ? `✓ ${resultLabel === "n/a" ? "Complete" : resultLabel}`
+          : "⚠ Unavailable";
+      setAgentStatus(ticker, agent.key, statusClass, statusText);
+      entry.completedAgents.add(agent.key);
+    });
+    updateProgress(ticker, entry);
+    renderResultCard(analysis);
+  });
+  renderSummaryTable();
+  if (restored && Object.keys(results).length) $("results-section").classList.remove("hidden");
+}
+
+function finishRun({ duration = null, focusResults = true, failed = false } = {}) {
   state.running = false;
+  state.finishing = false;
   $("analyze-btn").disabled = false;
   window.clearInterval(state.timer);
-  const seconds = ((performance.now() - state.runStartedAt) / 1000).toFixed(1);
-  $("run-timer").textContent = `· done in ${seconds}s`;
+  state.timer = null;
+  const elapsed = duration == null ? Math.max(0, (Date.now() - state.runStartedAtMs) / 1000) : Number(duration);
+  $("run-timer").textContent = `· ${failed ? "stopped" : "done"} in ${elapsed.toFixed(1)}s`;
+  $("overall-status").textContent = failed ? "Run stopped · partial results preserved" : "Analysis complete";
+  updateOverallProgress(true);
+  if ($("results-list").children.length) {
+    $("results-section").classList.remove("hidden");
+    $("analyze-another-btn").classList.remove("hidden");
+    if (focusResults) $("results-heading").focus({ preventScroll: false });
+  }
+}
+
+function analyzeAnother(prefill = "") {
+  if (state.running) return;
+  $("ticker-input").value = prefill;
+  $("ticker-input").focus();
+  $("ticker-input").scrollIntoView({ behavior: "smooth", block: "center" });
+}
+
+function retryTicker(ticker) {
+  analyzeAnother(ticker);
+  showToast(`${ticker} is ready to retry. Press Analyze Stocks when you’re ready.`);
 }
 
 /* ---------- SSE events -> progress UI ---------- */
@@ -137,7 +298,6 @@ function handleEvent(event) {
   const { ticker } = event;
   if (!ticker || !state.tickers.has(ticker)) return;
   const entry = state.tickers.get(ticker);
-
   switch (event.type) {
     case "ticker_data":
       setHeader(ticker, event.price, event.company_name, event.sources);
@@ -146,130 +306,139 @@ function handleEvent(event) {
       setAgentStatus(ticker, event.agent, "running", "Running…");
       break;
     case "agent_completed": {
-      const detail = event.signal ? ` · ${labelFor(event.agent, event.signal, event.confidence)}` : "";
-      setAgentStatus(ticker, event.agent, "done", `Complete ✓${detail}`, event.duration_s);
-      if (event.summary) entry.agents[event.agent] = { ...entry.agents[event.agent], signal: event.signal, confidence: event.confidence, summary: event.summary };
-      entry.done += 1;
+      const resultLabel = event.signal ? labelFor(event.agent, event.signal, event.confidence) : "Complete";
+      setAgentStatus(ticker, event.agent, "done", `✓ ${resultLabel}`, event.duration_s);
+      if (event.summary) entry.agents[event.agent] = { signal: event.signal, confidence: event.confidence, summary: event.summary };
+      markAgentDone(entry, event.agent);
       updateProgress(ticker, entry);
       break;
     }
     case "agent_failed":
-      setAgentStatus(ticker, event.agent, "failed", "Failed ⚠");
-      entry.done += 1;
+      setAgentStatus(ticker, event.agent, "failed", "⚠ Unavailable");
+      markAgentDone(entry, event.agent);
       updateProgress(ticker, entry);
       break;
     case "ticker_failed":
+      entry.failed = true;
+      entry.done = entry.total;
       setHeader(ticker, null, `failed: ${event.error || "market data unavailable"}`, null);
+      updateProgress(ticker, entry);
+      renderResultCard({ ticker, error: event.error || "Market data unavailable", decision: "HOLD", confidence: 0, risk_flags: [] });
+      renderSummaryTable();
       break;
     case "ticker_completed":
       entry.analysis = event.analysis;
+      entry.done = entry.total;
       entry.agents = {
         technical: event.analysis.technical, fundamental: event.analysis.fundamental,
         news: event.analysis.news, bull: event.analysis.bull, bear: event.analysis.bear,
+        bull_rebuttal: event.analysis.bull_rebuttal, bear_rebuttal: event.analysis.bear_rebuttal,
         manager: { signal: event.decision, confidence: event.confidence, summary: event.analysis.summary },
       };
+      updateProgress(ticker, entry);
       renderResultCard(event.analysis);
       renderSummaryTable();
-      if (!state.expandedAny) {
-        const card = document.getElementById(`result-${event.analysis.ticker}`);
-        if (card) { card.classList.add("open"); state.expandedAny = true; }
-      }
       break;
   }
 }
 
+function markAgentDone(entry, agent) {
+  if (entry.completedAgents.has(agent)) return;
+  entry.completedAgents.add(agent);
+  entry.done = Math.min(entry.total, entry.done + 1);
+}
+
 function updateProgress(ticker, entry) {
-  const fill = document.getElementById(`prog-${ticker}`);
-  const count = document.getElementById(`progc-${ticker}`);
-  if (!fill || !count || !entry.total) return;
+  const progress = $(`progress-${ticker}`);
+  const fill = $(`prog-${ticker}`);
+  const count = $(`progc-${ticker}`);
+  if (!progress || !fill || !count || !entry.total) return;
   const pct = Math.min(100, Math.round((entry.done / entry.total) * 100));
   fill.style.width = `${pct}%`;
-  count.textContent = `${entry.done}/${entry.total}`;
+  progress.setAttribute("aria-valuenow", String(pct));
+  count.textContent = entry.failed ? "Failed · retry available" : `${entry.done}/${entry.total}`;
+  updateOverallProgress();
+}
+
+function updateOverallProgress(forceComplete = false) {
+  const entries = [...state.tickers.values()];
+  const total = entries.reduce((sum, entry) => sum + entry.total, 0);
+  const done = entries.reduce((sum, entry) => sum + entry.done, 0);
+  const pct = forceComplete ? 100 : (total ? Math.min(100, Math.round((done / total) * 100)) : 0);
+  $("overall-progress-fill").style.width = `${pct}%`;
+  $("overall-progress").setAttribute("aria-valuenow", String(pct));
 }
 
 function labelFor(agent, signal, confidence) {
-  if (agent === "bull" || agent === "bear" || agent.endsWith("_rebuttal")) {
-    return `${Math.round((confidence ?? 0) * 100)}%`;
-  }
+  if (agent === "bull" || agent === "bear" || agent.endsWith("_rebuttal")) return `${Math.round((confidence ?? 0) * 100)}%`;
   const map = { bullish: "Bullish", bearish: "Bearish", neutral: "Neutral", positive: "Positive", negative: "Negative", unknown: "n/a" };
-  return map[signal] || signal;
+  return map[signal] || signal || "n/a";
 }
 
 /* ---------- rendering ---------- */
 
 function convictionLabel(confidence) {
   const pct = Math.round((confidence || 0) * 100);
-  if (pct >= 70) return "high";
-  if (pct >= 50) return "moderate";
-  return "low";
+  if (pct >= 70) return "High evidence";
+  if (pct >= 50) return "Moderate evidence";
+  return "Low evidence";
+}
+
+function decisionMeta(decision) {
+  return { BUY: { cls: "buy", icon: "▲" }, HOLD: { cls: "hold", icon: "■" }, SELL: { cls: "sell", icon: "▼" } }[decision] || { cls: "hold", icon: "■" };
+}
+
+function decisionBadge(analysis) {
+  const meta = decisionMeta(analysis.decision);
+  return `<span class="decision ${meta.cls}"><span class="d-icon" aria-hidden="true">${meta.icon}</span>${escapeHtml(analysis.decision || "HOLD")}</span>`;
 }
 
 function renderSummaryTable() {
-  const analyses = [...state.tickers.values()].map((e) => e.analysis).filter(Boolean);
+  const analyses = [...state.tickers.values()].map((entry) => entry.analysis).filter(Boolean);
+  const panel = $("summary-panel");
+  panel.innerHTML = "";
   if (!analyses.length) return;
-  const existing = document.getElementById("summary-table");
-  if (existing) existing.remove();
   const table = document.createElement("table");
   table.id = "summary-table";
   table.innerHTML = `
-    <thead><tr><th>Ticker</th><th>Decision</th><th class="num">Confidence</th><th class="num">Risk-sized</th><th>Risk</th></tr></thead>
-    <tbody>
-      ${analyses.map((a) => {
-        const cls = { BUY: "buy", HOLD: "hold", SELL: "sell" }[a.decision] || "hold";
-        const flags = a.risk_flags || [];
-        return `
-        <tr title="Click to open the full reasoning for ${a.ticker}" onclick="document.getElementById('result-${a.ticker}').classList.add('open')">
-          <td><strong>${a.ticker}</strong></td>
-          <td><span class="decision ${cls}">${a.decision}</span></td>
-          <td class="num" title="How strongly the evidence points one way - not a probability of profit">${Math.round((a.confidence || 0) * 100)}% ${convictionLabel(a.confidence)}</td>
-          <td class="num" title="Simulated dollars the risk layer suggests (scaled by confidence and volatility)">${a.suggested_size_usd ? fmtUsd(a.suggested_size_usd) : "—"}</td>
-          <td>${flags.length ? `<span class="flag-warn" title="${escapeHtml(flags.join(" · "))}">⚠ ${flags.length} flag${flags.length > 1 ? "s" : ""}</span>` : '<span class="flag-ok" title="No risk caps breached">✓ clear</span>'}</td>
-        </tr>`;
-      }).join("")}
-    </tbody>`;
-  const legend = document.createElement("p");
-  legend.className = "legend muted";
-  legend.innerHTML = "How to read this: <strong>Decision</strong> is a simulated research call, not investment advice · <strong>Confidence</strong> is the strength of evidence (high ≥70%, moderate 50–69%, low &lt;50%) · <strong>Risk-sized</strong> is the simulated position the risk layer suggests · <strong>⚠</strong> means the risk layer flagged or downgraded the trade. Click a row for the full reasoning.";
-  const section = document.getElementById("results-section");
-  section.insertBefore(table, document.getElementById("results-list"));
-  table.insertAdjacentElement("afterend", legend);
+    <caption class="sr-only">Decision summary for analyzed tickers</caption>
+    <thead><tr><th scope="col">Ticker</th><th scope="col">Decision</th><th scope="col" class="num">Evidence</th><th scope="col" class="num">Suggested size</th><th scope="col">Risk</th><th scope="col"><span class="sr-only">Action</span></th></tr></thead>
+    <tbody>${analyses.map((analysis) => {
+      const flags = analysis.risk_flags || [];
+      return `<tr>
+        <td data-label="Ticker"><strong>${escapeHtml(analysis.ticker)}</strong></td>
+        <td data-label="Decision">${decisionBadge(analysis)}</td>
+        <td data-label="Evidence" class="num">${Math.round((analysis.confidence || 0) * 100)}% · ${convictionLabel(analysis.confidence)}</td>
+        <td data-label="Suggested size" class="num">${analysis.suggested_size_usd ? fmtUsd(analysis.suggested_size_usd) : "—"}</td>
+        <td data-label="Risk">${analysis.error ? '<span class="flag-warn">⚠ Unavailable</span>' : flags.length ? `<span class="flag-warn">⚠ ${flags.length} flag${flags.length > 1 ? "s" : ""}</span>` : '<span class="flag-ok">✓ Clear</span>'}</td>
+        <td data-label="Action"><button class="table-open-btn" type="button" data-open-ticker="${escapeAttr(analysis.ticker)}">View evidence</button></td>
+      </tr>`;
+    }).join("")}</tbody>`;
+  $("summary-panel").appendChild(table);
+  $("summary-panel").insertAdjacentHTML("beforeend", '<p class="results-help"><strong>Confidence means evidence strength, not probability of profit.</strong> Suggested size is a simulated risk-layer output. Every call remains educational, not investment advice.</p>');
+  $("summary-panel").querySelectorAll("[data-open-ticker]").forEach((button) => button.addEventListener("click", () => openResult(button.dataset.openTicker)));
 }
 
 function renderProgressCard(ticker) {
-  const card = document.createElement("div");
+  const card = document.createElement("article");
   card.className = "ticker-card";
   card.id = `live-${ticker}`;
-  const agents = state.debateRounds >= 2 ? AGENTS : AGENTS.filter((agent) => !agent.rebuttal);
+  card.setAttribute("aria-labelledby", `live-title-${ticker}`);
+  const agents = activeAgents();
   card.innerHTML = `
-    <div class="ticker-head">
-      <span class="tk">${ticker} <span class="px" id="px-${ticker}">fetching data…</span></span>
-      <span class="src" id="src-${ticker}"></span>
-      <span class="muted prog-count" id="progc-${ticker}">0/${agents.length}</span>
-    </div>
-    <div class="run-progress"><div class="run-progress-fill" id="prog-${ticker}"></div></div>
-    ${agents.map(
-      (agent) => `
-      <div class="agent-row ${agent.stage2 ? "stage2" : ""}" title="${agent.tip}">
-        <span class="agent-left"><span class="agent-icon">${ICONS[agent.key]}</span>${agent.label}</span>
-        <span class="status" id="status-${ticker}-${agent.key}"><span class="icon"></span>Waiting</span>
-      </div>`
-    ).join("")}
-  `;
+    <div class="ticker-head"><span class="tk" id="live-title-${ticker}">${escapeHtml(ticker)} <span class="px" id="px-${ticker}">fetching data…</span></span><span class="src" id="src-${ticker}"></span><span class="muted prog-count" id="progc-${ticker}">0/${agents.length}</span></div>
+    <div class="run-progress" id="progress-${ticker}" role="progressbar" aria-label="${escapeAttr(ticker)} analysis progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div class="run-progress-fill" id="prog-${ticker}"></div></div>
+    ${agents.map((agent) => `<div class="agent-row ${agent.stage !== "Research" ? "stage2" : ""}"><span class="agent-left"><span class="agent-icon">${ICONS[agent.key]}</span><span>${agent.label}<small>${agent.stage}</small></span></span><span class="status" id="status-${ticker}-${agent.key}" role="status" aria-live="polite"><span class="icon" aria-hidden="true"></span>Waiting</span></div>`).join("")}`;
   $("live-grid").appendChild(card);
 }
 
 function setHeader(ticker, price, name, sources) {
   const priceElement = $(`px-${ticker}`);
   const sourceElement = $(`src-${ticker}`);
-  if (priceElement && price != null) {
-    priceElement.textContent = `$${Number(price).toFixed(2)}`;
-  } else if (priceElement && name && name.startsWith("failed:")) {
-    priceElement.textContent = name;
-  } else if (priceElement && name) {
-    priceElement.textContent = name;
-  }
+  if (priceElement && price != null) priceElement.textContent = `$${Number(price).toFixed(2)}`;
+  else if (priceElement && name) priceElement.textContent = name;
   if (sourceElement && sources) {
-    const unique = [...new Set([sources.prices, sources.fundamentals, sources.news].filter(Boolean))];
+    const unique = [...new Set([sources.prices, sources.fundamentals, sources.news].filter((source) => source && source !== "none"))];
     sourceElement.textContent = unique.length ? `via ${unique.join(" + ")}` : "";
   }
 }
@@ -278,104 +447,95 @@ function setAgentStatus(ticker, agent, statusClass, text, duration) {
   const element = $(`status-${ticker}-${agent}`);
   if (!element) return;
   element.className = `status ${statusClass}`;
-  element.innerHTML = `<span class="icon"></span>${text}${duration ? ` <span class="muted">${duration}s</span>` : ""}`;
+  const durationText = duration ? `${Number(duration).toFixed(1)}s` : "";
+  element.innerHTML = `<span class="icon" aria-hidden="true"></span><span class="status-label">${escapeHtml(text)}</span>${durationText ? `<span class="status-duration">${durationText}</span>` : ""}`;
+  element.setAttribute("aria-label", `${text}${durationText ? `, ${durationText}` : ""}`);
 }
 
-function signalClass(signal) {
-  return `sig-${signal || "unknown"}`;
+function signalClass(signal) { return `sig-${String(signal || "unknown").toLowerCase()}`; }
+
+function plainEnglish(analysis) {
+  const strength = convictionLabel(analysis.confidence).toLowerCase();
+  if (analysis.error) return "Analysis failed, so there is no reliable call for this ticker yet.";
+  const downgraded = (analysis.risk_flags || []).some((flag) => flag.toLowerCase().includes("downgraded"));
+  if (analysis.decision === "BUY") return analysis.suggested_size_usd ? `The bull case won with ${strength}. For this simulation, the risk layer suggests ${fmtUsd(analysis.suggested_size_usd)}.` : `The bull case won with ${strength}, but the risk layer did not size a position.`;
+  if (analysis.decision === "SELL") return `The bear case won with ${strength}. The agents suggest exiting or staying away.`;
+  return downgraded ? "The evidence leaned positive, but a risk rule held the trade back. Review the flags before acting." : `The evidence is mixed with ${strength}. The agents suggest standing pat.`;
 }
 
-function plainEnglish(a) {
-  const word = convictionLabel(a.confidence);
-  if (a.error) return "Analysis failed — no reliable call for this ticker.";
-  const downgraded = (a.risk_flags || []).some((f) => f.includes("downgraded"));
-  if (a.decision === "BUY") {
-    return a.suggested_size_usd
-      ? `The bull case won the debate (${word} conviction). For this simulation the risk layer suggests a position of ${fmtUsd(a.suggested_size_usd)}.`
-      : `The bull case won the debate (${word} conviction), but the risk layer did not size a position.`;
-  }
-  if (a.decision === "SELL") {
-    return `The bear case won the debate (${word} conviction) — the agents suggest exiting or staying away.`;
-  }
-  return downgraded
-    ? "Evidence pointed up, but the risk layer held the trade back — see the warning below."
-    : `Evidence is mixed (${word} conviction) — the agents suggest standing pat.`;
+function evidenceCard(title, description, result, agent) {
+  const signal = result?.signal || "unknown";
+  return `<article class="evidence-card"><div class="mc-title">${escapeHtml(title)}</div><p class="mc-help">${escapeHtml(description)}</p><div class="mc-sig ${signalClass(signal)}">${escapeHtml(labelFor(agent, signal, result?.confidence))}</div><p class="mc-sum">${escapeHtml(result?.summary || "No reliable evidence was returned for this section.")}</p></article>`;
 }
 
-function miniCard(title, signal, scoreText, summary, tip) {
-  return `
-    <div class="mini-card"${tip ? ` title="${tip}"` : ""}>
-      <div class="mc-title">${title}</div>
-      <div class="mc-sig ${signalClass(signal)}">${scoreText}</div>
-      <div class="mc-sum">${escapeHtml(summary || "")}</div>
-    </div>`;
+function providerText(providers) {
+  const values = Object.entries(providers || {}).filter(([, value]) => value && value !== "none");
+  return values.length ? values.map(([kind, provider]) => `${kind}: ${provider}`).join(" · ") : "Provider metadata unavailable";
+}
+
+function renderSources(references) {
+  const sources = (references || []).filter((source) => source && source.title);
+  if (!sources.length) return '<p class="empty-sources">No linked news sources were available for this run.</p>';
+  return `<ul class="source-list">${sources.map((source) => {
+    const url = safeUrl(source.url);
+    const title = escapeHtml(source.title);
+    const titleMarkup = url ? `<a href="${escapeAttr(url)}" target="_blank" rel="noopener noreferrer">${title}<span aria-hidden="true"> ↗</span><span class="sr-only"> (opens in a new tab)</span></a>` : `<span>${title}</span>`;
+    return `<li>${titleMarkup}<div>${escapeHtml(source.provider || "Unknown publisher")}${source.published_at ? ` · ${escapeHtml(formatDate(source.published_at))}` : ""}</div></li>`;
+  }).join("")}</ul>`;
 }
 
 function renderResultCard(analysis) {
   $("results-section").classList.remove("hidden");
-  const card = document.createElement("div");
-  card.className = "result-card";
-  card.id = `result-${analysis.ticker}`;
-
-  const decisionMeta = {
-    BUY: { cls: "buy", icon: "▲" },
-    HOLD: { cls: "hold", icon: "■" },
-    SELL: { cls: "sell", icon: "▼" },
-  }[analysis.decision] || { cls: "hold", icon: "■" };
+  const ticker = analysis.ticker;
+  const card = document.createElement("article");
+  card.className = `result-card${analysis.error ? " result-error" : ""}`;
+  card.id = `result-${ticker}`;
+  const detailId = `result-detail-${ticker}`;
   const confidencePct = Math.round((analysis.confidence || 0) * 100);
-  const canAdd = analysis.decision === "BUY" && analysis.price;
+  const flags = analysis.risk_flags || [];
+  const canAdd = analysis.decision === "BUY" && analysis.price && !analysis.error;
   const positionSize = analysis.suggested_size_usd || 10000;
-  const defaultQty = analysis.price ? Math.floor(positionSize / analysis.price) : 0;
+  const defaultQty = analysis.price ? Math.max(1, Math.floor(positionSize / analysis.price)) : 0;
+  const asOf = analysis.as_of ? formatDateTime(analysis.as_of) : "Timestamp unavailable";
 
   card.innerHTML = `
-    <div class="result-summary" onclick="this.parentElement.classList.toggle('open')">
-      <span class="tk">${analysis.ticker}</span>
-      <span class="decision ${decisionMeta.cls}"><span class="d-icon">${decisionMeta.icon}</span>${analysis.decision}</span>
-      <div class="confidence">${confidencePct}%<div class="conf-bar"><span style="width:${confidencePct}%"></span></div></div>
-      <span class="company">${escapeHtml(analysis.company_name || "")}</span>
-      <span class="dur">${analysis.duration_s}s</span>
-      <span class="caret">▶</span>
+    <button class="result-summary" type="button" aria-expanded="false" aria-controls="${detailId}"><span class="result-identity"><span class="tk">${escapeHtml(ticker)}</span><span class="company">${escapeHtml(analysis.company_name || "Company name unavailable")}</span></span>${decisionBadge(analysis)}<span class="summary-action">Evidence &amp; sources <span class="caret" aria-hidden="true">▶</span></span></button>
+    <div class="decision-brief">
+      <div class="decision-facts"><div><span>Current price</span><strong>${analysis.price != null ? `$${Number(analysis.price).toFixed(2)}` : "Unavailable"}</strong></div><div><span>Data as of</span><strong>${escapeHtml(asOf)}</strong></div><div><span>Confidence</span><strong>${confidencePct}% · ${convictionLabel(analysis.confidence)}</strong><small>Evidence strength, not profit probability.</small></div><div><span>Suggested size</span><strong>${analysis.suggested_size_usd ? fmtUsd(analysis.suggested_size_usd) : "No position"}</strong><small>Simulated risk-layer output.</small></div></div>
+      <div class="manager-conclusion"><span class="eyebrow">Manager conclusion</span><p class="plain-english">${escapeHtml(plainEnglish(analysis))}</p><p class="thesis">${escapeHtml(analysis.summary || analysis.error || "No manager summary was returned.")}</p></div>
+      ${analysis.error ? `<div class="risk-flags"><strong>Analysis unavailable</strong><span>⚠ ${escapeHtml(analysis.error)}</span></div>` : flags.length ? `<div class="risk-flags"><strong>Risk flags</strong>${flags.map((flag) => `<span>⚠ ${escapeHtml(flag)}</span>`).join("")}</div>` : '<div class="risk-clear"><span aria-hidden="true">✓</span> No risk rules were triggered.</div>'}
     </div>
-    <div class="result-detail">
-      <div class="decision-headline">
-        <span class="decision ${decisionMeta.cls}"><span class="d-icon">${decisionMeta.icon}</span>${analysis.decision}</span>
-        <span class="muted">${confidencePct}% confidence (${convictionLabel(analysis.confidence)})${analysis.price ? ` · $${Number(analysis.price).toFixed(2)}` : ""}</span>
-      </div>
-      <p class="plain-english">${escapeHtml(plainEnglish(analysis))}</p>
-      <p class="thesis" title="The Portfolio Manager's own summary of the decision">${escapeHtml(analysis.summary || "")}</p>
-      ${(analysis.risk_flags || []).length ? `<div class="risk-flags">${analysis.risk_flags.map((f) => `⚠ ${escapeHtml(f)}`).join("<br>")}</div>` : ""}
-      <div class="grid-3">
-        ${miniCard("Technical", analysis.technical?.signal, labelFor("technical", analysis.technical?.signal), analysis.technical?.summary, "Trend, momentum (RSI/MACD), volatility and volume - computed, not guessed")}
-        ${miniCard("Fundamentals", analysis.fundamental?.signal, labelFor("fundamental", analysis.fundamental?.signal), analysis.fundamental?.summary, "Growth, margins and valuation multiples")}
-        ${miniCard("News", analysis.news?.signal, labelFor("news", analysis.news?.signal), analysis.news?.summary, "Recent headlines and what would actually move the stock")}
-      </div>
-      <div class="debate">
-        <div class="mini-card" title="Strength of the buy argument after the rebuttal round">
-          <div class="mc-title">Bull Case</div>
-          <div class="mc-score">strength ${Math.round((analysis.bull?.confidence ?? 0) * 100)}%</div>
-          <div class="mc-sum">${escapeHtml(analysis.bull?.summary || analysis.bull_case || "")}</div>
-        </div>
-        <div class="mini-card bear-side" title="Seriousness of the risks after the rebuttal round">
-          <div class="mc-title">Bear Case</div>
-          <div class="mc-score">risk ${Math.round((analysis.bear?.confidence ?? 0) * 100)}%</div>
-          <div class="mc-sum">${escapeHtml(analysis.bear?.summary || analysis.bear_case || "")}</div>
-        </div>
-      </div>
-      <div class="add-row">
-        ${canAdd
-          ? `<label for="qty-${analysis.ticker}">Shares</label>
-             <input id="qty-${analysis.ticker}" type="number" min="1" step="1" value="${defaultQty}">
-             <button class="add-btn" id="add-${analysis.ticker}" onclick="addToPortfolio('${analysis.ticker}', ${analysis.price})">Add to Demo Portfolio</button>
-             <span class="muted" title="Pre-filled from the risk layer's suggested size (confidence- and volatility-scaled)">risk-sized ${fmtUsd(positionSize)}</span>
-             <span class="added-note hidden" id="added-${analysis.ticker}"></span>`
-          : `<span class="muted">Demo portfolio additions are offered for BUY recommendations.</span>`}
-      </div>
-    </div>
-  `;
-  const list = $("results-list");
-  const existing = $(`result-${analysis.ticker}`);
-  if (existing) existing.remove();
-  list.appendChild(card);
+    <div class="result-detail" id="${detailId}" hidden>
+      <section class="result-block" aria-labelledby="evidence-title-${ticker}"><div class="block-heading"><div><span class="eyebrow">Evidence</span><h3 id="evidence-title-${ticker}">What the researchers found</h3></div><p>Signals summarize the direction of available evidence; open each source below to verify the underlying news.</p></div><div class="grid-3">${evidenceCard("Technical", "Trend, momentum, volatility and volume", analysis.technical, "technical")}${evidenceCard("Fundamentals", "Growth, margins and valuation", analysis.fundamental, "fundamental")}${evidenceCard("News", "Recent potentially market-moving headlines", analysis.news, "news")}</div></section>
+      <section class="result-block" aria-labelledby="debate-title-${ticker}"><div class="block-heading"><div><span class="eyebrow">Debate</span><h3 id="debate-title-${ticker}">Strongest cases on both sides</h3></div><p>Strength scores describe each argument, not expected return.</p></div><div class="debate"><article class="debate-side bull-side"><div class="mc-title">▲ Bull case</div><div class="mc-score">${Math.round((analysis.bull?.confidence ?? 0) * 100)}% argument strength</div><p class="mc-sum">${escapeHtml(analysis.bull?.summary || analysis.bull_case || "No bull case was returned.")}</p></article><article class="debate-side bear-side"><div class="mc-title">▼ Bear case</div><div class="mc-score">${Math.round((analysis.bear?.confidence ?? 0) * 100)}% risk strength</div><p class="mc-sum">${escapeHtml(analysis.bear?.summary || analysis.bear_case || "No bear case was returned.")}</p></article></div></section>
+      <section class="result-block sources-block" aria-labelledby="sources-title-${ticker}"><div class="block-heading"><div><span class="eyebrow">Sources</span><h3 id="sources-title-${ticker}">Check the evidence yourself</h3></div><p>${escapeHtml(providerText(analysis.providers))}</p></div>${renderSources(analysis.source_references)}</section>
+      <div class="result-actions">${canAdd ? `<div class="add-row"><label for="qty-${ticker}">Shares</label><input id="qty-${ticker}" type="number" min="1" step="1" value="${defaultQty}"><button class="add-btn" id="add-${ticker}" type="button">Add to Demo Portfolio</button><span class="muted">Prefilled from the suggested size (${fmtUsd(positionSize)})</span><span class="added-note hidden" id="added-${ticker}" role="status"></span></div>` : '<span class="muted">Demo portfolio additions are offered for BUY recommendations.</span>'}<button class="secondary-btn retry-btn" type="button">Retry ${escapeHtml(ticker)}</button></div>
+    </div>`;
+
+  const existing = $(`result-${ticker}`);
+  if (existing) existing.replaceWith(card); else $("results-list").appendChild(card);
+  card.querySelector(".result-summary").addEventListener("click", () => toggleResult(card));
+  card.querySelector(".retry-btn").addEventListener("click", () => retryTicker(ticker));
+  if (canAdd) $(`add-${ticker}`).addEventListener("click", () => addToPortfolio(ticker, Number(analysis.price)));
+  const entry = state.tickers.get(ticker);
+  if (entry) entry.analysis = analysis;
+}
+
+function toggleResult(card, forceOpen = null) {
+  const summary = card.querySelector(".result-summary");
+  const detail = card.querySelector(".result-detail");
+  const open = forceOpen == null ? summary.getAttribute("aria-expanded") !== "true" : forceOpen;
+  summary.setAttribute("aria-expanded", String(open));
+  detail.hidden = !open;
+  card.classList.toggle("open", open);
+}
+
+function openResult(ticker) {
+  const card = $(`result-${ticker}`);
+  if (!card) return;
+  toggleResult(card, true);
+  card.querySelector(".result-summary").focus();
+  card.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 /* ---------- portfolio ---------- */
@@ -385,14 +545,10 @@ async function addToPortfolio(ticker, price) {
   const qtyInput = $(`qty-${ticker}`);
   const note = $(`added-${ticker}`);
   const quantity = Number(qtyInput.value);
-  if (!quantity || quantity <= 0) { showToast("Enter a share quantity first", true); return; }
+  if (!quantity || quantity <= 0) { showToast("Enter a share quantity first", true); qtyInput.focus(); return; }
   button.disabled = true;
   try {
-    const response = await fetch("/api/portfolio/add", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ticker, quantity, entry_price: price }),
-    });
+    const response = await fetch("/api/portfolio/add", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ticker, quantity, entry_price: price }) });
     if (!response.ok) {
       const body = await response.json().catch(() => ({}));
       throw new Error(body.detail || `failed (${response.status})`);
@@ -406,10 +562,42 @@ async function addToPortfolio(ticker, price) {
   }
 }
 
-/* ---------- utils ---------- */
+/* ---------- utilities ---------- */
 
-function fmtUsd(value) {
-  return `$${Number(value).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
+function fmtUsd(value) { return `$${Number(value).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`; }
+
+function formatDate(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+  return new Intl.DateTimeFormat(undefined, { year: "numeric", month: "short", day: "numeric" }).format(date);
+}
+
+function formatDateTime(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+  return new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(date);
+}
+
+function safeUrl(value) {
+  if (!value) return "";
+  try {
+    const url = new URL(value);
+    return ["http:", "https:"].includes(url.protocol) ? url.href : "";
+  } catch (_) { return ""; }
+}
+
+function getClientId() {
+  try {
+    const existing = localStorage.getItem(CLIENT_ID_KEY);
+    if (existing) return existing;
+    const created = globalThis.crypto?.randomUUID
+      ? globalThis.crypto.randomUUID()
+      : `device_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+    localStorage.setItem(CLIENT_ID_KEY, created);
+    return created;
+  } catch (_) {
+    return `device_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+  }
 }
 
 function showError(message) { $("error-msg").textContent = message; $("error-msg").classList.remove("hidden"); }
@@ -420,8 +608,9 @@ function showToast(message, isError = false) {
   const toast = $("toast");
   toast.textContent = message;
   toast.className = `toast${isError ? " error" : ""}`;
+  toast.setAttribute("role", isError ? "alert" : "status");
   window.clearTimeout(toastTimer);
-  toastTimer = window.setTimeout(() => toast.classList.add("hidden"), 3200);
+  toastTimer = window.setTimeout(() => toast.classList.add("hidden"), 4200);
 }
 
 function escapeHtml(text) {
@@ -429,3 +618,5 @@ function escapeHtml(text) {
   div.textContent = text == null ? "" : String(text);
   return div.innerHTML;
 }
+
+function escapeAttr(text) { return escapeHtml(text).replaceAll('"', "&quot;").replaceAll("'", "&#39;"); }

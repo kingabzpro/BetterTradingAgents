@@ -35,6 +35,7 @@ simulated portfolio.
 | ⚔️ | **Real debate** | Bull and bear each get a rebuttal round to answer the other's strongest points before the call. |
 | ⚖️ | **Risk-gated decisions** | BUYs are volatility-scaled and capped by per-ticker, invested, and cash-buffer limits — downgrades are flagged, never silent. |
 | 📡 | **Live, honest progress** | Server-Sent Events stream every agent state, with per-ticker progress bars as it happens. |
+| 🕘 | **Durable run history** | Completed and interrupted analyses are saved in SQLite and can be reopened from the Runs page. |
 | 🛡️ | **Resilient runs** | If an agent fails, the Portfolio Manager receives the available inputs and still makes a call. |
 | 📊 | **Real market data** | Finnhub, Olostep, and yfinance provide fundamentals, news, and price history. |
 | 🧠 | **Model flexibility** | Use any OpenAI-compatible LLM, including OpenRouter, DeepSeek, Qwen, GLM, vLLM, and llama.cpp. |
@@ -157,7 +158,7 @@ optional; without an LLM key, the app starts in mock mode.
 | `DEBATE_ROUNDS` | `2` | Bull/bear debate depth: `1` = single round, `2`+ adds one rebuttal exchange (capped at 3) |
 | `STARTING_CASH` | `100000` | Initial simulated portfolio balance |
 | `DEFAULT_POSITION_SIZE` | `10000` | Suggested position value |
-| `DB_PATH` | `portfolio.db` | SQLite portfolio database path |
+| `DB_PATH` | `portfolio.db` | SQLite app database path for portfolio positions and run history |
 | `MAX_POSITION_PCT` | `0.10` | Risk gate: max fraction of equity in one ticker |
 | `MAX_INVESTED_PCT` | `0.60` | Risk gate: max fraction of equity invested |
 | `MIN_CASH_PCT` | `0.10` | Risk gate: min cash buffer after a BUY |
@@ -171,11 +172,19 @@ is connected and no real orders are placed.
 
 ![Demo portfolio](docs/screenshots/portfolio.png)
 
+## Run history
+
+Every analysis is saved to SQLite and listed newest-first on the **Runs** page. History is scoped
+to an anonymous ID stored in the browser, so one device does not list another device's runs. A
+direct `?run=<id>` link can still reopen a specific result, including after a server restart.
+
 ## API
 
 | Method | Route | Purpose |
 |:---:|---|---|
 | `POST` | `/api/analyze` | Start an analysis run for one or more tickers |
+| `GET` | `/api/runs` | List saved analysis runs, newest first |
+| `DELETE` | `/api/runs` | Clear the current browser's finished run history |
 | `GET` | `/api/runs/{run_id}` | Read run status and complete results |
 | `GET` | `/api/runs/{run_id}/events` | Stream live progress over SSE |
 | `GET` | `/api/portfolio` | List positions with live prices and profit/loss |
@@ -220,7 +229,8 @@ app/
   risk.py        deterministic sizing + exposure caps
   agents/        one module per agent (prompt, schema, mock fallback)
   tools/         market data (Finnhub/Olostep/yfinance), indicators
-  runs.py        in-memory run store with event fan-out
+  runs.py        active run coordination and event fan-out
+  run_history.py SQLite persistence for completed/interrupted runs
   portfolio.py   SQLite positions, closes, realized P&L
 static/          vanilla HTML/CSS/JS, no build step
 scripts/         sanity checks

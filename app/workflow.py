@@ -15,7 +15,7 @@ from typing import Any, Awaitable, Callable
 from app import risk
 from app.agents import bear, bull, fundamental, manager, news, technical
 from app.config import settings
-from app.models import AgentResult, PortfolioSummary, StockAnalysis
+from app.models import AgentResult, PortfolioSummary, SourceReference, StockAnalysis
 from app.tools.indicators import compute_indicators
 from app.tools.market_data import get_stock_data
 
@@ -171,6 +171,33 @@ def _portfolio_context(summary: PortfolioSummary | None) -> list[dict] | str:
     ]
 
 
+def _source_references(market: Any) -> list[SourceReference]:
+    """Reduce provider payloads to safe provenance metadata for the UI."""
+    references: list[SourceReference] = []
+    seen: set[tuple[str, str]] = set()
+    fallback_provider = market.sources.get("news", "unknown")
+    for item in market.news[:8]:
+        title = str(item.get("title") or "").strip()
+        if not title:
+            continue
+        provider = str(item.get("source") or fallback_provider).strip() or "unknown"
+        url = str(item.get("url") or "").strip()
+        key = (title.casefold(), url)
+        if key in seen:
+            continue
+        seen.add(key)
+        references.append(
+            SourceReference(
+                kind="news",
+                title=title[:240],
+                provider=provider[:100],
+                url=url,
+                published_at=str(item.get("published") or "").strip() or None,
+            )
+        )
+    return references
+
+
 async def analyze_ticker(
     ticker: str, emit: Emit, portfolio_summary: PortfolioSummary | None = None
 ) -> StockAnalysis:
@@ -275,6 +302,8 @@ async def analyze_ticker(
     bear_final = bear_rebuttal or bear_data
     bull_r = bull.to_result(bull_final, ticker) if bull_final else None
     bear_r = bear.to_result(bear_final, ticker) if bear_final else None
+    bull_rebuttal_r = bull.to_result(bull_rebuttal, ticker) if bull_rebuttal else None
+    bear_rebuttal_r = bear.to_result(bear_rebuttal, ticker) if bear_rebuttal else None
 
     # Stage 3: portfolio manager (sees existing holdings so decisions account
     # for exposure already taken; the debate transcript shows how the final
@@ -342,9 +371,14 @@ async def analyze_ticker(
         news=news_r,
         bull=bull_r,
         bear=bear_r,
+        bull_rebuttal=bull_rebuttal_r,
+        bear_rebuttal=bear_rebuttal_r,
         duration_s=round(time.perf_counter() - started, 1),
         suggested_size_usd=size_usd,
         risk_flags=risk_flags,
+        as_of=market.as_of,
+        providers={str(key): str(value) for key, value in market.sources.items()},
+        source_references=_source_references(market),
     )
     logger.info(
         "[analysis] %s completed in %.1fs (%s)", ticker, analysis.duration_s, decision
