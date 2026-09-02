@@ -12,14 +12,14 @@ const ICONS = {
 };
 
 const AGENTS = [
-  { key: "technical", label: "Technical" },
-  { key: "fundamental", label: "Fundamentals" },
-  { key: "news", label: "News" },
-  { key: "bull", label: "Bull", stage2: true },
-  { key: "bear", label: "Bear", stage2: true },
-  { key: "bull_rebuttal", label: "Bull Rebuttal", stage2: true, rebuttal: true },
-  { key: "bear_rebuttal", label: "Bear Rebuttal", stage2: true, rebuttal: true },
-  { key: "manager", label: "Portfolio Manager", stage2: true },
+  { key: "technical", label: "Technical", tip: "Reads trend, momentum (RSI/MACD), volatility and volume from numbers computed in Python" },
+  { key: "fundamental", label: "Fundamentals", tip: "Weighs growth, margins and valuation multiples" },
+  { key: "news", label: "News", tip: "Scans recent headlines for market-moving stories" },
+  { key: "bull", label: "Bull", stage2: true, tip: "Argues the strongest case for buying" },
+  { key: "bear", label: "Bear", stage2: true, tip: "Argues the strongest case against buying" },
+  { key: "bull_rebuttal", label: "Bull Rebuttal", stage2: true, rebuttal: true, tip: "Answers the bear's strongest points" },
+  { key: "bear_rebuttal", label: "Bear Rebuttal", stage2: true, rebuttal: true, tip: "Answers the bull's strongest points" },
+  { key: "manager", label: "Portfolio Manager", stage2: true, tip: "Weighs the debate and your portfolio, then calls BUY, HOLD or SELL" },
 ];
 
 const $ = (id) => document.getElementById(id);
@@ -197,6 +197,13 @@ function labelFor(agent, signal, confidence) {
 
 /* ---------- rendering ---------- */
 
+function convictionLabel(confidence) {
+  const pct = Math.round((confidence || 0) * 100);
+  if (pct >= 70) return "high";
+  if (pct >= 50) return "moderate";
+  return "low";
+}
+
 function renderSummaryTable() {
   const analyses = [...state.tickers.values()].map((e) => e.analysis).filter(Boolean);
   if (!analyses.length) return;
@@ -211,17 +218,21 @@ function renderSummaryTable() {
         const cls = { BUY: "buy", HOLD: "hold", SELL: "sell" }[a.decision] || "hold";
         const flags = a.risk_flags || [];
         return `
-        <tr onclick="document.getElementById('result-${a.ticker}').classList.add('open')">
+        <tr title="Click to open the full reasoning for ${a.ticker}" onclick="document.getElementById('result-${a.ticker}').classList.add('open')">
           <td><strong>${a.ticker}</strong></td>
           <td><span class="decision ${cls}">${a.decision}</span></td>
-          <td class="num">${Math.round((a.confidence || 0) * 100)}%</td>
-          <td class="num">${a.suggested_size_usd ? fmtUsd(a.suggested_size_usd) : "—"}</td>
-          <td>${flags.length ? `<span class="flag-warn">⚠ ${flags.length} flag${flags.length > 1 ? "s" : ""}</span>` : '<span class="flag-ok">✓ clear</span>'}</td>
+          <td class="num" title="How strongly the evidence points one way - not a probability of profit">${Math.round((a.confidence || 0) * 100)}% ${convictionLabel(a.confidence)}</td>
+          <td class="num" title="Simulated dollars the risk layer suggests (scaled by confidence and volatility)">${a.suggested_size_usd ? fmtUsd(a.suggested_size_usd) : "—"}</td>
+          <td>${flags.length ? `<span class="flag-warn" title="${escapeHtml(flags.join(" · "))}">⚠ ${flags.length} flag${flags.length > 1 ? "s" : ""}</span>` : '<span class="flag-ok" title="No risk caps breached">✓ clear</span>'}</td>
         </tr>`;
       }).join("")}
     </tbody>`;
+  const legend = document.createElement("p");
+  legend.className = "legend muted";
+  legend.innerHTML = "How to read this: <strong>Decision</strong> is a simulated research call, not investment advice · <strong>Confidence</strong> is the strength of evidence (high ≥70%, moderate 50–69%, low &lt;50%) · <strong>Risk-sized</strong> is the simulated position the risk layer suggests · <strong>⚠</strong> means the risk layer flagged or downgraded the trade. Click a row for the full reasoning.";
   const section = document.getElementById("results-section");
   section.insertBefore(table, document.getElementById("results-list"));
+  table.insertAdjacentElement("afterend", legend);
 }
 
 function renderProgressCard(ticker) {
@@ -238,7 +249,7 @@ function renderProgressCard(ticker) {
     <div class="run-progress"><div class="run-progress-fill" id="prog-${ticker}"></div></div>
     ${agents.map(
       (agent) => `
-      <div class="agent-row ${agent.stage2 ? "stage2" : ""}">
+      <div class="agent-row ${agent.stage2 ? "stage2" : ""}" title="${agent.tip}">
         <span class="agent-left"><span class="agent-icon">${ICONS[agent.key]}</span>${agent.label}</span>
         <span class="status" id="status-${ticker}-${agent.key}"><span class="icon"></span>Waiting</span>
       </div>`
@@ -274,9 +285,26 @@ function signalClass(signal) {
   return `sig-${signal || "unknown"}`;
 }
 
-function miniCard(title, signal, scoreText, summary) {
+function plainEnglish(a) {
+  const word = convictionLabel(a.confidence);
+  if (a.error) return "Analysis failed — no reliable call for this ticker.";
+  const downgraded = (a.risk_flags || []).some((f) => f.includes("downgraded"));
+  if (a.decision === "BUY") {
+    return a.suggested_size_usd
+      ? `The bull case won the debate (${word} conviction). For this simulation the risk layer suggests a position of ${fmtUsd(a.suggested_size_usd)}.`
+      : `The bull case won the debate (${word} conviction), but the risk layer did not size a position.`;
+  }
+  if (a.decision === "SELL") {
+    return `The bear case won the debate (${word} conviction) — the agents suggest exiting or staying away.`;
+  }
+  return downgraded
+    ? "Evidence pointed up, but the risk layer held the trade back — see the warning below."
+    : `Evidence is mixed (${word} conviction) — the agents suggest standing pat.`;
+}
+
+function miniCard(title, signal, scoreText, summary, tip) {
   return `
-    <div class="mini-card">
+    <div class="mini-card"${tip ? ` title="${tip}"` : ""}>
       <div class="mc-title">${title}</div>
       <div class="mc-sig ${signalClass(signal)}">${scoreText}</div>
       <div class="mc-sum">${escapeHtml(summary || "")}</div>
@@ -311,22 +339,23 @@ function renderResultCard(analysis) {
     <div class="result-detail">
       <div class="decision-headline">
         <span class="decision ${decisionMeta.cls}"><span class="d-icon">${decisionMeta.icon}</span>${analysis.decision}</span>
-        <span class="muted">${confidencePct}% confidence${analysis.price ? ` · $${Number(analysis.price).toFixed(2)}` : ""}</span>
+        <span class="muted">${confidencePct}% confidence (${convictionLabel(analysis.confidence)})${analysis.price ? ` · $${Number(analysis.price).toFixed(2)}` : ""}</span>
       </div>
-      <p class="thesis">${escapeHtml(analysis.summary || "")}</p>
+      <p class="plain-english">${escapeHtml(plainEnglish(analysis))}</p>
+      <p class="thesis" title="The Portfolio Manager's own summary of the decision">${escapeHtml(analysis.summary || "")}</p>
       ${(analysis.risk_flags || []).length ? `<div class="risk-flags">${analysis.risk_flags.map((f) => `⚠ ${escapeHtml(f)}`).join("<br>")}</div>` : ""}
       <div class="grid-3">
-        ${miniCard("Technical", analysis.technical?.signal, labelFor("technical", analysis.technical?.signal), analysis.technical?.summary)}
-        ${miniCard("Fundamentals", analysis.fundamental?.signal, labelFor("fundamental", analysis.fundamental?.signal), analysis.fundamental?.summary)}
-        ${miniCard("News", analysis.news?.signal, labelFor("news", analysis.news?.signal), analysis.news?.summary)}
+        ${miniCard("Technical", analysis.technical?.signal, labelFor("technical", analysis.technical?.signal), analysis.technical?.summary, "Trend, momentum (RSI/MACD), volatility and volume - computed, not guessed")}
+        ${miniCard("Fundamentals", analysis.fundamental?.signal, labelFor("fundamental", analysis.fundamental?.signal), analysis.fundamental?.summary, "Growth, margins and valuation multiples")}
+        ${miniCard("News", analysis.news?.signal, labelFor("news", analysis.news?.signal), analysis.news?.summary, "Recent headlines and what would actually move the stock")}
       </div>
       <div class="debate">
-        <div class="mini-card">
+        <div class="mini-card" title="Strength of the buy argument after the rebuttal round">
           <div class="mc-title">Bull Case</div>
           <div class="mc-score">strength ${Math.round((analysis.bull?.confidence ?? 0) * 100)}%</div>
           <div class="mc-sum">${escapeHtml(analysis.bull?.summary || analysis.bull_case || "")}</div>
         </div>
-        <div class="mini-card bear-side">
+        <div class="mini-card bear-side" title="Seriousness of the risks after the rebuttal round">
           <div class="mc-title">Bear Case</div>
           <div class="mc-score">risk ${Math.round((analysis.bear?.confidence ?? 0) * 100)}%</div>
           <div class="mc-sum">${escapeHtml(analysis.bear?.summary || analysis.bear_case || "")}</div>
@@ -337,7 +366,7 @@ function renderResultCard(analysis) {
           ? `<label for="qty-${analysis.ticker}">Shares</label>
              <input id="qty-${analysis.ticker}" type="number" min="1" step="1" value="${defaultQty}">
              <button class="add-btn" id="add-${analysis.ticker}" onclick="addToPortfolio('${analysis.ticker}', ${analysis.price})">Add to Demo Portfolio</button>
-             <span class="muted">risk-sized ${fmtUsd(positionSize)}</span>
+             <span class="muted" title="Pre-filled from the risk layer's suggested size (confidence- and volatility-scaled)">risk-sized ${fmtUsd(positionSize)}</span>
              <span class="added-note hidden" id="added-${analysis.ticker}"></span>`
           : `<span class="muted">Demo portfolio additions are offered for BUY recommendations.</span>`}
       </div>

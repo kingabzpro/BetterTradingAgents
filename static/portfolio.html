@@ -26,12 +26,12 @@
     </header>
 
     <div class="summary-grid" id="summary-grid">
-      <div class="summary-card"><div class="sc-label">Starting cash</div><div class="sc-value" id="sc-start">…</div></div>
-      <div class="summary-card"><div class="sc-label">Cash remaining</div><div class="sc-value" id="sc-cash">…</div></div>
-      <div class="summary-card"><div class="sc-label">Positions value</div><div class="sc-value" id="sc-value">…</div></div>
-      <div class="summary-card"><div class="sc-label">Total equity</div><div class="sc-value" id="sc-equity">…</div></div>
-      <div class="summary-card"><div class="sc-label">Total P&L</div><div class="sc-value" id="sc-pnl">…</div></div>
-      <div class="summary-card"><div class="sc-label">Realized P&L</div><div class="sc-value" id="sc-realized">…</div></div>
+      <div class="summary-card" title="The simulation's starting balance"><div class="sc-label">Starting cash</div><div class="sc-value" id="sc-start">…</div></div>
+      <div class="summary-card" title="Starting cash − all buys + all sell proceeds"><div class="sc-label">Cash remaining</div><div class="sc-value" id="sc-cash">…</div></div>
+      <div class="summary-card" title="Open positions valued at live prices"><div class="sc-label">Positions value</div><div class="sc-value" id="sc-value">…</div></div>
+      <div class="summary-card" title="Cash remaining + positions value"><div class="sc-label">Total equity</div><div class="sc-value" id="sc-equity">…</div></div>
+      <div class="summary-card" title="Realized (closed trades) + unrealized (open positions) vs starting cash"><div class="sc-label">Total P&L</div><div class="sc-value" id="sc-pnl">…</div></div>
+      <div class="summary-card" title="Profit or loss from closed trades only"><div class="sc-label">Realized P&L</div><div class="sc-value" id="sc-realized">…</div></div>
     </div>
 
     <div class="card table-wrap">
@@ -123,7 +123,7 @@
           <td class="num ${pnlClass}">${fmt(position.pnl)}</td>
           <td class="num ${pnlClass}">${position.pnl_pct == null ? "n/a" : `${position.pnl_pct >= 0 ? "+" : ""}${position.pnl_pct}%`}</td>
           <td class="muted col-added">${position.added_at || ""}</td>
-          <td><button class="close-btn" onclick="closePosition(${position.id}, '${position.ticker}')">Close</button></td>`;
+          <td><button class="close-btn" title="Close the entire position at the live price" onclick="closePosition(${position.id}, '${position.ticker}')">Close</button></td>`;
         body.appendChild(row);
       }
 
