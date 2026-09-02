@@ -84,9 +84,12 @@ async def _kick_once(agent, task) -> dict:
     return extract_json(str(getattr(output, "raw", "")))
 
 
-async def _run_agent(mod, ticker: str, emit: Emit, **task_payload) -> dict | None:
+async def _run_agent(
+    mod, ticker: str, emit: Emit, name: str | None = None, **task_payload
+) -> dict | None:
     """Run one agent (LLM or mock), emitting started/completed/failed events."""
-    await emit("agent_started", {"ticker": ticker, "agent": mod.NAME})
+    agent_name = name or mod.NAME
+    await emit("agent_started", {"ticker": ticker, "agent": agent_name})
     started = time.perf_counter()
     try:
         llm = get_llm()
@@ -107,12 +110,12 @@ async def _run_agent(mod, ticker: str, emit: Emit, **task_payload) -> dict | Non
             if data is None:
                 raise last_error or RuntimeError("agent failed")
         duration = time.perf_counter() - started
-        logger.info("[%s] completed %.1fs", mod.NAME, duration)
+        logger.info("[%s] completed %.1fs", agent_name, duration)
         await emit(
             "agent_completed",
             {
                 "ticker": ticker,
-                "agent": mod.NAME,
+                "agent": agent_name,
                 "duration_s": round(duration, 1),
                 "signal": data.get("signal") or data.get("decision"),
                 "confidence": data.get("confidence") or data.get("score"),
@@ -121,12 +124,40 @@ async def _run_agent(mod, ticker: str, emit: Emit, **task_payload) -> dict | Non
         )
         return data
     except Exception as exc:  # noqa: BLE001 - one agent failing must not kill the run
-        logger.warning("[%s] failed: %s", mod.NAME, exc)
+        logger.warning("[%s] failed: %s", agent_name, exc)
         await emit(
             "agent_failed",
-            {"ticker": ticker, "agent": mod.NAME, "error": str(exc)[:200]},
+            {"ticker": ticker, "agent": agent_name, "error": str(exc)[:200]},
         )
         return None
+
+
+async def _portfolio_snapshot() -> list[dict] | str:
+    """Compact view of open positions for the manager prompt; never fails the run."""
+    try:
+        from app import portfolio
+
+        summary = await portfolio.get_portfolio()
+    except Exception as exc:  # noqa: BLE001 - portfolio context is best-effort
+        logger.warning("[portfolio] snapshot failed: %s", exc)
+        return "UNAVAILABLE - portfolio lookup failed"
+    if not summary.positions:
+        return "no open positions (flat)"
+    return [
+        {
+            "ticker": p.ticker,
+            "quantity": p.quantity,
+            "entry_price": p.entry_price,
+            "current_price": p.current_price,
+            "unrealized_pnl_pct": p.pnl_pct,
+            "weight_pct_of_equity": (
+                round(p.value / summary.total_equity * 100, 1)
+                if p.value is not None and summary.total_equity
+                else None
+            ),
+        }
+        for p in summary.positions
+    ]
 
 
 async def analyze_ticker(ticker: str, emit: Emit) -> StockAnalysis:
@@ -144,7 +175,9 @@ async def analyze_ticker(ticker: str, emit: Emit) -> StockAnalysis:
             ticker=ticker, error=f"market data failed: {exc}"[:300]
         )
 
-    indicators = compute_indicators(market.closes)
+    indicators = compute_indicators(
+        market.closes, market.highs, market.lows, market.volumes
+    )
     await emit(
         "ticker_data",
         {
@@ -178,14 +211,69 @@ async def analyze_ticker(ticker: str, emit: Emit) -> StockAnalysis:
         _run_agent(bull, ticker, emit, payload=context),
         _run_agent(bear, ticker, emit, payload=context),
     )
-    bull_r = bull.to_result(bull_data, ticker) if bull_data else None
-    bear_r = bear.to_result(bear_data, ticker) if bear_data else None
 
-    # Stage 3: portfolio manager.
+    # Stage 2b: rebuttal round - each side answers the other's argument
+    # (skipped when either first-round brief failed).
+    bull_rebuttal, bear_rebuttal = None, None
+    if settings.debate_rounds >= 2:
+        if bull_data and bear_data:
+            bull_rebuttal, bear_rebuttal = await asyncio.gather(
+                _run_agent(
+                    bull,
+                    ticker,
+                    emit,
+                    name="bull_rebuttal",
+                    payload={
+                        "research": context,
+                        "own_round_1": bull_data,
+                        "opponent_round_1": bear_data,
+                    },
+                    rebuttal=True,
+                ),
+                _run_agent(
+                    bear,
+                    ticker,
+                    emit,
+                    name="bear_rebuttal",
+                    payload={
+                        "research": context,
+                        "own_round_1": bear_data,
+                        "opponent_round_1": bull_data,
+                    },
+                    rebuttal=True,
+                ),
+            )
+        else:
+            for side in ("bull_rebuttal", "bear_rebuttal"):
+                await emit(
+                    "agent_failed",
+                    {
+                        "ticker": ticker,
+                        "agent": side,
+                        "error": "skipped: first-round debate incomplete",
+                    },
+                )
+
+    bull_final = bull_rebuttal or bull_data
+    bear_final = bear_rebuttal or bear_data
+    bull_r = bull.to_result(bull_final, ticker) if bull_final else None
+    bear_r = bear.to_result(bear_final, ticker) if bear_final else None
+
+    # Stage 3: portfolio manager (sees existing holdings so decisions account
+    # for exposure already taken; the debate transcript shows how the final
+    # positions were reached).
     full_context = {
         **context,
         "bull": bull_r.model_dump() if bull_r else "FAILED - unavailable",
         "bear": bear_r.model_dump() if bear_r else "FAILED - unavailable",
+        "debate": {
+            "rounds": settings.debate_rounds,
+            "bull_round_1": bull_data,
+            "bear_round_1": bear_data,
+            "bull_rebuttal": bull_rebuttal,
+            "bear_rebuttal": bear_rebuttal,
+        },
+        "current_portfolio": await _portfolio_snapshot(),
     }
     mgr_data = await _run_agent(manager, ticker, emit, payload=full_context)
 

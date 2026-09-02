@@ -12,7 +12,12 @@ from fastapi.staticfiles import StaticFiles
 
 from app import portfolio
 from app.config import settings
-from app.models import AnalysisRequest, AnalysisResponse, PortfolioAddRequest
+from app.models import (
+    AnalysisRequest,
+    AnalysisResponse,
+    PortfolioAddRequest,
+    PortfolioCloseRequest,
+)
 from app.runs import store
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
@@ -55,6 +60,7 @@ async def health():
             "news_search": "olostep" if settings.olostep_api_key else "disabled",
         },
         "max_tickers": settings.max_tickers,
+        "debate_rounds": settings.debate_rounds,
     }
 
 
@@ -136,4 +142,17 @@ async def add_position(request: PortfolioAddRequest):
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return position
+
+
+@app.post("/api/portfolio/close")
+async def close_position(request: PortfolioCloseRequest):
+    try:
+        position = await portfolio.close_position(
+            request.position_id, request.exit_price
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
     return position

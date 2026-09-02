@@ -56,6 +56,9 @@ class MarketData:
     price: float | None = None
     company_name: str = ""
     closes: list[float] = field(default_factory=list)
+    highs: list[float] = field(default_factory=list)
+    lows: list[float] = field(default_factory=list)
+    volumes: list[float] = field(default_factory=list)
     fundamentals: dict = field(default_factory=dict)
     news: list[dict] = field(default_factory=list)
     sources: dict = field(default_factory=dict)  # prices / fundamentals / news
@@ -73,6 +76,9 @@ async def get_stock_data(ticker: str) -> MarketData:
 
     data = MarketData(ticker=ticker)
     data.closes = yf_data["closes"]
+    data.highs = yf_data["highs"]
+    data.lows = yf_data["lows"]
+    data.volumes = yf_data["volumes"]
     data.price = yf_data["price"]
     if data.price is None:
         raise ValueError(f"no price data found for '{ticker}'")
@@ -126,12 +132,25 @@ async def get_current_price(ticker: str) -> float | None:
 
 
 def _yf_all(ticker: str) -> dict:
-    out = {"closes": [], "price": None, "name": ticker, "fundamentals": {}, "news": []}
+    out = {
+        "closes": [],
+        "highs": [],
+        "lows": [],
+        "volumes": [],
+        "price": None,
+        "name": ticker,
+        "fundamentals": {},
+        "news": [],
+    }
     stock = yf.Ticker(ticker)
 
     hist = stock.history(period="6mo", interval="1d")
     if not hist.empty:
-        out["closes"] = [round(float(c), 4) for c in hist["Close"].dropna().tolist()]
+        hist = hist.dropna(subset=["Close"])
+        out["closes"] = [round(float(c), 4) for c in hist["Close"].tolist()]
+        out["highs"] = [round(float(h), 4) for h in hist["High"].tolist()]
+        out["lows"] = [round(float(l), 4) for l in hist["Low"].tolist()]
+        out["volumes"] = [int(v) for v in hist["Volume"].tolist()]
         if out["closes"]:
             out["price"] = out["closes"][-1]
     if out["price"] is None:

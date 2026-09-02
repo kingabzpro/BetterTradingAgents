@@ -34,7 +34,7 @@ def build_task(agent, ticker: str, payload: dict):
 Precomputed indicators (calculated by Python from 6 months of daily closes - do NOT recalculate or invent numbers):
 {json.dumps(payload, indent=2)}
 
-Weigh trend (price vs SMA20/SMA50, SMA20 vs SMA50), momentum (10d momentum, 21d/63d changes), RSI (overbought >70, oversold <30) and volatility.
+Weigh trend (price vs SMA20/SMA50, SMA20 vs SMA50), momentum (10d momentum, 21d/63d changes, MACD histogram), RSI (overbought >70, oversold <30), Bollinger position (percent_b near 1.0 = stretched upper band, near 0.0 = lower band), volatility and ATR, and volume confirmation (relative_volume >1.5 = unusual interest, check whether it supports or opposes the move).
 
 Respond with ONLY a JSON object, no markdown fences, no text outside the JSON:
 {{"ticker": "{ticker}", "signal": "bullish" | "bearish" | "neutral", "confidence": <number 0.0-1.0>, "summary": "<at most 2 sentences citing the key numbers>"}}""",
@@ -67,6 +67,8 @@ def mock(ticker: str, payload: dict) -> dict:
         score += 1
     if (payload.get("change_21d_pct") or 0) > 0:
         score += 1
+    if (payload.get("macd_histogram") or 0) > 0:
+        score += 0.5
     rsi_value = payload.get("rsi_14")
     if rsi_value is not None and rsi_value > 70:
         score -= 0.5

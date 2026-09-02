@@ -148,6 +148,7 @@ optional; without an LLM key, the app starts in mock mode.
 | `FINNHUB_API_KEY` | — | Company profiles, fundamentals, and news; falls back to yfinance |
 | `OLOSTEP_API_KEY` | — | News search and article scraping fallback |
 | `MAX_TICKERS` | `5` | Maximum tickers accepted in one analysis |
+| `DEBATE_ROUNDS` | `2` | Bull/bear debate depth: `1` = single round, `2`+ adds one rebuttal exchange (capped at 3) |
 | `STARTING_CASH` | `100000` | Initial simulated portfolio balance |
 | `DEFAULT_POSITION_SIZE` | `10000` | Suggested position value |
 | `DB_PATH` | `portfolio.db` | SQLite portfolio database path |
@@ -155,8 +156,9 @@ optional; without an LLM key, the app starts in mock mode.
 ## Demo portfolio
 
 After a **BUY** recommendation, add the stock to the simulated portfolio in one click. Positions
-persist in SQLite and update with live prices and profit/loss. No broker is connected and no real
-orders are placed.
+persist in SQLite, update with live prices and profit/loss, and can be closed to realize gains or
+losses — the Portfolio Manager also sees your open positions when making its next call. No broker
+is connected and no real orders are placed.
 
 ![Demo portfolio](docs/screenshots/portfolio.png)
 
@@ -169,6 +171,7 @@ orders are placed.
 | `GET` | `/api/runs/{run_id}/events` | Stream live progress over SSE |
 | `GET` | `/api/portfolio` | List positions with live prices and profit/loss |
 | `POST` | `/api/portfolio/add` | Add a simulated position |
+| `POST` | `/api/portfolio/close` | Close a position at the live (or given) price and realize P/L |
 | `GET` | `/api/health` | Check configuration and provider status |
 
 <details>
@@ -184,10 +187,15 @@ curl -X POST http://localhost:8000/api/analyze \
 
 ## Roadmap
 
+Detailed, research-backed plans for everything below live in [docs/ROADMAP.md](docs/ROADMAP.md).
+
+- [ ] Decision memory: learn from realized returns and SPY alpha across runs
+- [ ] Risk layer: volatility-scaled position sizing and exposure caps
+- [x] Rebuttal round in the bull/bear debate
+- [ ] Backtest agent decisions against buy-and-hold (walk-forward)
 - [ ] Stream agent reasoning while each agent works
 - [ ] Support per-agent model selection
 - [ ] Add Alpaca paper-trading integration
-- [ ] Backtest agent-generated strategies
 
 ## Disclaimer
 

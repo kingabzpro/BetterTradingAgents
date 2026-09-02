@@ -6,6 +6,8 @@ const ICONS = {
   news: '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="8" cy="8" r="5.7"/><path d="M2.3 8h11.4M8 2.3c-1.8 1.6-2.7 3.5-2.7 5.7s.9 4.1 2.7 5.7c1.8-1.6 2.7-3.5 2.7-5.7S9.8 3.9 8 2.3z"/></svg>',
   bull: '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 12.5 12.5 3.5M6.5 3.5h6v6"/></svg>',
   bear: '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 3.5l9 9M12.5 6.5v6h-6"/></svg>',
+  bull_rebuttal: '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 12.5 12.5 3.5M6.5 3.5h6v6"/><path d="M2.5 5.5h3M2.5 8h2"/></svg>',
+  bear_rebuttal: '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 3.5l9 9M12.5 6.5v6h-6"/><path d="M2.5 5.5h3M2.5 8h2"/></svg>',
   manager: '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="5" width="11" height="8" rx="2"/><path d="M6 5V3.6A1.6 1.6 0 0 1 7.6 2h.8A1.6 1.6 0 0 1 10 3.6V5M2.5 8.5h11"/></svg>',
 };
 
@@ -15,11 +17,13 @@ const AGENTS = [
   { key: "news", label: "News" },
   { key: "bull", label: "Bull", stage2: true },
   { key: "bear", label: "Bear", stage2: true },
+  { key: "bull_rebuttal", label: "Bull Rebuttal", stage2: true, rebuttal: true },
+  { key: "bear_rebuttal", label: "Bear Rebuttal", stage2: true, rebuttal: true },
   { key: "manager", label: "Portfolio Manager", stage2: true },
 ];
 
 const $ = (id) => document.getElementById(id);
-const state = { running: false, es: null, tickers: new Map(), runStartedAt: null, timer: null };
+const state = { running: false, es: null, tickers: new Map(), runStartedAt: null, timer: null, debateRounds: 1 };
 
 /* ---------- boot ---------- */
 
@@ -38,6 +42,7 @@ document.addEventListener("DOMContentLoaded", () => {
     .then((response) => response.json())
     .then((health) => {
       if (health.mock_mode) $("mode-chip").classList.remove("hidden");
+      state.debateRounds = health.debate_rounds || 1;
       const providers = health.providers || {};
       $("provider-line").textContent =
         `data: ${providers.prices || "?"} prices, ${providers.fundamentals || "?"} fundamentals, ` +
@@ -163,7 +168,7 @@ function handleEvent(event) {
 }
 
 function labelFor(agent, signal, confidence) {
-  if (agent === "bull" || agent === "bear") {
+  if (agent === "bull" || agent === "bear" || agent.endsWith("_rebuttal")) {
     return `${Math.round((confidence ?? 0) * 100)}%`;
   }
   const map = { bullish: "Bullish", bearish: "Bearish", neutral: "Neutral", positive: "Positive", negative: "Negative", unknown: "n/a" };
@@ -176,12 +181,13 @@ function renderProgressCard(ticker) {
   const card = document.createElement("div");
   card.className = "ticker-card";
   card.id = `live-${ticker}`;
+  const agents = state.debateRounds >= 2 ? AGENTS : AGENTS.filter((agent) => !agent.rebuttal);
   card.innerHTML = `
     <div class="ticker-head">
       <span class="tk">${ticker} <span class="px" id="px-${ticker}">fetching data…</span></span>
       <span class="src" id="src-${ticker}"></span>
     </div>
-    ${AGENTS.map(
+    ${agents.map(
       (agent) => `
       <div class="agent-row ${agent.stage2 ? "stage2" : ""}">
         <span class="agent-left"><span class="agent-icon">${ICONS[agent.key]}</span>${agent.label}</span>

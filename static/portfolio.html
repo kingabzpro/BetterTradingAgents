@@ -31,6 +31,7 @@
       <div class="summary-card"><div class="sc-label">Positions value</div><div class="sc-value" id="sc-value">…</div></div>
       <div class="summary-card"><div class="sc-label">Total equity</div><div class="sc-value" id="sc-equity">…</div></div>
       <div class="summary-card"><div class="sc-label">Total P&L</div><div class="sc-value" id="sc-pnl">…</div></div>
+      <div class="summary-card"><div class="sc-label">Realized P&L</div><div class="sc-value" id="sc-realized">…</div></div>
     </div>
 
     <div class="card table-wrap">
@@ -46,12 +47,35 @@
             <th class="num">P&L</th>
             <th class="num">P&L %</th>
             <th class="col-added">Added</th>
+            <th>Actions</th>
           </tr>
         </thead>
         <tbody id="positions-body"></tbody>
       </table>
       <p class="empty-note hidden" id="empty-note">
         No positions yet. Run an analysis and click <strong>Add to Demo Portfolio</strong> on a BUY recommendation.
+      </p>
+    </div>
+
+    <div class="card table-wrap" id="history-card">
+      <table id="history-table">
+        <thead>
+          <tr>
+            <th>Ticker</th>
+            <th class="num">Qty</th>
+            <th class="num">Entry</th>
+            <th class="num">Exit</th>
+            <th class="num">Cost</th>
+            <th class="num">Proceeds</th>
+            <th class="num">Realized P&L</th>
+            <th class="num">P&L %</th>
+            <th class="col-added">Closed</th>
+          </tr>
+        </thead>
+        <tbody id="history-body"></tbody>
+      </table>
+      <p class="empty-note hidden" id="history-empty">
+        No closed trades yet. Close an open position to see realized P&L here.
       </p>
     </div>
   </div>
@@ -79,6 +103,9 @@
       const pnl = $("sc-pnl");
       pnl.textContent = fmt(data.total_pnl);
       pnl.className = `sc-value ${data.total_pnl == null ? "" : data.total_pnl >= 0 ? "green" : "red"}`;
+      const realized = $("sc-realized");
+      realized.textContent = fmt(data.realized_pnl);
+      realized.className = `sc-value ${data.realized_pnl == null ? "" : data.realized_pnl >= 0 ? "green" : "red"}`;
 
       const body = $("positions-body");
       body.innerHTML = "";
@@ -95,10 +122,51 @@
           <td class="num">${fmt(position.value)}</td>
           <td class="num ${pnlClass}">${fmt(position.pnl)}</td>
           <td class="num ${pnlClass}">${position.pnl_pct == null ? "n/a" : `${position.pnl_pct >= 0 ? "+" : ""}${position.pnl_pct}%`}</td>
-          <td class="muted col-added">${position.added_at || ""}</td>`;
+          <td class="muted col-added">${position.added_at || ""}</td>
+          <td><button class="close-btn" onclick="closePosition(${position.id}, '${position.ticker}')">Close</button></td>`;
         body.appendChild(row);
       }
+
+      const historyBody = $("history-body");
+      historyBody.innerHTML = "";
+      $("history-card").classList.toggle("hidden", (data.history || []).length === 0);
+      for (const trade of data.history || []) {
+        const pnlClass = trade.pnl == null ? "" : trade.pnl >= 0 ? "pnl-green" : "pnl-red";
+        const row = document.createElement("tr");
+        row.innerHTML = `
+          <td><strong>${trade.ticker}</strong></td>
+          <td class="num">${trade.quantity % 1 === 0 ? trade.quantity : trade.quantity.toFixed(4)}</td>
+          <td class="num">${fmt(trade.entry_price)}</td>
+          <td class="num">${fmt(trade.exit_price)}</td>
+          <td class="num">${fmt(trade.cost)}</td>
+          <td class="num">${fmt(trade.value)}</td>
+          <td class="num ${pnlClass}">${fmt(trade.pnl)}</td>
+          <td class="num ${pnlClass}">${trade.pnl_pct == null ? "n/a" : `${trade.pnl_pct >= 0 ? "+" : ""}${trade.pnl_pct}%`}</td>
+          <td class="muted col-added">${trade.closed_at || ""}</td>`;
+        historyBody.appendChild(row);
+      }
     }
+
+    async function closePosition(id, ticker) {
+      if (!window.confirm(`Close the entire ${ticker} position at the current market price?`)) return;
+      try {
+        const response = await fetch("/api/portfolio/close", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ position_id: id }),
+        });
+        if (!response.ok) {
+          const detail = await response.json().catch(() => null);
+          throw new Error(detail?.detail || `failed (${response.status})`);
+        }
+        const position = await response.json();
+        showToast(`${ticker} closed${position.pnl == null ? "" : ` · realized ${position.pnl >= 0 ? "+" : ""}$${position.pnl.toLocaleString()}`}`);
+        loadPortfolio();
+      } catch (error) {
+        showToast(`Could not close ${ticker}: ${error.message}`, true);
+      }
+    }
+    window.closePosition = closePosition;
 
     const $ = (id) => document.getElementById(id);
     let toastTimer = null;

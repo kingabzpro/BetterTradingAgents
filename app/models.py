@@ -101,9 +101,11 @@ class PortfolioPosition(BaseModel):
     current_price: float | None = None
     cost: float = 0.0
     value: float | None = None
-    pnl: float | None = None
+    pnl: float | None = None  # unrealized for open positions, realized for closed ones
     pnl_pct: float | None = None
     added_at: str = ""
+    exit_price: float | None = None
+    closed_at: str | None = None
 
 
 class PortfolioSummary(BaseModel):
@@ -112,10 +114,17 @@ class PortfolioSummary(BaseModel):
     positions_value: float | None = None
     total_equity: float | None = None
     total_pnl: float | None = None
+    realized_pnl: float = 0.0
     positions: list[PortfolioPosition] = []
+    history: list[PortfolioPosition] = []
 
 
 class PortfolioAddRequest(BaseModel):
     ticker: str
     quantity: float = Field(gt=0)
     entry_price: float | None = None
+
+
+class PortfolioCloseRequest(BaseModel):
+    position_id: int
+    exit_price: float | None = Field(default=None, gt=0)

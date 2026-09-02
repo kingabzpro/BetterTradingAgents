@@ -34,6 +34,8 @@ class Settings:
 
     # Analysis limits
     max_tickers: int = int(_env("MAX_TICKERS", "5"))
+    # 1 = single round; >= 2 adds one bull/bear rebuttal exchange (capped at 3).
+    debate_rounds: int = min(3, max(1, int(_env("DEBATE_ROUNDS", "2"))))
 
     # Demo portfolio
     starting_cash: float = float(_env("STARTING_CASH", "100000"))

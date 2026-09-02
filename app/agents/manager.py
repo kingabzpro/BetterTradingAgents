@@ -38,6 +38,7 @@ Decision rules:
 - BUY requires the bull case to clearly outweigh the bear case on the available evidence.
 - SELL requires clear deterioration or dominant risk.
 - When in doubt, or when key inputs are missing, decide HOLD.
+- "current_portfolio" lists positions already held. Account for existing exposure: a BUY that adds to an already-large position, or a SELL when nothing is held, needs clearly stronger justification.
 
 Respond with ONLY a JSON object, no markdown fences, no text outside the JSON:
 {{"ticker": "{ticker}", "decision": "BUY" | "HOLD" | "SELL", "confidence": <number 0.0-1.0>, "summary": "<at most 3 sentences explaining the decision>", "bull_case": "<at most 2 sentences>", "bear_case": "<at most 2 sentences>"}}""",
