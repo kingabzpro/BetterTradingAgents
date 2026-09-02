@@ -64,8 +64,9 @@ header {
 }
 .brand { display: flex; align-items: center; gap: 12px; min-width: 0; }
 .logo-img {
-  width: 40px; height: 40px; flex: none; display: block;
-  filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.5));
+  width: 46px; height: 46px; flex: none; display: block;
+  object-fit: contain;
+  filter: drop-shadow(0 5px 12px rgba(0, 0, 0, 0.45));
 }
 h1 {
   font-size: 17px; margin: 0; font-weight: 700; letter-spacing: -0.015em; white-space: nowrap;
@@ -350,7 +351,7 @@ td.num, th.num { text-align: right; }
   body { font-size: 13.5px; }
   .container { padding: 10px 12px 44px; }
   header { top: 6px; padding: 8px 10px; gap: 8px; }
-  .logo-img { width: 34px; height: 34px; }
+  .logo-img { width: 38px; height: 38px; }
   h1 { font-size: 15px; }
   .tagline { font-size: 11px; }
   .nav-link { padding: 6px 10px; font-size: 12px; }

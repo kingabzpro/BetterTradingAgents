@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="static/logo-full.png" width="460" alt="BetterTradingAgents"/>
+<img src="static/logo-full.png" width="700" alt="BetterTradingAgents — multi-agent market intelligence"/>
 
 **Real-time, multi-agent AI stock research and paper trading—powered by CrewAI.**
 
