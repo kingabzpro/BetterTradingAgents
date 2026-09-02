@@ -66,7 +66,7 @@ class MarketData:
 
 async def get_stock_data(ticker: str) -> MarketData:
     """Fetch everything the agents need for one ticker, concurrently."""
-    yf_task = asyncio.create_task(asyncio.to_thread(_yf_all, ticker))
+    yf_task = asyncio.create_task(_yf_all(ticker))
     fundamentals_task = asyncio.create_task(_finnhub_fundamentals(ticker))
     news_task = asyncio.create_task(_finnhub_news(ticker))
 
@@ -131,20 +131,19 @@ async def get_current_price(ticker: str) -> float | None:
 # --------------------------------------------------------------------------
 
 
-def _yf_all(ticker: str) -> dict:
-    out = {
-        "closes": [],
-        "highs": [],
-        "lows": [],
-        "volumes": [],
-        "price": None,
-        "name": ticker,
-        "fundamentals": {},
-        "news": [],
-    }
-    stock = yf.Ticker(ticker)
+async def _yf_all(ticker: str) -> dict:
+    """History, profile and news fetched concurrently (3 round-trips -> 1 wait)."""
+    history, profile, news = await asyncio.gather(
+        asyncio.to_thread(_yf_history, ticker),
+        asyncio.to_thread(_yf_profile, ticker),
+        asyncio.to_thread(_yf_news, ticker),
+    )
+    return {**history, **profile, **news}
 
-    hist = stock.history(period="6mo", interval="1d")
+
+def _yf_history(ticker: str) -> dict:
+    out = {"closes": [], "highs": [], "lows": [], "volumes": [], "price": None}
+    hist = yf.Ticker(ticker).history(period="6mo", interval="1d")
     if not hist.empty:
         hist = hist.dropna(subset=["Close"])
         out["closes"] = [round(float(c), 4) for c in hist["Close"].tolist()]
@@ -155,20 +154,27 @@ def _yf_all(ticker: str) -> dict:
             out["price"] = out["closes"][-1]
     if out["price"] is None:
         out["price"] = _yf_price(ticker)
+    return out
 
+
+def _yf_profile(ticker: str) -> dict:
     try:
-        info = stock.info or {}
-        out["name"] = info.get("shortName") or info.get("longName") or ticker
-        out["fundamentals"] = _map_yf_fundamentals(info)
+        info = yf.Ticker(ticker).info or {}
+        return {
+            "name": info.get("shortName") or info.get("longName") or ticker,
+            "fundamentals": _map_yf_fundamentals(info),
+        }
     except Exception as exc:  # noqa: BLE001 - yfinance raises many shapes
         logger.warning("[%s] yfinance info failed: %s", ticker, exc)
+        return {"name": ticker, "fundamentals": {}}
 
+
+def _yf_news(ticker: str) -> dict:
     try:
-        out["news"] = _normalize_yf_news(stock.news or [])[:6]
+        return {"news": _normalize_yf_news(yf.Ticker(ticker).news or [])[:6]}
     except Exception as exc:  # noqa: BLE001
         logger.warning("[%s] yfinance news failed: %s", ticker, exc)
-
-    return out
+        return {"news": []}
 
 
 def _yf_price(ticker: str) -> float | None:
@@ -356,11 +362,14 @@ async def _olostep_news(ticker: str, company_name: str) -> list[dict]:
                 )
             items = [n for n in items if n["title"]]
 
-            # Enrich the top hit with the actual article text (search + scrape).
-            if items and items[0].get("url"):
-                markdown = await _olostep_scrape(client, headers, items[0]["url"])
+            # Enrich the top hits with actual article text, scraped in parallel.
+            targets = [n for n in items[:2] if n.get("url")]
+            markdowns = await asyncio.gather(
+                *(_olostep_scrape(client, headers, n["url"]) for n in targets)
+            )
+            for item, markdown in zip(targets, markdowns):
                 if markdown:
-                    items[0]["content"] = markdown[:1500]
+                    item["content"] = markdown[:1500]
             return items
     except Exception as exc:  # noqa: BLE001
         logger.warning("[%s] olostep news failed: %s", ticker, exc)

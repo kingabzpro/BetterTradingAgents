@@ -7,7 +7,7 @@ import uuid
 
 from app.config import settings
 from app.models import RunStatus, StockAnalysis
-from app.workflow import analyze_ticker
+from app.workflow import analyze_ticker, fetch_portfolio_summary
 
 logger = logging.getLogger("analysis")
 
@@ -60,11 +60,16 @@ class RunStore:
 
     async def _execute(self, run: Run) -> None:
         semaphore = asyncio.Semaphore(settings.max_tickers)
+        # One portfolio snapshot per run, shared by every ticker's manager
+        # prompt and risk gate (instead of one fetch per ticker).
+        portfolio_summary = await fetch_portfolio_summary()
 
         async def analyze_one(ticker: str) -> StockAnalysis:
             async with semaphore:
                 try:
-                    return await analyze_ticker(ticker, run.emit)
+                    return await analyze_ticker(
+                        ticker, run.emit, portfolio_summary=portfolio_summary
+                    )
                 except Exception as exc:  # noqa: BLE001 - last-resort guard
                     logger.error("[analysis] %s crashed: %s", ticker, exc)
                     return StockAnalysis(ticker=ticker, error=str(exc)[:300])

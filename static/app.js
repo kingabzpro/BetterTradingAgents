@@ -83,7 +83,9 @@ async function startAnalysis() {
 
 function beginRun(tickers) {
   state.running = true;
-  state.tickers = new Map(tickers.map((ticker) => [ticker, { agents: {} }]));
+  state.expandedAny = false;
+  const agentTotal = state.debateRounds >= 2 ? 8 : 6;
+  state.tickers = new Map(tickers.map((ticker) => [ticker, { agents: {}, done: 0, total: agentTotal }]));
   state.runStartedAt = performance.now();
   $("analyze-btn").disabled = true;
   $("how-section").classList.add("hidden");
@@ -147,10 +149,14 @@ function handleEvent(event) {
       const detail = event.signal ? ` · ${labelFor(event.agent, event.signal, event.confidence)}` : "";
       setAgentStatus(ticker, event.agent, "done", `Complete ✓${detail}`, event.duration_s);
       if (event.summary) entry.agents[event.agent] = { ...entry.agents[event.agent], signal: event.signal, confidence: event.confidence, summary: event.summary };
+      entry.done += 1;
+      updateProgress(ticker, entry);
       break;
     }
     case "agent_failed":
       setAgentStatus(ticker, event.agent, "failed", "Failed ⚠");
+      entry.done += 1;
+      updateProgress(ticker, entry);
       break;
     case "ticker_failed":
       setHeader(ticker, null, `failed: ${event.error || "market data unavailable"}`, null);
@@ -163,8 +169,22 @@ function handleEvent(event) {
         manager: { signal: event.decision, confidence: event.confidence, summary: event.analysis.summary },
       };
       renderResultCard(event.analysis);
+      renderSummaryTable();
+      if (!state.expandedAny) {
+        const card = document.getElementById(`result-${event.analysis.ticker}`);
+        if (card) { card.classList.add("open"); state.expandedAny = true; }
+      }
       break;
   }
+}
+
+function updateProgress(ticker, entry) {
+  const fill = document.getElementById(`prog-${ticker}`);
+  const count = document.getElementById(`progc-${ticker}`);
+  if (!fill || !count || !entry.total) return;
+  const pct = Math.min(100, Math.round((entry.done / entry.total) * 100));
+  fill.style.width = `${pct}%`;
+  count.textContent = `${entry.done}/${entry.total}`;
 }
 
 function labelFor(agent, signal, confidence) {
@@ -177,6 +197,33 @@ function labelFor(agent, signal, confidence) {
 
 /* ---------- rendering ---------- */
 
+function renderSummaryTable() {
+  const analyses = [...state.tickers.values()].map((e) => e.analysis).filter(Boolean);
+  if (!analyses.length) return;
+  const existing = document.getElementById("summary-table");
+  if (existing) existing.remove();
+  const table = document.createElement("table");
+  table.id = "summary-table";
+  table.innerHTML = `
+    <thead><tr><th>Ticker</th><th>Decision</th><th class="num">Confidence</th><th class="num">Risk-sized</th><th>Risk</th></tr></thead>
+    <tbody>
+      ${analyses.map((a) => {
+        const cls = { BUY: "buy", HOLD: "hold", SELL: "sell" }[a.decision] || "hold";
+        const flags = a.risk_flags || [];
+        return `
+        <tr onclick="document.getElementById('result-${a.ticker}').classList.add('open')">
+          <td><strong>${a.ticker}</strong></td>
+          <td><span class="decision ${cls}">${a.decision}</span></td>
+          <td class="num">${Math.round((a.confidence || 0) * 100)}%</td>
+          <td class="num">${a.suggested_size_usd ? fmtUsd(a.suggested_size_usd) : "—"}</td>
+          <td>${flags.length ? `<span class="flag-warn">⚠ ${flags.length} flag${flags.length > 1 ? "s" : ""}</span>` : '<span class="flag-ok">✓ clear</span>'}</td>
+        </tr>`;
+      }).join("")}
+    </tbody>`;
+  const section = document.getElementById("results-section");
+  section.insertBefore(table, document.getElementById("results-list"));
+}
+
 function renderProgressCard(ticker) {
   const card = document.createElement("div");
   card.className = "ticker-card";
@@ -186,7 +233,9 @@ function renderProgressCard(ticker) {
     <div class="ticker-head">
       <span class="tk">${ticker} <span class="px" id="px-${ticker}">fetching data…</span></span>
       <span class="src" id="src-${ticker}"></span>
+      <span class="muted prog-count" id="progc-${ticker}">0/${agents.length}</span>
     </div>
+    <div class="run-progress"><div class="run-progress-fill" id="prog-${ticker}"></div></div>
     ${agents.map(
       (agent) => `
       <div class="agent-row ${agent.stage2 ? "stage2" : ""}">

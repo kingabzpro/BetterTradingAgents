@@ -279,6 +279,20 @@ h2 {
   border-radius: 9px; padding: 8px 12px; margin: 8px 0 0;
 }
 
+/* live run progress bar */
+.run-progress { height: 4px; border-radius: 999px; background: rgba(255, 255, 255, 0.08); margin: 8px 0 2px; overflow: hidden; }
+.run-progress-fill { height: 100%; width: 0%; border-radius: 999px; background: linear-gradient(90deg, #10c973, #0aa85d); transition: width 0.3s ease; }
+.prog-count { font-size: 11px; white-space: nowrap; }
+
+/* results summary table */
+#summary-table { width: 100%; border-collapse: collapse; font-size: 13px; margin-bottom: 16px; font-variant-numeric: tabular-nums; }
+#summary-table th { text-align: left; color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; padding: 8px 10px; border-bottom: 1px solid var(--border); }
+#summary-table td { padding: 9px 10px; border-bottom: 1px solid var(--border); }
+#summary-table tbody tr { cursor: pointer; transition: background 0.15s; }
+#summary-table tbody tr:hover { background: rgba(255, 255, 255, 0.04); }
+.flag-warn { color: #f5c66b; font-size: 12px; }
+.flag-ok { color: #6fe0a0; font-size: 12px; }
+
 footer { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-top: 44px; }
 
 /* ---------- toast ---------- */

@@ -133,8 +133,12 @@ async def _run_agent(
         return None
 
 
-async def _portfolio_summary() -> PortfolioSummary | None:
-    """Fetch the portfolio for the manager prompt and the risk gate; best-effort."""
+async def fetch_portfolio_summary() -> PortfolioSummary | None:
+    """Fetch the portfolio for the manager prompt and the risk gate; best-effort.
+
+    Multi-ticker runs fetch this once and share it (see app.runs) instead of
+    re-fetching prices for every held position once per ticker.
+    """
     try:
         from app import portfolio
 
@@ -167,8 +171,14 @@ def _portfolio_context(summary: PortfolioSummary | None) -> list[dict] | str:
     ]
 
 
-async def analyze_ticker(ticker: str, emit: Emit) -> StockAnalysis:
-    """Full 3-stage workflow for one ticker."""
+async def analyze_ticker(
+    ticker: str, emit: Emit, portfolio_summary: PortfolioSummary | None = None
+) -> StockAnalysis:
+    """Full 3-stage workflow for one ticker.
+
+    `portfolio_summary` lets a multi-ticker run fetch the portfolio once and
+    share it across tickers; when omitted it is fetched here.
+    """
     started = time.perf_counter()
     await emit("ticker_started", {"ticker": ticker})
     logger.info("[analysis] Starting %s", ticker)
@@ -269,7 +279,11 @@ async def analyze_ticker(ticker: str, emit: Emit) -> StockAnalysis:
     # Stage 3: portfolio manager (sees existing holdings so decisions account
     # for exposure already taken; the debate transcript shows how the final
     # positions were reached).
-    portfolio_summ = await _portfolio_summary()
+    portfolio_summ = (
+        portfolio_summary
+        if portfolio_summary is not None
+        else await fetch_portfolio_summary()
+    )
     full_context = {
         **context,
         "bull": bull_r.model_dump() if bull_r else "FAILED - unavailable",
