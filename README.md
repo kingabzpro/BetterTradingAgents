@@ -4,9 +4,10 @@
 
 **Real-time, multi-agent AI stock research and paper trading—powered by CrewAI.**
 
-Enter up to five stock tickers. Six specialized agents analyze technicals, fundamentals, and
-news in parallel, debate the bull and bear cases, and return an explainable
-**BUY / HOLD / SELL** decision.
+Enter up to five stock tickers. Specialized agents analyze technicals, fundamentals, and
+news in parallel, bull and bear researchers debate across a rebuttal round, and a
+risk-gated **BUY / HOLD / SELL** decision comes back with a suggested position size
+and the full reasoning trail.
 
 [![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-3776ab?logo=python&logoColor=white)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
@@ -30,8 +31,10 @@ simulated portfolio.
 
 | | Feature | What it means |
 |:---:|---|---|
-| ⚡ | **Parallel by design** | Researchers run concurrently, bull and bear debate in parallel, and multiple tickers run side by side. |
-| 📡 | **Live, honest progress** | Server-Sent Events stream every agent state: waiting, running, complete, or failed. |
+| ⚡ | **Parallel by design** | Researchers, data fetches, and debate rounds run concurrently, and multiple tickers run side by side. |
+| ⚔️ | **Real debate** | Bull and bear each get a rebuttal round to answer the other's strongest points before the call. |
+| ⚖️ | **Risk-gated decisions** | BUYs are volatility-scaled and capped by per-ticker, invested, and cash-buffer limits — downgrades are flagged, never silent. |
+| 📡 | **Live, honest progress** | Server-Sent Events stream every agent state, with per-ticker progress bars as it happens. |
 | 🛡️ | **Resilient runs** | If an agent fails, the Portfolio Manager receives the available inputs and still makes a call. |
 | 📊 | **Real market data** | Finnhub, Olostep, and yfinance provide fundamentals, news, and price history. |
 | 🧠 | **Model flexibility** | Use any OpenAI-compatible LLM, including OpenRouter, DeepSeek, Qwen, GLM, vLLM, and llama.cpp. |
@@ -41,11 +44,11 @@ simulated portfolio.
 
 ```mermaid
 flowchart TD
-    T["📈 Tickers<br/>NVDA · AMD · META"] --> D["Market data collection<br/>Finnhub · Olostep · yfinance"]
+    T["📈 Tickers<br/>NVDA · AMD · META"] --> D["Market data collection (parallel)<br/>Finnhub · Olostep · yfinance"]
 
     subgraph Research[Parallel research]
         direction LR
-        TA["Technical Analyst<br/>SMA · RSI · momentum"]
+        TA["Technical Analyst<br/>SMA · RSI · MACD · volume"]
         FA["Fundamental Analyst<br/>Growth · margins · valuation"]
         NA["News Analyst<br/>Headlines · sentiment · catalysts"]
     end
@@ -61,25 +64,28 @@ flowchart TD
     FA --> BEAR
     NA --> BEAR
 
-    BULL --> PM["Portfolio Manager"]
-    BEAR --> PM
-    PM --> RESULT["BUY · HOLD · SELL<br/>Confidence + reasoning trail"]
+    BULL --> RB["⚔️ Rebuttal round<br/>Each side answers the other"]
+    BEAR --> RB
+
+    RB --> PM["Portfolio Manager<br/>Weighs debate + holdings"]
+    PM --> RISK["Risk gate<br/>Vol-scaled size · exposure caps"]
+    RISK --> RESULT["BUY · HOLD · SELL<br/>Confidence + size + reasoning trail"]
 ```
 
-The research and debate stages run concurrently with `asyncio.gather`. Multiple tickers also run
-side by side—up to five by default.
+The research, data-fetch, and debate stages run concurrently with `asyncio.gather`. Multiple tickers
+also run side by side—up to five by default—with one portfolio snapshot shared across the run.
 
 ### Live execution
 
 Server-Sent Events update the interface as every agent moves from waiting to running, complete,
-or failed.
+or failed—progress bars tick per ticker as each agent finishes.
 
 ![Live agent progress](docs/screenshots/live-analysis.png)
 
 ### Explainable results
 
-Expand any ticker to inspect the final decision, analyst reports, confidence scores, and the full
-bull-versus-bear debate.
+Expand any ticker to inspect the plain-English decision summary, analyst reports, the full
+bull-versus-bear debate including rebuttals, the risk-sized position, and any risk flags.
 
 ![Analysis results](docs/screenshots/results.png)
 
