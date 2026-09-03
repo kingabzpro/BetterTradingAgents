@@ -11,7 +11,8 @@ from pathlib import Path
 _TMP = Path(tempfile.mkdtemp()) / "portfolio_test.db"
 os.environ["DB_PATH"] = str(_TMP)
 
-from app.tools.indicators import compute_indicators, macd  # noqa: E402
+from app.tools.indicators import compute_indicators, historical_forecast, macd  # noqa: E402
+from app.tools.market_data import _normalize_timegpt_forecast  # noqa: E402
 
 # ---- indicators -----------------------------------------------------------
 random.seed(7)
@@ -26,7 +27,8 @@ volumes[-1] = 3_000_000  # volume spike on the last day
 ind = compute_indicators(closes, highs, lows, volumes)
 for key in ("macd", "macd_signal", "macd_histogram", "bollinger_percent_b",
             "bollinger_width_pct", "atr_14", "atr_pct_of_price",
-            "avg_volume_20d", "relative_volume"):
+            "avg_volume_20d", "relative_volume", "forecast_price_5d",
+            "forecast_change_5d_pct", "forecast_trend_r2"):
     assert key in ind, f"missing {key}"
 assert ind["atr_14"] > 0 and ind["atr_pct_of_price"] > 0
 assert ind["relative_volume"] > 2, "volume spike not detected"
@@ -34,15 +36,23 @@ assert ind["relative_volume"] > 2, "volume spike not detected"
 up = [100 * (1.005**i) for i in range(60)]
 m = macd(up)
 assert m and m["macd"] > 0 and m["macd_histogram"] > 0, "uptrend MACD should be positive"
+forecast = historical_forecast(up)
+assert forecast and forecast["forecast_price_5d"] > up[-1]
+assert forecast["forecast_change_5d_pct"] > 0 and forecast["forecast_trend_r2"] > 0.99
+assert historical_forecast([1, 2, 3]) is None
+timegpt = _normalize_timegpt_forecast({"mean": [101, 102, 103, 104, 105]}, 100, 5)
+assert timegpt and timegpt["forecast_price_5d"] == 105
+assert timegpt["forecast_change_5d_pct"] == 5 and timegpt["forecast_method"] == "timegpt-1"
 
 short = compute_indicators([1, 2, 3, 4, 5], [2, 3, 4, 5, 6], [0, 1, 2, 3, 4], [10] * 5)
 assert "macd" not in short and "atr_14" not in short and "bollinger_percent_b" not in short
 print("indicators OK:", {k: ind[k] for k in ("macd", "macd_histogram",
       "bollinger_percent_b", "bollinger_width_pct", "atr_14", "atr_pct_of_price",
-      "relative_volume")})
+      "relative_volume", "forecast_price_5d", "forecast_change_5d_pct",
+      "forecast_trend_r2")})
 
 # ---- rebuttal mocks (deterministic, offline) --------------------------------
-from app.agents import bear, bull  # noqa: E402
+from app.agents import bear, bull, forecast as forecast_agent  # noqa: E402
 
 _round = {"score": 0.8, "summary": "own argument"}
 _opp = {"score": 0.7, "summary": "opponent argument"}
@@ -51,6 +61,29 @@ _bear_rebuttal = bear.mock("NVDA", {"own_round_1": _opp, "opponent_round_1": _ro
 assert 0.0 <= _bull_rebuttal["score"] <= 1.0 and "Rebuttal" in _bull_rebuttal["summary"]
 assert 0.0 <= _bear_rebuttal["score"] <= 1.0 and "Rebuttal" in _bear_rebuttal["summary"]
 print("rebuttal mocks OK:", _bull_rebuttal["score"], _bear_rebuttal["score"])
+
+# ---- forecast analyst mock ---------------------------------------------------
+_fc_payload = {
+    "price": 100.0,
+    "history_days": 60,
+    "timegpt_forecast": {"forecast_change_5d_pct": -4.0, "forecast_method": "timegpt-1"},
+    "local_trend_forecast": {"forecast_change_5d_pct": 1.0, "forecast_trend_r2": 0.9,
+                             "forecast_method": "log_linear_trend"},
+    "trend_context": {"volatility_annualized_pct": 20.0},
+}
+_fc = forecast_agent.mock("NVDA", _fc_payload)
+assert _fc["signal"] == "bearish" and _fc["confidence"] >= 0.5, _fc  # -4% clears ~2.8% noise
+_fc_noisy = forecast_agent.mock("NVDA", {**_fc_payload,
+                                         "timegpt_forecast": {"forecast_change_5d_pct": -1.0,
+                                                              "forecast_method": "timegpt-1"}})
+assert _fc_noisy["signal"] == "neutral", _fc_noisy  # -1% is inside the noise band
+_fc_weak = forecast_agent.mock("NVDA", {"timegpt_forecast": None,
+                                        "local_trend_forecast": {"forecast_change_5d_pct": 3.0,
+                                                                 "forecast_trend_r2": 0.1,
+                                                                 "forecast_method": "log_linear_trend"},
+                                        "trend_context": {"volatility_annualized_pct": 20.0}})
+assert _fc_weak["signal"] == "neutral" and "unusable" in _fc_weak["summary"], _fc_weak
+print("forecast mock OK:", _fc["signal"], _fc["confidence"])
 
 # ---- portfolio: cash guard, close, history ---------------------------------
 from app import portfolio as pf  # noqa: E402

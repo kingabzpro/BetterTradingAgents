@@ -52,10 +52,10 @@ Respond with ONLY a JSON object, no markdown fences, no text outside the JSON:
     return Task(
         description=f"""Build the bull case for ticker {ticker}.
 
-Research results from three analysts (a value of null or "FAILED" means that input is unavailable - do not use it):
+Research results from the analysts (a value of null or "FAILED" means that input is unavailable - do not use it):
 {json.dumps(payload, indent=2, default=str)}
 
-Argue the strongest reasonable BUY case from the available evidence: trend, growth, margins, positive news. Keep it short and concrete.
+Argue the strongest reasonable BUY case from the available evidence: trend, growth, margins, positive news, a favorable 5-day projection. Keep it short and concrete.
 
 Respond with ONLY a JSON object, no markdown fences, no text outside the JSON:
 {{"score": <number 0.0-1.0 = how strong the bull case is>, "summary": "<at most 3 sentences>"}}""",
@@ -87,7 +87,7 @@ def mock(ticker: str, payload: dict, rebuttal: bool = False) -> dict:
             ),
         }
     best = 0.5
-    for key in ("technical", "fundamental", "news"):
+    for key in ("technical", "fundamental", "news", "forecast"):
         entry = payload.get(key)
         if isinstance(entry, dict):
             best = max(best, entry.get("confidence", 0.5))

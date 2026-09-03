@@ -4,6 +4,7 @@ The LLM never calculates numbers; these functions do it and the Technical
 Analyst agent only interprets the results.
 """
 
+from math import exp, log
 from statistics import mean, pstdev
 
 
@@ -121,6 +122,40 @@ def volume_stats(volumes: list[float], window: int = 20) -> dict:
     }
 
 
+def historical_forecast(
+    closes: list[float], horizon: int = 5, window: int = 60
+) -> dict | None:
+    """Project a log-linear price trend; a baseline, not a probability."""
+    if horizon < 1 or len(closes) < 30:
+        return None
+    sample = closes[-window:]
+    if any(price <= 0 for price in sample):
+        return None
+
+    values = [log(price) for price in sample]
+    count = len(values)
+    x_mean = (count - 1) / 2
+    y_mean = mean(values)
+    denominator = sum((x - x_mean) ** 2 for x in range(count))
+    slope = sum(
+        (x - x_mean) * (value - y_mean) for x, value in enumerate(values)
+    ) / denominator
+    fitted = [y_mean + slope * (x - x_mean) for x in range(count)]
+    residual = sum((actual - predicted) ** 2 for actual, predicted in zip(values, fitted))
+    total = sum((value - y_mean) ** 2 for value in values)
+    r_squared = max(0.0, min(1.0, 1 - residual / total)) if total else 0.0
+    forecast_price = exp(y_mean + slope * (count - 1 + horizon - x_mean))
+
+    return {
+        "forecast_price_5d": round(forecast_price, 2),
+        "forecast_change_5d_pct": round((forecast_price / closes[-1] - 1) * 100, 2),
+        "forecast_trend_r2": round(r_squared, 3),
+        "forecast_window_days": count,
+        "forecast_horizon_days": horizon,
+        "forecast_method": "log_linear_trend",
+    }
+
+
 def compute_indicators(
     closes: list[float],
     highs: list[float] | None = None,
@@ -170,6 +205,9 @@ def compute_indicators(
             out["atr_pct_of_price"] = round(atr_value / price * 100, 2) if price else None
     if volumes:
         out.update(volume_stats(volumes))
+    forecast = historical_forecast(closes)
+    if forecast:
+        out.update(forecast)
     return out
 
 

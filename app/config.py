@@ -31,6 +31,7 @@ class Settings:
     # Data providers
     finnhub_api_key: str = _env("FINNHUB_API_KEY")
     olostep_api_key: str = _env("OLOSTEP_API_KEY")
+    nixtla_api_key: str = _env("NIXTLA_API_KEY")
 
     # Analysis limits
     max_tickers: int = int(_env("MAX_TICKERS", "5"))

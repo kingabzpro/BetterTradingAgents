@@ -6,7 +6,9 @@ import time
 import uuid
 
 from app.config import settings
+from app.depth import DEFAULT_DEPTH, normalize_depth
 from app.models import RunHistoryItem, RunStatus, StockAnalysis
+from app.outlook import DEFAULT_OUTLOOK, normalize_outlook
 from app import run_history
 from app.workflow import analyze_ticker, fetch_portfolio_summary
 
@@ -14,10 +16,18 @@ logger = logging.getLogger("analysis")
 
 
 class Run:
-    def __init__(self, tickers: list[str], client_id: str = ""):
+    def __init__(
+        self,
+        tickers: list[str],
+        client_id: str = "",
+        outlook: str = DEFAULT_OUTLOOK,
+        depth: str = DEFAULT_DEPTH,
+    ):
         self.run_id = uuid.uuid4().hex[:12]
         self.tickers = tickers
         self.client_id = client_id
+        self.outlook = normalize_outlook(outlook)
+        self.depth = normalize_depth(depth)
         self.status = "running"
         self.mock_mode = not settings.llm_configured
         self.started_at = time.time()
@@ -38,6 +48,8 @@ class Run:
         return RunStatus(
             run_id=self.run_id,
             tickers=self.tickers,
+            outlook=self.outlook,
+            depth=self.depth,
             status=self.status,
             mock_mode=self.mock_mode,
             started_at=self.started_at,
@@ -56,8 +68,14 @@ class RunStore:
     async def init(self) -> None:
         await run_history.init()
 
-    async def create(self, tickers: list[str], client_id: str = "") -> Run:
-        run = Run(tickers, client_id)
+    async def create(
+        self,
+        tickers: list[str],
+        client_id: str = "",
+        outlook: str = DEFAULT_OUTLOOK,
+        depth: str = DEFAULT_DEPTH,
+    ) -> Run:
+        run = Run(tickers, client_id, outlook, depth)
         self.runs[run.run_id] = run
         await self._persist(run)
         asyncio.create_task(self._execute(run))
@@ -105,7 +123,11 @@ class RunStore:
                 async with semaphore:
                     try:
                         return await analyze_ticker(
-                            ticker, run.emit, portfolio_summary=portfolio_summary
+                            ticker,
+                            run.emit,
+                            portfolio_summary=portfolio_summary,
+                            outlook=run.outlook,
+                            depth=run.depth,
                         )
                     except Exception as exc:  # noqa: BLE001 - last-resort guard
                         logger.error("[analysis] %s crashed: %s", ticker, exc)

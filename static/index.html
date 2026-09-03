@@ -10,7 +10,7 @@
   <link rel="icon" href="/static/favicon.ico?v=2" sizes="any">
   <link rel="icon" type="image/png" href="/static/favicon.png?v=2">
   <link rel="apple-touch-icon" href="/static/favicon.png?v=2">
-  <link rel="stylesheet" href="/static/style.css?v=8">
+  <link rel="stylesheet" href="/static/style.css?v=12">
 </head>
 <body>
   <div class="container">
@@ -34,18 +34,40 @@
     <section class="card search-card">
       <label for="ticker-input">Stocks</label>
       <div class="search-row">
-        <input id="ticker-input" type="text" placeholder="NVDA, AMD, META" autocomplete="off"
-               spellcheck="false" autofocus>
+        <div class="ticker-box" id="ticker-box">
+          <div id="ticker-tags" aria-label="Selected tickers"></div>
+          <input id="ticker-input" type="text" placeholder="Type a symbol, e.g. NVDA" autocomplete="off"
+                 spellcheck="false" aria-describedby="ticker-hint">
+          <button id="add-ticker-btn" class="tag-add-btn" type="button">Add</button>
+        </div>
         <button id="analyze-btn">Analyze Stocks</button>
       </div>
       <div class="chips" id="example-chips">
-        <span class="chips-label">Try:</span>
+        <span class="chips-label">Quick add:</span>
         <button class="chip-btn" data-tickers="NVDA">NVDA</button>
         <button class="chip-btn" data-tickers="MSFT, AAPL">MSFT, AAPL</button>
         <button class="chip-btn" data-tickers="NVDA, AMD, META">NVDA, AMD, META</button>
         <button class="chip-btn" data-tickers="TSLA">TSLA</button>
       </div>
-      <p class="hint">Up to 5 tickers, comma-separated. AI agents research each one in parallel, debate the case, and deliver a BUY, HOLD or SELL call.</p>
+      <details class="advanced-options" id="advanced-options">
+        <summary><span class="adv-title">Advanced options</span><span class="adv-summary-values" id="adv-values">Short term · Medium</span><span class="adv-caret" aria-hidden="true"></span></summary>
+        <div class="advanced-body">
+          <p class="hint">Your outlook tells every agent which horizon to weigh evidence for; depth picks how many agents run (fewer = faster).</p>
+          <div class="option-row" role="radiogroup" aria-labelledby="outlook-label">
+            <span class="chips-label" id="outlook-label">Your outlook:</span>
+            <button class="seg-btn" type="button" role="radio" aria-checked="false" data-outlook="day_trade">Day trading<small>Intraday to ~2 days</small></button>
+            <button class="seg-btn selected" type="button" role="radio" aria-checked="true" data-outlook="short_term">Short term<small>Days to a few weeks</small></button>
+            <button class="seg-btn" type="button" role="radio" aria-checked="false" data-outlook="long_term">Long term<small>6 months to years</small></button>
+          </div>
+          <div class="option-row" role="radiogroup" aria-labelledby="depth-label">
+            <span class="chips-label" id="depth-label">Depth:</span>
+            <button class="seg-btn" type="button" role="radio" aria-checked="false" data-depth="fast">Fast<small>Tech + news · 5 agents</small></button>
+            <button class="seg-btn selected" type="button" role="radio" aria-checked="true" data-depth="medium">Medium<small>All research · 7 agents</small></button>
+            <button class="seg-btn" type="button" role="radio" aria-checked="false" data-depth="expert">Expert<small>Full debate · 9 agents</small></button>
+          </div>
+        </div>
+      </details>
+      <p class="hint" id="ticker-hint">Add up to 5 tickers — one at a time or paste several at once (comma or space separated).</p>
       <p id="error-msg" class="error hidden" role="alert"></p>
       <p id="restore-notice" class="restore-notice hidden" role="status"></p>
     </section>
@@ -56,7 +78,7 @@
           <div class="how-num">1</div>
           <div>
             <div class="how-title">Research</div>
-            <div class="how-text">Technical, Fundamental and News analysts work on your ticker at the same time.</div>
+            <div class="how-text">Technical, Fundamental, News and Forecast analysts work on your ticker at the same time — the depth profile picks how many run.</div>
           </div>
         </div>
         <div class="how-card">
@@ -103,6 +125,6 @@
   </div>
 
   <div id="toast" class="toast hidden" role="status" aria-live="polite" aria-atomic="true"></div>
-  <script src="/static/app.js?v=8"></script>
+  <script src="/static/app.js?v=16"></script>
 </body>
 </html>

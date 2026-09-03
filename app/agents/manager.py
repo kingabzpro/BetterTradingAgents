@@ -35,6 +35,7 @@ Full research dossier (values of null or "FAILED" mean that input is unavailable
 {json.dumps(payload, indent=2, default=str)}
 
 Decision rules:
+- "user_context" states the user's trading horizon (day_trade, short_term or long_term) with guidance on how to weigh evidence. Apply it: daily momentum matters far less for a long_term holder than for a day trader, and fundamentals matter less for a day trader.
 - BUY requires the bull case to clearly outweigh the bear case on the available evidence.
 - SELL requires clear deterioration or dominant risk.
 - When in doubt, or when key inputs are missing, decide HOLD.

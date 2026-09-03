@@ -4,6 +4,7 @@ const ICONS = {
   technical: '<svg aria-hidden="true" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 12.5 6 8l2.5 2.5L13.5 4"/></svg>',
   fundamental: '<svg aria-hidden="true" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M3 3.5h10M3 7h10M3 10.5h6"/><circle cx="12.4" cy="10.7" r="1.6"/></svg>',
   news: '<svg aria-hidden="true" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="8" cy="8" r="5.7"/><path d="M2.3 8h11.4M8 2.3c-1.8 1.6-2.7 3.5-2.7 5.7s.9 4.1 2.7 5.7c1.8-1.6 2.7-3.5 2.7-5.7S9.8 3.9 8 2.3z"/></svg>',
+  forecast: '<svg aria-hidden="true" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 12.5 6 9l2.5 2.5L12 8"/><path d="M12 8l2.3-2.3" stroke-dasharray="1.5 1.3"/><path d="M12.2 5.7h2.1v2.1"/></svg>',
   bull: '<svg aria-hidden="true" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 12.5 12.5 3.5M6.5 3.5h6v6"/></svg>',
   bear: '<svg aria-hidden="true" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 3.5l9 9M12.5 6.5v6h-6"/></svg>',
   bull_rebuttal: '<svg aria-hidden="true" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 12.5 12.5 3.5M6.5 3.5h6v6"/><path d="M2.5 5.5h3M2.5 8h2"/></svg>',
@@ -15,6 +16,7 @@ const AGENTS = [
   { key: "technical", label: "Technical", stage: "Research" },
   { key: "fundamental", label: "Fundamentals", stage: "Research" },
   { key: "news", label: "News", stage: "Research" },
+  { key: "forecast", label: "Forecast", stage: "Research" },
   { key: "bull", label: "Bull", stage: "Debate" },
   { key: "bear", label: "Bear", stage: "Debate" },
   { key: "bull_rebuttal", label: "Bull rebuttal", stage: "Debate", rebuttal: true },
@@ -24,6 +26,23 @@ const AGENTS = [
 
 const LAST_RUN_KEY = "bta:lastRunId";
 const CLIENT_ID_KEY = "bta:clientId";
+const TICKER_PATTERN = /^[A-Z0-9.\-]{1,10}$/;
+const OUTLOOKS = ["day_trade", "short_term", "long_term"];
+const OUTLOOK_LABELS = { day_trade: "Day trading", short_term: "Short term", long_term: "Long term" };
+const ADVANCED_OPEN_KEY = "bta:advancedOpen";
+const OUTLOOK_KEY = "bta:outlook";
+const DEPTH_KEY = "bta:depth";
+const DEPTH_PROFILES = {
+  fast: { label: "Fast", research: ["technical", "news"], rebuttals: false },
+  medium: { label: "Medium", research: ["technical", "fundamental", "news", "forecast"], rebuttals: false },
+  expert: { label: "Expert", research: ["technical", "fundamental", "news", "forecast"], rebuttals: true },
+};
+const EVIDENCE_META = {
+  technical: { title: "Technical", help: "Trend, momentum, volatility and volume" },
+  fundamental: { title: "Fundamentals", help: "Growth, margins and valuation" },
+  news: { title: "News", help: "Recent potentially market-moving headlines" },
+  forecast: { title: "Forecast", help: "5-day statistical projection vs volatility" },
+};
 const $ = (id) => document.getElementById(id);
 const state = {
   running: false,
@@ -35,6 +54,10 @@ const state = {
   timer: null,
   debateRounds: 1,
   streamWarningShown: false,
+  tickerTags: [],
+  maxTickers: 5,
+  outlook: "short_term",
+  depth: "medium",
 };
 
 /* ---------- boot and recovery ---------- */
@@ -42,31 +65,158 @@ const state = {
 document.addEventListener("DOMContentLoaded", async () => {
   $("analyze-btn").addEventListener("click", () => startAnalysis());
   $("analyze-another-btn").addEventListener("click", () => analyzeAnother());
+  $("add-ticker-btn").addEventListener("click", () => addTickerTags($("ticker-input").value));
   $("ticker-input").addEventListener("keydown", (event) => {
-    if (event.key === "Enter") startAnalysis();
+    if (event.key === "Enter") {
+      if ($("ticker-input").value.trim()) addTickerTags($("ticker-input").value);
+      else startAnalysis();
+    }
+    if (event.key === "Backspace" && !$("ticker-input").value && state.tickerTags.length) {
+      removeTickerTag(state.tickerTags[state.tickerTags.length - 1]);
+    }
   });
   document.querySelectorAll(".chip-btn").forEach((chip) => {
-    chip.addEventListener("click", () => analyzeAnother(chip.dataset.tickers));
+    chip.addEventListener("click", () => addTickerTags(chip.dataset.tickers));
   });
+  document.querySelectorAll("[data-outlook]").forEach((button) => {
+    button.addEventListener("click", () => setOutlook(button.dataset.outlook));
+  });
+  document.querySelectorAll("[data-depth]").forEach((button) => {
+    button.addEventListener("click", () => setDepth(button.dataset.depth));
+  });
+  $("advanced-options").addEventListener("toggle", () => {
+    try { localStorage.setItem(ADVANCED_OPEN_KEY, $("advanced-options").open ? "1" : "0"); } catch (_) {}
+  });
+  try { if (localStorage.getItem(ADVANCED_OPEN_KEY) === "1") $("advanced-options").open = true; } catch (_) {}
+  try {
+    setOutlook(localStorage.getItem(OUTLOOK_KEY));
+    setDepth(localStorage.getItem(DEPTH_KEY));
+  } catch (_) {}
+  updateAdvancedSummary();
+  renderTickerTags();
 
   try {
     const response = await fetch("/api/health");
     const health = await response.json();
     if (health.mock_mode) $("mode-chip").classList.remove("hidden");
     state.debateRounds = health.debate_rounds || 1;
+    state.maxTickers = health.max_tickers || 5;
+    updateDepthLabels();
     const providers = health.providers || {};
     $("provider-line").textContent =
       `data: ${providers.prices || "?"} prices, ${providers.fundamentals || "?"} fundamentals, ` +
-      `${providers.news_search || "?"} news search. model: ${health.llm_model || "mock"}`;
+      `${providers.news_search || "?"} news search, ${providers.forecast || "local"} forecast. model: ${health.llm_model || "mock"}`;
   } catch (_) {
     // The analysis request will show a concrete error if the server is unavailable.
   }
   await restoreSavedRun();
 });
 
-function savedRunId() {
-  const queryRun = new URL(window.location.href).searchParams.get("run");
-  if (queryRun) return queryRun;
+/* ---------- ticker tag input ---------- */
+
+function addTickerTags(raw) {
+  const parts = String(raw || "")
+    .split(/[\s,]+/)
+    .map((ticker) => ticker.trim().toUpperCase())
+    .filter(Boolean);
+  if (!parts.length) return;
+  const invalid = parts.filter((ticker) => !TICKER_PATTERN.test(ticker));
+  if (invalid.length) {
+    showError(`That doesn't look like a ticker symbol: ${invalid.join(", ")}.`);
+    return;
+  }
+  const next = [...state.tickerTags];
+  for (const ticker of parts) {
+    if (!next.includes(ticker)) next.push(ticker);
+  }
+  if (next.length > state.maxTickers) {
+    showError(`Max ${state.maxTickers} tickers at once. Remove one before adding more.`);
+    return;
+  }
+  hideError();
+  state.tickerTags = next;
+  $("ticker-input").value = "";
+  renderTickerTags();
+}
+
+function removeTickerTag(ticker) {
+  state.tickerTags = state.tickerTags.filter((existing) => existing !== ticker);
+  renderTickerTags();
+}
+
+function setTickerTags(raw) {
+  state.tickerTags = String(raw || "")
+    .split(/[\s,]+/)
+    .map((ticker) => ticker.trim().toUpperCase())
+    .filter((ticker) => TICKER_PATTERN.test(ticker))
+    .slice(0, state.maxTickers);
+  renderTickerTags();
+}
+
+function renderTickerTags() {
+  $("ticker-tags").innerHTML = state.tickerTags.map((ticker) => `
+    <span class="ticker-tag">${escapeHtml(ticker)}<button type="button" class="tag-remove" data-remove="${escapeAttr(ticker)}" aria-label="Remove ${escapeAttr(ticker)}">×</button></span>`
+  ).join("");
+  $("ticker-tags").querySelectorAll("[data-remove]").forEach((button) => {
+    button.addEventListener("click", () => removeTickerTag(button.dataset.remove));
+  });
+  $("add-ticker-btn").disabled = state.tickerTags.length >= state.maxTickers;
+  if (!state.running) $("analyze-btn").disabled = state.tickerTags.length === 0;
+}
+
+/* ---------- outlook + depth selectors ---------- */
+
+function setOutlook(outlook) {
+  state.outlook = OUTLOOKS.includes(outlook) ? outlook : "short_term";
+  document.querySelectorAll("[data-outlook]").forEach((button) => {
+    const selected = button.dataset.outlook === state.outlook;
+    button.classList.toggle("selected", selected);
+    button.setAttribute("aria-checked", String(selected));
+  });
+  try { localStorage.setItem(OUTLOOK_KEY, state.outlook); } catch (_) {}
+  updateAdvancedSummary();
+}
+
+function setDepth(depth) {
+  state.depth = DEPTH_PROFILES[depth] ? depth : "medium";
+  document.querySelectorAll("[data-depth]").forEach((button) => {
+    const selected = button.dataset.depth === state.depth;
+    button.classList.toggle("selected", selected);
+    button.setAttribute("aria-checked", String(selected));
+  });
+  try { localStorage.setItem(DEPTH_KEY, state.depth); } catch (_) {}
+  updateAdvancedSummary();
+}
+
+// The collapsed disclosure still shows the current selections.
+function updateAdvancedSummary() {
+  const values = $("adv-values");
+  if (values) values.textContent = `${OUTLOOK_LABELS[state.outlook]} · ${depthProfile().label}`;
+}
+
+function depthProfile() {
+  return DEPTH_PROFILES[state.depth] || DEPTH_PROFILES.medium;
+}
+
+function agentCount(profileKey) {
+  const profile = DEPTH_PROFILES[profileKey];
+  return profile.research.length + 3 + (profile.rebuttals && state.debateRounds >= 2 ? 2 : 0);
+}
+
+// Agent counts on the buttons depend on the server's debate-rounds setting.
+function updateDepthLabels() {
+  const labels = {
+    fast: `Tech + news · ${agentCount("fast")} agents`,
+    medium: `All research · ${agentCount("medium")} agents`,
+    expert: `Full debate · ${agentCount("expert")} agents`,
+  };
+  document.querySelectorAll("[data-depth]").forEach((button) => {
+    const small = button.querySelector("small");
+    if (small && labels[button.dataset.depth]) small.textContent = labels[button.dataset.depth];
+  });
+}
+
+function storedRunId() {
   try { return localStorage.getItem(LAST_RUN_KEY); } catch (_) { return null; }
 }
 
@@ -90,18 +240,28 @@ function clearSavedRun(runId) {
 }
 
 async function restoreSavedRun() {
-  const runId = savedRunId();
+  const urlRun = new URL(window.location.href).searchParams.get("run");
+  const runId = urlRun || storedRunId();
   if (!runId) return;
   try {
     const response = await fetch(`/api/runs/${encodeURIComponent(runId)}`);
     if (response.status === 404) {
       clearSavedRun(runId);
-      showRestoreNotice("Your previous analysis is no longer available on this server. Start a new run when you’re ready.");
+      if (urlRun) showRestoreNotice("That analysis is no longer available on this server. Start a new run when you’re ready.");
       return;
     }
     if (!response.ok) throw new Error(`status ${response.status}`);
     const run = await response.json();
+    // A finished run opens only when explicitly linked (?run=, e.g. from the
+    // history page or a refresh right after completion). A fresh visit to /
+    // starts clean; a still-running run always reconnects.
+    if (run.status !== "running" && !urlRun) {
+      clearSavedRun(runId);
+      return;
+    }
     persistRun(run.run_id);
+    setOutlook(run.outlook);
+    setDepth(run.depth);
     beginRun(run.tickers, { startedAtMs: Number(run.started_at) * 1000, restoring: true });
     if (run.status === "running") {
       $("overall-status").textContent = "Restored active run · reconnecting";
@@ -110,9 +270,9 @@ async function restoreSavedRun() {
     }
     hydrateResults(run.results || {}, true);
     finishRun({ duration: run.duration_s, focusResults: false, failed: run.status === "failed" });
-    showRestoreNotice(run.status === "failed" ? "Restored an interrupted analysis. You can retry any ticker below." : "Restored your latest completed analysis.");
+    showRestoreNotice(run.status === "failed" ? "Restored an interrupted analysis. You can retry any ticker below." : "Restored analysis from run history.");
   } catch (_) {
-    showRestoreNotice("We couldn’t restore the previous analysis. You can start a new run.");
+    if (urlRun) showRestoreNotice("We couldn’t restore that analysis. You can start a new run.");
   }
 }
 
@@ -124,13 +284,12 @@ function showRestoreNotice(message) {
 
 /* ---------- analysis ---------- */
 
-async function startAnalysis(prefilledTickers = null) {
+async function startAnalysis() {
   if (state.running) return;
-  const input = Array.isArray(prefilledTickers) ? prefilledTickers.join(", ") : $("ticker-input").value.trim();
-  if (!input) return;
-  const tickers = [...new Set(input.split(",").map((ticker) => ticker.trim().toUpperCase()).filter(Boolean))];
-  if (tickers.length > 5) {
-    showError(`Max 5 tickers at once (you entered ${tickers.length}).`);
+  addTickerTags($("ticker-input").value); // pick up a half-typed symbol too
+  if (!state.tickerTags.length) {
+    showError("Add at least one ticker first (e.g. NVDA).");
+    $("ticker-input").focus();
     return;
   }
 
@@ -140,7 +299,12 @@ async function startAnalysis(prefilledTickers = null) {
     const response = await fetch("/api/analyze", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ tickers, client_id: getClientId() }),
+      body: JSON.stringify({
+        tickers: state.tickerTags,
+        outlook: state.outlook,
+        depth: state.depth,
+        client_id: getClientId(),
+      }),
     });
     if (!response.ok) {
       const body = await response.json().catch(() => ({}));
@@ -149,7 +313,7 @@ async function startAnalysis(prefilledTickers = null) {
     }
     const payload = await response.json();
     persistRun(payload.run_id);
-    beginRun(tickers);
+    beginRun(state.tickerTags);
     openStream(payload.run_id);
   } catch (error) {
     showError(`Could not reach the server: ${error.message}`);
@@ -184,7 +348,12 @@ function beginRun(tickers, options = {}) {
 }
 
 function activeAgents() {
-  return state.debateRounds >= 2 ? AGENTS : AGENTS.filter((agent) => !agent.rebuttal);
+  const profile = depthProfile();
+  return AGENTS.filter((agent) => {
+    if (agent.stage === "Research") return profile.research.includes(agent.key);
+    if (agent.rebuttal) return profile.rebuttals && state.debateRounds >= 2;
+    return true;
+  });
 }
 
 function updateRunTimer() {
@@ -241,14 +410,20 @@ function hydrateResults(results, restored) {
     setHeader(ticker, analysis.price, analysis.company_name, analysis.providers);
     activeAgents().forEach((agent) => {
       const result = analysis[agent.key];
-      const legacyRebuttal = agent.rebuttal && !(agent.key in analysis);
-      if (legacyRebuttal && !restored) return;
+      // Runs saved before an agent existed have no record of it: show
+      // "Not recorded" instead of "Unavailable". Old rows serialize the
+      // forecast agent as null with no forecast_method; a null agent on a
+      // run that has forecast_method genuinely failed.
+      const legacyMissing = agent.rebuttal
+        ? !(agent.key in analysis)
+        : agent.key === "forecast" && !result && !analysis.forecast_method;
+      if (agent.rebuttal && legacyMissing && !restored) return;
       const available = agent.key === "manager" ? !analysis.error : Boolean(result);
-      const statusClass = legacyRebuttal ? "neutral" : available ? "done" : "failed";
+      const statusClass = legacyMissing ? "neutral" : available ? "done" : "failed";
       const resultLabel = agent.key === "manager"
         ? analysis.decision
         : labelFor(agent.key, result?.signal, result?.confidence);
-      const statusText = legacyRebuttal
+      const statusText = legacyMissing
         ? "Not recorded"
         : available
           ? `✓ ${resultLabel === "n/a" ? "Complete" : resultLabel}`
@@ -266,7 +441,7 @@ function hydrateResults(results, restored) {
 function finishRun({ duration = null, focusResults = true, failed = false } = {}) {
   state.running = false;
   state.finishing = false;
-  $("analyze-btn").disabled = false;
+  $("analyze-btn").disabled = state.tickerTags.length === 0;
   window.clearInterval(state.timer);
   state.timer = null;
   const elapsed = duration == null ? Math.max(0, (Date.now() - state.runStartedAtMs) / 1000) : Number(duration);
@@ -282,7 +457,7 @@ function finishRun({ duration = null, focusResults = true, failed = false } = {}
 
 function analyzeAnother(prefill = "") {
   if (state.running) return;
-  $("ticker-input").value = prefill;
+  if (prefill) setTickerTags(prefill);
   $("ticker-input").focus();
   $("ticker-input").scrollIntoView({ behavior: "smooth", block: "center" });
 }
@@ -331,7 +506,8 @@ function handleEvent(event) {
       entry.done = entry.total;
       entry.agents = {
         technical: event.analysis.technical, fundamental: event.analysis.fundamental,
-        news: event.analysis.news, bull: event.analysis.bull, bear: event.analysis.bear,
+        news: event.analysis.news, forecast: event.analysis.forecast,
+        bull: event.analysis.bull, bear: event.analysis.bear,
         bull_rebuttal: event.analysis.bull_rebuttal, bear_rebuttal: event.analysis.bear_rebuttal,
         manager: { signal: event.decision, confidence: event.confidence, summary: event.analysis.summary },
       };
@@ -402,12 +578,13 @@ function renderSummaryTable() {
   table.id = "summary-table";
   table.innerHTML = `
     <caption class="sr-only">Decision summary for analyzed tickers</caption>
-    <thead><tr><th scope="col">Ticker</th><th scope="col">Decision</th><th scope="col" class="num">Evidence</th><th scope="col" class="num">Suggested size</th><th scope="col">Risk</th><th scope="col"><span class="sr-only">Action</span></th></tr></thead>
+    <thead><tr><th scope="col">Ticker</th><th scope="col">Decision</th><th scope="col" class="num">5-day forecast</th><th scope="col" class="num">Evidence</th><th scope="col" class="num">Suggested size</th><th scope="col">Risk</th><th scope="col"><span class="sr-only">Action</span></th></tr></thead>
     <tbody>${analyses.map((analysis) => {
       const flags = analysis.risk_flags || [];
       return `<tr>
         <td data-label="Ticker"><strong>${escapeHtml(analysis.ticker)}</strong></td>
         <td data-label="Decision">${decisionBadge(analysis)}</td>
+        <td data-label="5-day forecast" class="num">${analysis.forecast_price_5d != null ? `$${Number(analysis.forecast_price_5d).toFixed(2)} (${Number(analysis.forecast_change_5d_pct) >= 0 ? "+" : ""}${Number(analysis.forecast_change_5d_pct).toFixed(2)}%)` : "—"}<small>${analysis.forecast_method === "timegpt-1" ? "Nixtla TimeGPT" : "Local model"}</small></td>
         <td data-label="Evidence" class="num">${Math.round((analysis.confidence || 0) * 100)}% · ${convictionLabel(analysis.confidence)}</td>
         <td data-label="Suggested size" class="num">${analysis.suggested_size_usd ? fmtUsd(analysis.suggested_size_usd) : "—"}</td>
         <td data-label="Risk">${analysis.error ? '<span class="flag-warn">⚠ Unavailable</span>' : flags.length ? `<span class="flag-warn">⚠ ${flags.length} flag${flags.length > 1 ? "s" : ""}</span>` : '<span class="flag-ok">✓ Clear</span>'}</td>
@@ -438,7 +615,8 @@ function setHeader(ticker, price, name, sources) {
   if (priceElement && price != null) priceElement.textContent = `$${Number(price).toFixed(2)}`;
   else if (priceElement && name) priceElement.textContent = name;
   if (sourceElement && sources) {
-    const unique = [...new Set([sources.prices, sources.fundamentals, sources.news].filter((source) => source && source !== "none"))];
+    const forecastSource = sources.forecast === "timegpt" ? "Nixtla TimeGPT" : sources.forecast === "local" ? "local forecast" : null;
+    const unique = [...new Set([sources.prices, sources.fundamentals, sources.news, forecastSource].filter((source) => source && source !== "none"))];
     sourceElement.textContent = unique.length ? `via ${unique.join(" + ")}` : "";
   }
 }
@@ -493,20 +671,32 @@ function renderResultCard(analysis) {
   const detailId = `result-detail-${ticker}`;
   const confidencePct = Math.round((analysis.confidence || 0) * 100);
   const flags = analysis.risk_flags || [];
+  const forecastResult = analysis.forecast
+    || (analysis.forecast_method
+      ? null
+      : { signal: "unknown", confidence: 0, summary: "This run predates the Forecast analyst, so no projection was recorded." });
   const canAdd = analysis.decision === "BUY" && analysis.price && !analysis.error;
   const positionSize = analysis.suggested_size_usd || 10000;
   const defaultQty = analysis.price ? Math.max(1, Math.floor(positionSize / analysis.price)) : 0;
   const asOf = analysis.as_of ? formatDateTime(analysis.as_of) : "Timestamp unavailable";
+  const profile = depthProfile();
+  const skippedResearch = Object.keys(EVIDENCE_META).filter((key) => !profile.research.includes(key));
+  const evidenceHtml = profile.research.map((key) => evidenceCard(
+    EVIDENCE_META[key].title,
+    EVIDENCE_META[key].help,
+    key === "forecast" ? forecastResult : analysis[key],
+    key,
+  )).join("");
 
   card.innerHTML = `
     <button class="result-summary" type="button" aria-expanded="false" aria-controls="${detailId}"><span class="result-identity"><span class="tk">${escapeHtml(ticker)}</span><span class="company">${escapeHtml(analysis.company_name || "Company name unavailable")}</span></span>${decisionBadge(analysis)}<span class="summary-action">Evidence &amp; sources <span class="caret" aria-hidden="true">▶</span></span></button>
     <div class="decision-brief">
-      <div class="decision-facts"><div><span>Current price</span><strong>${analysis.price != null ? `$${Number(analysis.price).toFixed(2)}` : "Unavailable"}</strong></div><div><span>Data as of</span><strong>${escapeHtml(asOf)}</strong></div><div><span>Confidence</span><strong>${confidencePct}% · ${convictionLabel(analysis.confidence)}</strong><small>Evidence strength, not profit probability.</small></div><div><span>Suggested size</span><strong>${analysis.suggested_size_usd ? fmtUsd(analysis.suggested_size_usd) : "No position"}</strong><small>Simulated risk-layer output.</small></div></div>
+      <div class="decision-facts"><div><span>Current price</span><strong>${analysis.price != null ? `$${Number(analysis.price).toFixed(2)}` : "Unavailable"}</strong></div><div><span>5-day forecast</span><strong>${analysis.forecast_price_5d != null ? `$${Number(analysis.forecast_price_5d).toFixed(2)} (${Number(analysis.forecast_change_5d_pct) >= 0 ? "+" : ""}${Number(analysis.forecast_change_5d_pct).toFixed(2)}%)` : "Unavailable"}</strong><small>${analysis.forecast_method === "timegpt-1" ? "Nixtla TimeGPT; not a price guarantee." : analysis.forecast_trend_r2 != null ? `Local trend fit R² ${Number(analysis.forecast_trend_r2).toFixed(2)}; not a price guarantee.` : "Local historical projection; not a price guarantee."}</small></div><div><span>Data as of</span><strong>${escapeHtml(asOf)}</strong></div><div><span>Confidence</span><strong>${confidencePct}% · ${convictionLabel(analysis.confidence)}</strong><small>Evidence strength, not profit probability.</small></div><div><span>Suggested size</span><strong>${analysis.suggested_size_usd ? fmtUsd(analysis.suggested_size_usd) : "No position"}</strong><small>Simulated risk-layer output.</small></div></div>
       <div class="manager-conclusion"><span class="eyebrow">Manager conclusion</span><p class="plain-english">${escapeHtml(plainEnglish(analysis))}</p><p class="thesis">${escapeHtml(analysis.summary || analysis.error || "No manager summary was returned.")}</p></div>
       ${analysis.error ? `<div class="risk-flags"><strong>Analysis unavailable</strong><span>⚠ ${escapeHtml(analysis.error)}</span></div>` : flags.length ? `<div class="risk-flags"><strong>Risk flags</strong>${flags.map((flag) => `<span>⚠ ${escapeHtml(flag)}</span>`).join("")}</div>` : '<div class="risk-clear"><span aria-hidden="true">✓</span> No risk rules were triggered.</div>'}
     </div>
     <div class="result-detail" id="${detailId}" hidden>
-      <section class="result-block" aria-labelledby="evidence-title-${ticker}"><div class="block-heading"><div><span class="eyebrow">Evidence</span><h3 id="evidence-title-${ticker}">What the researchers found</h3></div><p>Signals summarize the direction of available evidence; open each source below to verify the underlying news.</p></div><div class="grid-3">${evidenceCard("Technical", "Trend, momentum, volatility and volume", analysis.technical, "technical")}${evidenceCard("Fundamentals", "Growth, margins and valuation", analysis.fundamental, "fundamental")}${evidenceCard("News", "Recent potentially market-moving headlines", analysis.news, "news")}</div></section>
+      <section class="result-block" aria-labelledby="evidence-title-${ticker}"><div class="block-heading"><div><span class="eyebrow">Evidence</span><h3 id="evidence-title-${ticker}">What the researchers found</h3></div><p>Signals summarize the direction of available evidence; open each source below to verify the underlying news.</p></div><div class="grid-3">${evidenceHtml}</div>${skippedResearch.length ? `<p class="hint">${escapeHtml(profile.label)} depth: ${skippedResearch.map((key) => EVIDENCE_META[key].title).join(" and ")} research skipped for speed.</p>` : ""}</section>
       <section class="result-block" aria-labelledby="debate-title-${ticker}"><div class="block-heading"><div><span class="eyebrow">Debate</span><h3 id="debate-title-${ticker}">Strongest cases on both sides</h3></div><p>Strength scores describe each argument, not expected return.</p></div><div class="debate"><article class="debate-side bull-side"><div class="mc-title">▲ Bull case</div><div class="mc-score">${Math.round((analysis.bull?.confidence ?? 0) * 100)}% argument strength</div><p class="mc-sum">${escapeHtml(analysis.bull?.summary || analysis.bull_case || "No bull case was returned.")}</p></article><article class="debate-side bear-side"><div class="mc-title">▼ Bear case</div><div class="mc-score">${Math.round((analysis.bear?.confidence ?? 0) * 100)}% risk strength</div><p class="mc-sum">${escapeHtml(analysis.bear?.summary || analysis.bear_case || "No bear case was returned.")}</p></article></div></section>
       <section class="result-block sources-block" aria-labelledby="sources-title-${ticker}"><div class="block-heading"><div><span class="eyebrow">Sources</span><h3 id="sources-title-${ticker}">Check the evidence yourself</h3></div><p>${escapeHtml(providerText(analysis.providers))}</p></div>${renderSources(analysis.source_references)}</section>
       <div class="result-actions">${canAdd ? `<div class="add-row"><label for="qty-${ticker}">Shares</label><input id="qty-${ticker}" type="number" min="1" step="1" value="${defaultQty}"><button class="add-btn" id="add-${ticker}" type="button">Add to Demo Portfolio</button><span class="muted">Prefilled from the suggested size (${fmtUsd(positionSize)})</span><span class="added-note hidden" id="added-${ticker}" role="status"></span></div>` : '<span class="muted">Demo portfolio additions are offered for BUY recommendations.</span>'}<button class="secondary-btn retry-btn" type="button">Retry ${escapeHtml(ticker)}</button></div>

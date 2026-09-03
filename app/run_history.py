@@ -7,7 +7,9 @@ import sqlite3
 import time
 
 from app.config import settings
+from app.depth import DEFAULT_DEPTH, normalize_depth
 from app.models import RunHistoryItem, RunStatus, StockAnalysis
+from app.outlook import DEFAULT_OUTLOOK, normalize_outlook
 
 logger = logging.getLogger("analysis")
 
@@ -26,6 +28,8 @@ def _init_db() -> None:
             CREATE TABLE IF NOT EXISTS analysis_runs (
                 run_id TEXT PRIMARY KEY,
                 tickers_json TEXT NOT NULL,
+                outlook TEXT NOT NULL DEFAULT 'short_term',
+                depth TEXT NOT NULL DEFAULT 'medium',
                 status TEXT NOT NULL,
                 mock_mode INTEGER NOT NULL DEFAULT 0,
                 started_at REAL NOT NULL,
@@ -41,6 +45,20 @@ def _init_db() -> None:
         try:
             connection.execute(
                 "ALTER TABLE analysis_runs ADD COLUMN owner_id TEXT NOT NULL DEFAULT ''"
+            )
+        except sqlite3.OperationalError:
+            pass  # column already exists
+        try:
+            connection.execute(
+                "ALTER TABLE analysis_runs ADD COLUMN outlook TEXT NOT NULL "
+                f"DEFAULT '{DEFAULT_OUTLOOK}'"
+            )
+        except sqlite3.OperationalError:
+            pass  # column already exists
+        try:
+            connection.execute(
+                "ALTER TABLE analysis_runs ADD COLUMN depth TEXT NOT NULL "
+                f"DEFAULT '{DEFAULT_DEPTH}'"
             )
         except sqlite3.OperationalError:
             pass  # column already exists
@@ -84,11 +102,13 @@ def _save(status: RunStatus, completed_at: float | None, owner_id: str) -> None:
         connection.execute(
             """
             INSERT INTO analysis_runs (
-                run_id, tickers_json, status, mock_mode, started_at,
+                run_id, tickers_json, outlook, depth, status, mock_mode, started_at,
                 completed_at, duration_s, error, results_json, owner_id, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(run_id) DO UPDATE SET
                 tickers_json = excluded.tickers_json,
+                outlook = excluded.outlook,
+                depth = excluded.depth,
                 status = excluded.status,
                 mock_mode = excluded.mock_mode,
                 completed_at = excluded.completed_at,
@@ -101,6 +121,8 @@ def _save(status: RunStatus, completed_at: float | None, owner_id: str) -> None:
             (
                 status.run_id,
                 json.dumps(status.tickers),
+                normalize_outlook(status.outlook),
+                normalize_depth(status.depth),
                 status.status,
                 int(status.mock_mode),
                 status.started_at,
@@ -129,6 +151,8 @@ def _decode_status(row: sqlite3.Row) -> RunStatus:
     return RunStatus(
         run_id=row["run_id"],
         tickers=json.loads(row["tickers_json"]),
+        outlook=normalize_outlook(row["outlook"]),
+        depth=normalize_depth(row["depth"]),
         status=row["status"],
         mock_mode=bool(row["mock_mode"]),
         started_at=row["started_at"],
@@ -174,6 +198,8 @@ def _list(limit: int, owner_id: str) -> list[RunHistoryItem]:
             RunHistoryItem(
                 run_id=status.run_id,
                 tickers=status.tickers,
+                outlook=status.outlook,
+                depth=status.depth,
                 status=status.status,
                 mock_mode=status.mock_mode,
                 started_at=status.started_at,

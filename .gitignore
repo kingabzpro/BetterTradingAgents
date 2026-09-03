@@ -6,3 +6,4 @@ portfolio.db
 
 # local dev artifacts
 .playwright-mcp/
+gui-test-screenshots/

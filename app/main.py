@@ -68,6 +68,7 @@ async def health():
             "prices": "yfinance",
             "fundamentals": "finnhub" if settings.finnhub_api_key else "yfinance",
             "news_search": "olostep" if settings.olostep_api_key else "disabled",
+            "forecast": "timegpt" if settings.nixtla_api_key else "local",
         },
         "max_tickers": settings.max_tickers,
         "debate_rounds": settings.debate_rounds,
@@ -89,9 +90,15 @@ async def analyze(request: AnalysisRequest):
         raise HTTPException(
             status_code=400, detail=f"invalid ticker symbol(s): {', '.join(invalid)}"
         )
-    run = await store.create(tickers, request.client_id or "")
+    run = await store.create(
+        tickers, request.client_id or "", request.outlook, request.depth
+    )
     logger.info(
-        "[analysis] run %s started: %s", run.run_id, ", ".join(tickers)
+        "[analysis] run %s started: %s (%s, %s)",
+        run.run_id,
+        ", ".join(tickers),
+        run.outlook,
+        run.depth,
     )
     return AnalysisResponse(run_id=run.run_id, tickers=tickers)
 

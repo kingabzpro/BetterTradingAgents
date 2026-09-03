@@ -2,6 +2,8 @@
 
 const $ = (id) => document.getElementById(id);
 const CLIENT_ID_KEY = "bta:clientId";
+const OUTLOOK_LABELS = { day_trade: "Day trading", short_term: "Short term", long_term: "Long term" };
+const DEPTH_LABELS = { fast: "Fast", medium: "Medium", expert: "Expert" };
 
 document.addEventListener("DOMContentLoaded", () => {
   $("refresh-history").addEventListener("click", loadHistory);
@@ -80,7 +82,7 @@ function runCard(run) {
         const decision = decisions[ticker];
         return `<span class="history-ticker"><strong>${escapeHtml(ticker)}</strong>${decision ? decisionBadge(decision) : '<span class="muted">No decision</span>'}</span>`;
       }).join("")}</div>
-      <div class="history-meta"><span>${Number(run.duration_s || 0).toFixed(1)}s</span><span>${run.result_count}/${run.tickers.length} result${run.tickers.length === 1 ? "" : "s"}</span>${run.mock_mode ? "<span>Mock mode</span>" : ""}</div>
+      <div class="history-meta"><span>${Number(run.duration_s || 0).toFixed(1)}s</span><span>${run.result_count}/${run.tickers.length} result${run.tickers.length === 1 ? "" : "s"}</span>${run.outlook ? `<span>${escapeHtml(OUTLOOK_LABELS[run.outlook] || run.outlook)} outlook</span>` : ""}${run.depth ? `<span>${escapeHtml(DEPTH_LABELS[run.depth] || run.depth)} depth</span>` : ""}${run.mock_mode ? "<span>Mock mode</span>" : ""}</div>
       ${run.error ? `<p class="history-error">${escapeHtml(run.error)}</p>` : ""}
     </div>
     <a class="history-open" href="/?run=${encodeURIComponent(run.run_id)}">View run <span aria-hidden="true">→</span></a>`;

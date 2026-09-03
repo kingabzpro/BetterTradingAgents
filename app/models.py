@@ -5,12 +5,15 @@ from urllib.parse import urlparse
 
 from pydantic import BaseModel, Field, field_validator
 
+from app.depth import DEFAULT_DEPTH, Depth
+from app.outlook import DEFAULT_OUTLOOK, Outlook
+
 Decision = Literal["BUY", "HOLD", "SELL"]
 Signal = Literal["bullish", "bearish", "neutral", "positive", "negative", "unknown"]
 
 
 class AgentResult(BaseModel):
-    """Result of a single agent (technical / fundamental / news / bull / bear)."""
+    """Result of a single agent (technical / fundamental / news / forecast / bull / bear)."""
 
     agent: str
     signal: str = "unknown"
@@ -78,6 +81,10 @@ class StockAnalysis(BaseModel):
     ticker: str
     company_name: str = ""
     price: float | None = None
+    forecast_price_5d: float | None = None
+    forecast_change_5d_pct: float | None = None
+    forecast_trend_r2: float | None = None
+    forecast_method: str = ""
     decision: Decision = "HOLD"
     confidence: float = 0.0
     summary: str = ""
@@ -86,6 +93,7 @@ class StockAnalysis(BaseModel):
     technical: AgentResult | None = None
     fundamental: AgentResult | None = None
     news: AgentResult | None = None
+    forecast: AgentResult | None = None
     bull: AgentResult | None = None
     bear: AgentResult | None = None
     bull_rebuttal: AgentResult | None = None
@@ -101,6 +109,8 @@ class StockAnalysis(BaseModel):
 
 class AnalysisRequest(BaseModel):
     tickers: list[str] = Field(min_length=1)
+    outlook: Outlook = DEFAULT_OUTLOOK
+    depth: Depth = DEFAULT_DEPTH
     client_id: str | None = Field(
         default=None, min_length=8, max_length=64, pattern=r"^[A-Za-z0-9_-]+$"
     )
@@ -123,6 +133,8 @@ class AnalysisResponse(BaseModel):
 class RunStatus(BaseModel):
     run_id: str
     tickers: list[str]
+    outlook: Outlook = DEFAULT_OUTLOOK
+    depth: Depth = DEFAULT_DEPTH
     status: Literal["running", "completed", "failed"] = "running"
     mock_mode: bool = False
     started_at: float = 0.0
@@ -136,6 +148,8 @@ class RunHistoryItem(BaseModel):
 
     run_id: str
     tickers: list[str]
+    outlook: Outlook = DEFAULT_OUTLOOK
+    depth: Depth = DEFAULT_DEPTH
     status: Literal["running", "completed", "failed"]
     mock_mode: bool = False
     started_at: float

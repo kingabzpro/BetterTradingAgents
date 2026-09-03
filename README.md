@@ -4,10 +4,10 @@
 
 **Real-time, multi-agent AI stock research and paper trading—powered by CrewAI.**
 
-Enter up to five stock tickers. Specialized agents analyze technicals, fundamentals, and
-news in parallel, bull and bear researchers debate across a rebuttal round, and a
-risk-gated **BUY / HOLD / SELL** decision comes back with a suggested position size
-and the full reasoning trail.
+Enter up to five stock tickers. Specialized agents analyze technicals, fundamentals,
+news, and the 5-day price forecast in parallel, bull and bear researchers debate across
+a rebuttal round, and a risk-gated **BUY / HOLD / SELL** decision comes back with a
+suggested position size and the full reasoning trail.
 
 [![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-3776ab?logo=python&logoColor=white)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
@@ -37,7 +37,7 @@ simulated portfolio.
 | 📡 | **Live, honest progress** | Server-Sent Events stream every agent state, with per-ticker progress bars as it happens. |
 | 🕘 | **Durable run history** | Completed and interrupted analyses are saved in SQLite and can be reopened from the Runs page. |
 | 🛡️ | **Resilient runs** | If an agent fails, the Portfolio Manager receives the available inputs and still makes a call. |
-| 📊 | **Real market data** | Finnhub, Olostep, and yfinance provide fundamentals, news, and price history. |
+| 📊 | **Real market data** | Finnhub, Olostep, and yfinance provide fundamentals, news, and price history; Nixtla TimeGPT optionally provides a 5-day forecast. |
 | 🧠 | **Model flexibility** | Use any OpenAI-compatible LLM, including OpenRouter, DeepSeek, Qwen, GLM, vLLM, and llama.cpp. |
 | 🪶 | **No frontend build step** | Vanilla HTML, CSS, and JavaScript are served directly by FastAPI. |
 
@@ -45,25 +45,29 @@ simulated portfolio.
 
 ```mermaid
 flowchart TD
-    T["📈 Tickers<br/>NVDA · AMD · META"] --> D["Market data collection (parallel)<br/>Finnhub · Olostep · yfinance"]
+    T["📈 Tickers<br/>NVDA · AMD · META"] --> D["Market data collection (parallel)<br/>Finnhub · Olostep · yfinance · TimeGPT"]
 
     subgraph Research[Parallel research]
         direction LR
         TA["Technical Analyst<br/>SMA · RSI · MACD · volume"]
         FA["Fundamental Analyst<br/>Growth · margins · valuation"]
         NA["News Analyst<br/>Headlines · sentiment · catalysts"]
+        FC["Forecast Analyst<br/>TimeGPT + trend vs volatility"]
     end
 
     D --> TA
     D --> FA
     D --> NA
+    D --> FC
 
     TA --> BULL["🐂 Bull Researcher<br/>Strongest case to buy"]
     FA --> BULL
     NA --> BULL
+    FC --> BULL
     TA --> BEAR["🐻 Bear Researcher<br/>Risks and downsides"]
     FA --> BEAR
     NA --> BEAR
+    FC --> BEAR
 
     BULL --> RB["⚔️ Rebuttal round<br/>Each side answers the other"]
     BEAR --> RB
@@ -75,6 +79,23 @@ flowchart TD
 
 The research, data-fetch, and debate stages run concurrently with `asyncio.gather`. Multiple tickers
 also run side by side—up to five by default—with one portfolio snapshot shared across the run.
+
+### TimeGPT forecasting
+
+Each analysis now includes a five-trading-day price forecast alongside the current price. The app
+sends up to 512 historical daily closes from yfinance to Nixtla's pretrained `timegpt-1` model,
+then reports the fifth predicted close and its percentage change from today's price. A dedicated
+Forecast Analyst interprets that projection—weighing it against implied volatility and the local
+trend fit—so the debate gets an interpreted view, not just raw numbers. Projections are supporting
+evidence, never a guaranteed target or probability of profit.
+
+TimeGPT is optional and resilient by design:
+
+- With `NIXTLA_API_KEY`, the app uses Nixtla's hosted zero-shot forecasting API.
+- Without a key, or when TimeGPT is unavailable, a local 60-day log-linear trend provides the same
+  output fields so an analysis can still finish.
+- The live-analysis card and completed summary identify Nixtla TimeGPT when it produced the
+  forecast; otherwise they identify the local model. Forecasts remain clearly labeled as estimates.
 
 ### Live execution
 
@@ -114,6 +135,16 @@ cp .env.example .env
 Add an `LLM_API_KEY` to `.env` to enable the AI agents. The default configuration uses OpenAI,
 but any OpenAI-compatible endpoint can be used.
 
+To enable the hosted forecast, sign in to the [Nixtla dashboard](https://dashboard.nixtla.io/sign_in),
+open **API Keys**, create a key, and add it locally:
+
+```env
+NIXTLA_API_KEY=your_key_here
+```
+
+Keep the key in `.env`; never commit or expose it in browser-side code. Restart the app after
+changing environment variables. TimeGPT is optional—the local forecast remains available without it.
+
 > [!TIP]
 > No LLM key yet? Leave `LLM_API_KEY` empty. The complete workflow remains available in clearly
 > labeled rule-based mock mode using live market data.
@@ -136,8 +167,13 @@ but any OpenAI-compatible endpoint can be used.
 uv run uvicorn app.main:app --reload
 ```
 
-Open [http://localhost:8000](http://localhost:8000), enter tickers such as `NVDA, AMD, META`, and
-select **Analyze Stocks**.
+Open [http://localhost:8000](http://localhost:8000), add tickers such as `NVDA, AMD, META`
+(one at a time, paste several at once, or use the quick-add chips — up to 5), pick your
+outlook (**Day trading**, **Short term**, or **Long term**) and depth (**Fast** = technical +
+news + single debate round, 5 agents · **Medium** = all researchers, 7 agents ·
+**Expert** = adds the bull/bear rebuttal round, 9 agents), then select **Analyze Stocks**.
+The outlook is sent to every agent, so they all weigh evidence for the horizon you actually
+trade; the depth picks how many agents run, trading thoroughness for speed.
 
 ## Configuration
 
@@ -154,6 +190,7 @@ optional; without an LLM key, the app starts in mock mode.
 | `LLM_REASONING_EFFORT` | — | Optional provider-specific reasoning effort |
 | `FINNHUB_API_KEY` | — | Company profiles, fundamentals, and news; falls back to yfinance |
 | `OLOSTEP_API_KEY` | — | News search and article scraping fallback |
+| `NIXTLA_API_KEY` | — | Nixtla TimeGPT 5-day forecast; falls back to the local trend model |
 | `MAX_TICKERS` | `5` | Maximum tickers accepted in one analysis |
 | `DEBATE_ROUNDS` | `2` | Bull/bear debate depth: `1` = single round, `2`+ adds one rebuttal exchange (capped at 3) |
 | `STARTING_CASH` | `100000` | Initial simulated portfolio balance |
@@ -204,6 +241,7 @@ curl -X POST http://localhost:8000/api/analyze \
 </details>
 
 Each result in `GET /api/runs/{run_id}` carries the decision (`BUY`/`HOLD`/`SELL`), confidence,
+the five-day forecast (`forecast_price_5d`, `forecast_change_5d_pct`, and `forecast_method`),
 per-agent reports (including both rebuttal rounds), and the risk gate's output:
 `suggested_size_usd` (the volatility-scaled position size) and `risk_flags` (why a BUY was
 downgraded or confidence capped, if it was).
@@ -243,6 +281,7 @@ Detailed, research-backed plans for everything below live in [docs/ROADMAP.md](d
 - [ ] Decision memory: learn from realized returns and SPY alpha across runs
 - [x] Risk layer: volatility-scaled position sizing and exposure caps
 - [x] Rebuttal round in the bull/bear debate
+- [x] 5-day price forecast (Nixtla TimeGPT with local fallback) + Forecast analyst
 - [ ] Backtest agent decisions against buy-and-hold (walk-forward)
 - [ ] Stream agent reasoning while each agent works
 - [ ] Support per-agent model selection

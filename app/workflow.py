@@ -1,4 +1,4 @@
-"""Analysis workflow: 3 parallel research agents -> bull+bear in parallel -> manager.
+"""Analysis workflow: 4 parallel research agents -> bull+bear in parallel -> manager.
 
 Every agent run is one single-agent CrewAI crew. One agent failing never kills
 the run - its slot becomes None and downstream agents are told the input is
@@ -13,11 +13,13 @@ import time
 from typing import Any, Awaitable, Callable
 
 from app import risk
-from app.agents import bear, bull, fundamental, manager, news, technical
+from app.agents import bear, bull, forecast, fundamental, manager, news, technical
 from app.config import settings
+from app.depth import DEFAULT_DEPTH, depth_profile
 from app.models import AgentResult, PortfolioSummary, SourceReference, StockAnalysis
-from app.tools.indicators import compute_indicators
-from app.tools.market_data import get_stock_data
+from app.outlook import DEFAULT_OUTLOOK, user_context
+from app.tools.indicators import compute_indicators, historical_forecast
+from app.tools.market_data import get_stock_data, get_timegpt_forecast
 
 logger = logging.getLogger("analysis")
 
@@ -199,12 +201,20 @@ def _source_references(market: Any) -> list[SourceReference]:
 
 
 async def analyze_ticker(
-    ticker: str, emit: Emit, portfolio_summary: PortfolioSummary | None = None
+    ticker: str,
+    emit: Emit,
+    portfolio_summary: PortfolioSummary | None = None,
+    outlook: str = DEFAULT_OUTLOOK,
+    depth: str = DEFAULT_DEPTH,
 ) -> StockAnalysis:
     """Full 3-stage workflow for one ticker.
 
     `portfolio_summary` lets a multi-ticker run fetch the portfolio once and
-    share it across tickers; when omitted it is fetched here.
+    share it across tickers; when omitted it is fetched here. `outlook` is the
+    user's chosen horizon (day_trade / short_term / long_term) and is injected
+    into every agent payload so the whole crew weighs evidence for that horizon.
+    `depth` (fast / medium / expert) selects which researchers run and whether
+    the debate gets a rebuttal round - fewer agents, faster run.
     """
     started = time.perf_counter()
     await emit("ticker_started", {"ticker": ticker})
@@ -222,6 +232,21 @@ async def analyze_ticker(
     indicators = compute_indicators(
         market.closes, market.highs, market.lows, market.volumes
     )
+    prof = depth_profile(depth)
+    research: tuple[str, ...] = prof["research"]
+    local_forecast: dict | None = None
+    timegpt_forecast: dict | None = None
+    if "forecast" in research:
+        local_forecast = historical_forecast(market.closes)
+        timegpt_forecast = await get_timegpt_forecast(market.closes)
+        if timegpt_forecast:
+            indicators.update(timegpt_forecast)
+            market.sources["forecast"] = "timegpt"
+        else:
+            market.sources["forecast"] = "local"
+    else:
+        # "none" is filtered out of the UI's provider line.
+        market.sources["forecast"] = "none"
     await emit(
         "ticker_data",
         {
@@ -232,22 +257,81 @@ async def analyze_ticker(
         },
     )
 
-    # Stage 1: three researchers in parallel.
-    tech_data, fund_data, news_data = await asyncio.gather(
-        _run_agent(technical, ticker, emit, payload=indicators),
-        _run_agent(fundamental, ticker, emit, payload=market.fundamentals),
-        _run_agent(news, ticker, emit, payload={"items": market.news}),
+    # Stage 1: the profile's researchers in parallel. Excluded researchers
+    # never run (no events either - the UI shows no row for them).
+    user_ctx = user_context(outlook)
+    forecast_payload = {
+        "price": market.price,
+        "history_days": len(market.closes),
+        "timegpt_forecast": timegpt_forecast,
+        "local_trend_forecast": local_forecast,
+        "user_context": user_ctx,
+        "trend_context": {
+            key: indicators.get(key)
+            for key in (
+                "sma_20",
+                "sma_50",
+                "change_5d_pct",
+                "change_21d_pct",
+                "rsi_14",
+                "volatility_annualized_pct",
+                "atr_pct_of_price",
+            )
+        },
+    }
+
+    async def run_research(key: str) -> dict | None:
+        if key == "technical":
+            return await _run_agent(
+                technical, ticker, emit, payload={**indicators, "user_context": user_ctx}
+            )
+        if key == "fundamental":
+            return await _run_agent(
+                fundamental,
+                ticker,
+                emit,
+                payload={**market.fundamentals, "user_context": user_ctx},
+            )
+        if key == "news":
+            return await _run_agent(
+                news,
+                ticker,
+                emit,
+                payload={"items": market.news, "user_context": user_ctx},
+            )
+        return await _run_agent(forecast, ticker, emit, payload=forecast_payload)
+
+    research_keys = [key for key in ("technical", "fundamental", "news", "forecast") if key in research]
+    research_data = dict(
+        zip(
+            research_keys,
+            await asyncio.gather(*(run_research(key) for key in research_keys)),
+        )
     )
+    tech_data = research_data.get("technical")
+    fund_data = research_data.get("fundamental")
+    news_data = research_data.get("news")
+    forecast_data = research_data.get("forecast")
     tech = technical.to_result(tech_data, ticker) if tech_data else None
     fund = fundamental.to_result(fund_data, ticker) if fund_data else None
     news_r = news.to_result(news_data, ticker) if news_data else None
+    forecast_r = forecast.to_result(forecast_data, ticker) if forecast_data else None
+
+    def slot(key: str, result: AgentResult | None) -> dict | str:
+        if result is not None:
+            return result.model_dump()
+        if key in research:
+            return "FAILED - researcher ran but returned nothing usable"
+        return f"SKIPPED - not requested in the {prof['label']} depth profile"
 
     context = {
         "ticker": ticker,
         "price": market.price,
-        "technical": tech.model_dump() if tech else "FAILED - unavailable",
-        "fundamental": fund.model_dump() if fund else "FAILED - unavailable",
-        "news": news_r.model_dump() if news_r else "FAILED - unavailable",
+        "user_context": user_ctx,
+        "technical": slot("technical", tech),
+        "fundamental": slot("fundamental", fund),
+        "news": slot("news", news_r),
+        "forecast": slot("forecast", forecast_r),
     }
 
     # Stage 2: bull and bear in parallel.
@@ -256,10 +340,11 @@ async def analyze_ticker(
         _run_agent(bear, ticker, emit, payload=context),
     )
 
-    # Stage 2b: rebuttal round - each side answers the other's argument
-    # (skipped when either first-round brief failed).
+    # Stage 2b: rebuttal round - each side answers the other's argument.
+    # Only expert depth asks for it (and the server must allow DEBATE_ROUNDS >= 2);
+    # it is skipped entirely when either first-round brief failed.
     bull_rebuttal, bear_rebuttal = None, None
-    if settings.debate_rounds >= 2:
+    if prof["rebuttals"] and settings.debate_rounds >= 2:
         if bull_data and bear_data:
             bull_rebuttal, bear_rebuttal = await asyncio.gather(
                 _run_agent(
@@ -318,7 +403,7 @@ async def analyze_ticker(
         "bull": bull_r.model_dump() if bull_r else "FAILED - unavailable",
         "bear": bear_r.model_dump() if bear_r else "FAILED - unavailable",
         "debate": {
-            "rounds": settings.debate_rounds,
+            "rounds": 2 if (prof["rebuttals"] and settings.debate_rounds >= 2) else 1,
             "bull_round_1": bull_data,
             "bear_round_1": bear_data,
             "bull_rebuttal": bull_rebuttal,
@@ -361,6 +446,10 @@ async def analyze_ticker(
         ticker=ticker,
         company_name=market.company_name,
         price=market.price,
+        forecast_price_5d=indicators.get("forecast_price_5d"),
+        forecast_change_5d_pct=indicators.get("forecast_change_5d_pct"),
+        forecast_trend_r2=indicators.get("forecast_trend_r2"),
+        forecast_method=indicators.get("forecast_method", ""),
         decision=decision,
         confidence=confidence,
         summary=summary,
@@ -369,6 +458,7 @@ async def analyze_ticker(
         technical=tech,
         fundamental=fund,
         news=news_r,
+        forecast=forecast_r,
         bull=bull_r,
         bear=bear_r,
         bull_rebuttal=bull_rebuttal_r,
