@@ -22,7 +22,9 @@ faster parallel workflow, live progress, explainable decisions, risk controls, a
 Enter up to five stock tickers. Specialized agents analyze technicals, fundamentals,
 news, and the 5-day price forecast in parallel, bull and bear researchers debate across
 a rebuttal round, and a risk-gated **BUY / HOLD / SELL** decision comes back with a
-suggested position size and the full reasoning trail.
+suggested position size and the full reasoning trail. Every completed call is also
+remembered and graded against what the market actually did, so the Portfolio Manager
+brings a track record to the next decision, not just fresh data.
 
 ![BetterTradingAgents home screen](docs/screenshots/home.png)
 
@@ -37,6 +39,7 @@ simulated portfolio.
 | ⚡ | **Parallel by design** | Researchers, data fetches, and debate rounds run concurrently, and multiple tickers run side by side. |
 | ⚔️ | **Real debate** | Bull and bear each get a rebuttal round to answer the other's strongest points before the call. |
 | ⚖️ | **Risk-gated decisions** | BUYs are volatility-scaled and capped by per-ticker, invested, and cash-buffer limits; a 5-day forecast beyond the stock's own noise band (±1σ) downgrades the trade and one past half the band halves its size. Downgrades are flagged, never silent. |
+| 📜 | **Learns from its calls** | Every completed decision is recorded and later graded on realized return and alpha vs SPY; the manager weighs those lessons on the next run and the results page shows the track record. |
 | 📡 | **Live, honest progress** | Server-Sent Events stream every agent state, with per-ticker progress bars as it happens. |
 | 🕘 | **Durable run history** | Completed and interrupted analyses are saved in SQLite and can be reopened from the Runs page. |
 | 🛡️ | **Resilient runs** | If an agent fails, the Portfolio Manager receives the available inputs and still makes a call. |
@@ -75,7 +78,8 @@ flowchart TD
     BULL --> RB["⚔️ Rebuttal round<br/>Each side answers the other"]
     BEAR --> RB
 
-    RB --> PM["Portfolio Manager<br/>Weighs debate + holdings"]
+    RB --> PM["Portfolio Manager<br/>Weighs debate + holdings + track record"]
+    MEM["📜 Decision memory<br/>Past calls graded vs SPY"] --> PM
     PM --> RISK["Risk gate<br/>Vol-scaled size · forecast check · exposure caps"]
     RISK --> RESULT["BUY · HOLD · SELL<br/>Confidence + size + reasoning trail"]
 ```
@@ -100,6 +104,24 @@ TimeGPT is optional and resilient by design:
 - The live-analysis card and completed summary identify Nixtla TimeGPT when it produced the
   forecast; otherwise they identify the local model. Forecasts remain clearly labeled as estimates.
 
+### Decision memory
+
+The app keeps a decision log in SQLite and learns from realized outcomes, the mechanism
+TradingAgents credits for much of its edge:
+
+- Every completed run records its call (ticker, decision, confidence, price, and both cases).
+- Past decisions are graded once their evaluation window closes (`MEMORY_HORIZON_DAYS`,
+  default 21 days) on realized return and alpha vs SPY from yfinance closes. Younger
+  decisions get an honest partial-window grade while their window is still open.
+- On the next run of the same ticker, the Portfolio Manager sees the three most recent
+  graded calls plus two cross-ticker lessons, each with a one-line verdict such as
+  "the bullish call beat the market" or "standing aside missed a 4.9% gain". The manager
+  is instructed to treat them as weak evidence — one or two outcomes never outweigh
+  current research.
+- The results page shows the same track record under **What happened after previous calls**.
+- Lessons are deterministic sentences by default. Set `MEMORY_REFLECT_WITH_LLM=1` to have
+  the LLM write a two-sentence lesson per matured decision instead.
+
 ### Live execution
 
 Server-Sent Events update the interface as every agent moves from waiting to running, complete,
@@ -110,7 +132,8 @@ or failed. Progress bars tick per ticker as each agent finishes.
 ### Explainable results
 
 Expand any ticker to inspect the plain-English decision summary, analyst reports, the full
-bull-versus-bear debate including rebuttals, the risk-sized position, and any risk flags.
+bull-versus-bear debate including rebuttals, the risk-sized position, any risk flags, and
+the track record of previous calls graded against SPY.
 
 ![Analysis results](docs/screenshots/results.png)
 
@@ -329,6 +352,7 @@ app/
   tools/         market data (Finnhub/Olostep/yfinance), indicators
   runs.py        active run coordination and event fan-out
   run_history.py SQLite persistence for completed/interrupted runs
+  memory.py      decision log + realized-return/SPY-alpha reflection
   portfolio.py   SQLite positions, closes, realized P&L
 static/          vanilla HTML/CSS/JS, no build step
 scripts/         sanity checks
