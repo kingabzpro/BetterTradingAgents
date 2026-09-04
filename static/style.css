@@ -420,6 +420,34 @@ td.num, th.num { text-align: right; }
 .pnl-red { color: #ff8296; }
 .empty-note { color: var(--muted); padding: 28px 0; text-align: center; }
 
+/* ---------- portfolio: add holding + CSV import ---------- */
+#unpriced-note { margin: -6px 0 14px; }
+.manage-card { margin-bottom: 18px; }
+.manage-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; }
+.manage-label { font-weight: 650; font-size: 13px; letter-spacing: 0.01em; margin-bottom: 10px; }
+.manage-card .add-row { border-top: none; padding-top: 0; }
+.manage-card .add-row input { width: 104px; }
+.manage-card .add-row input#add-ticker { width: 92px; text-transform: uppercase; }
+.manage-card .hint { margin-top: 10px; }
+.sample-link { color: var(--muted); text-decoration: underline; text-underline-offset: 2px; }
+.sample-link:hover { color: var(--text); }
+.manage-card code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 11.5px; color: #a6aec0; }
+.src-tag {
+  display: inline-block; margin-left: 7px; padding: 2px 8px; border-radius: 999px;
+  font-size: 10px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase;
+  border: 1px solid rgba(96, 165, 250, 0.35); background: rgba(96, 165, 250, 0.1); color: #8ab4f8;
+  vertical-align: 1px; cursor: help;
+}
+.csv-preview { margin-top: 16px; border-top: 1px dashed var(--border-strong); padding-top: 14px; }
+.preview-title { font-size: 12px; font-weight: 650; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 8px; }
+.preview-table { font-size: 12.5px; }
+.preview-table th, .preview-table td { padding: 7px 10px; }
+.preview-table .row-error td { color: #ff8296; }
+.preview-error { color: #ff8296; font-size: 13px; margin: 4px 0 0; }
+.preview-skip { color: var(--muted); font-size: 12.5px; margin: 8px 0 0; padding-left: 18px; }
+.preview-skip li { margin: 3px 0; }
+.preview-actions { display: flex; gap: 10px; margin-top: 12px; }
+
 /* ---------- responsive ---------- */
 @media (max-width: 1024px) {
   .container { padding: 12px 16px 48px; }
@@ -433,6 +461,7 @@ td.num, th.num { text-align: right; }
   .result-summary { flex-wrap: wrap; row-gap: 10px; }
   .result-summary .confidence { order: 5; flex-basis: 100%; min-width: 0; }
   .status { min-width: 118px; }
+  .manage-grid { grid-template-columns: 1fr; gap: 16px; }
 }
 
 @media (max-width: 560px) {

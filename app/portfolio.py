@@ -1,14 +1,28 @@
-"""Demo portfolio: SQLite persistence, prices via yfinance, no order execution."""
+"""Demo portfolio: SQLite persistence, prices via yfinance, no order execution.
+
+Two kinds of positions share one table:
+- demo trades (external = 0): added from the analysis page, funded by simulated cash;
+- tracked holdings (external = 1): manually entered or CSV-imported real positions.
+  They are valued at live prices but never touch the simulated cash balance.
+"""
 
 import asyncio
 import logging
+import re
 import sqlite3
 
 from app.config import settings
-from app.models import PortfolioPosition, PortfolioSummary
+from app.models import (
+    PortfolioImportItem,
+    PortfolioImportResponse,
+    PortfolioPosition,
+    PortfolioSummary,
+)
 from app.tools.market_data import get_current_price
 
 logger = logging.getLogger("portfolio")
+
+_TICKER_RE = re.compile(r"^[A-Z0-9.\-]{1,10}$")
 
 
 def _connect() -> sqlite3.Connection:
@@ -30,8 +44,12 @@ def _init_db() -> None:
             )
             """
         )
-        # Databases created before close/exit support lack the new columns.
-        for column in ("exit_price REAL", "closed_at TEXT"):
+        # Databases created before close/exit/external-tracking support lack columns.
+        for column in (
+            "exit_price REAL",
+            "closed_at TEXT",
+            "external INTEGER NOT NULL DEFAULT 0",
+        ):
             try:
                 conn.execute(f"ALTER TABLE positions ADD COLUMN {column}")
             except sqlite3.OperationalError:
@@ -43,14 +61,18 @@ async def init() -> None:
 
 
 def _cash_available() -> float:
-    """Starting cash minus all buy costs plus all sell proceeds."""
+    """Starting cash minus all demo buy costs plus all demo sell proceeds.
+
+    Tracked holdings (external = 1) are excluded: they describe what the user
+    already owns outside the simulation, so they neither consume nor free cash.
+    """
     with _connect() as conn:
         open_cost, closed_cost, closed_proceeds = conn.execute(
             "SELECT "
             "COALESCE(SUM(quantity * entry_price) FILTER (WHERE closed_at IS NULL), 0), "
             "COALESCE(SUM(quantity * entry_price) FILTER (WHERE closed_at IS NOT NULL), 0), "
             "COALESCE(SUM(quantity * exit_price) FILTER (WHERE closed_at IS NOT NULL), 0) "
-            "FROM positions"
+            "FROM positions WHERE external = 0"
         ).fetchone()
     return settings.starting_cash - open_cost - closed_cost + closed_proceeds
 
@@ -91,6 +113,59 @@ async def add_position(
         pnl=0.0,
         pnl_pct=0.0,
     )
+
+
+def _insert_external(rows: list[tuple[str, float, float]]) -> None:
+    with _connect() as conn:
+        conn.executemany(
+            "INSERT INTO positions (ticker, quantity, entry_price, external) "
+            "VALUES (?, ?, ?, 1)",
+            rows,
+        )
+
+
+async def import_positions(items: list[PortfolioImportItem]) -> PortfolioImportResponse:
+    """Record externally tracked holdings (manual entry or CSV import).
+
+    Unlike demo trades there is no cash guard: these positions already exist in
+    the user's real account, so there is nothing to fund. Invalid rows are
+    skipped and reported; valid rows are inserted in one transaction.
+    """
+    cleaned: list[PortfolioImportItem] = []
+    errors: list[str] = []
+    for item in items:
+        ticker = item.ticker.strip().upper()
+        if not _TICKER_RE.match(ticker):
+            errors.append(f"invalid ticker symbol: '{item.ticker.strip()}'")
+        elif item.quantity <= 0:
+            errors.append(f"'{ticker}': quantity must be positive")
+        else:
+            cleaned.append(
+                PortfolioImportItem(
+                    ticker=ticker, quantity=item.quantity, entry_price=item.entry_price
+                )
+            )
+
+    needs_price = [item for item in cleaned if item.entry_price is None]
+    prices = await asyncio.gather(
+        *(get_current_price(item.ticker) for item in needs_price)
+    )
+    live = dict(zip((item.ticker for item in needs_price), prices))
+
+    rows: list[tuple[str, float, float]] = []
+    for item in cleaned:
+        entry_price = item.entry_price
+        if entry_price is None:
+            entry_price = live.get(item.ticker)
+        if entry_price is None or entry_price <= 0:
+            errors.append(f"'{item.ticker}': no valid entry price available")
+        else:
+            rows.append((item.ticker, item.quantity, entry_price))
+
+    if rows:
+        await asyncio.to_thread(_insert_external, rows)
+        logger.info("[portfolio] imported %d tracked holding(s)", len(rows))
+    return PortfolioImportResponse(imported=len(rows), errors=errors)
 
 
 def _close(position_id: int, exit_price: float) -> dict | None:
@@ -203,23 +278,29 @@ async def get_portfolio() -> PortfolioSummary:
                 if value is not None and cost
                 else None,
                 added_at=row["added_at"],
+                external=bool(row["external"]),
             )
         )
 
     history = [_to_closed_position(row, row["exit_price"]) for row in closed_rows]
     realized = round(sum(h.pnl or 0.0 for h in history), 2)
 
-    invested = sum(p.cost for p in positions)
+    # Totals cover positions with a live price; unpriced ones are counted so the
+    # UI can say the number is partial instead of blanking the whole summary.
     known_value = sum(p.value for p in positions if p.value is not None)
-    has_unknown = any(p.value is None for p in positions)
+    unpriced = sum(1 for p in positions if p.value is None)
     cash = await asyncio.to_thread(_cash_available)
+    unrealized = sum(p.pnl or 0.0 for p in positions)
     return PortfolioSummary(
         starting_cash=settings.starting_cash,
         cash=round(cash, 2),
-        positions_value=None if has_unknown else round(known_value, 2),
-        total_equity=None if has_unknown else round(cash + known_value, 2),
-        total_pnl=None if has_unknown else round(cash + known_value - settings.starting_cash, 2),
+        positions_value=round(known_value, 2),
+        total_equity=round(cash + known_value, 2),
+        # Per-position gains (tracked holdings included, demo cash excluded) rather
+        # than equity - starting_cash, which only holds for pure demo portfolios.
+        total_pnl=round(unrealized + realized, 2),
         realized_pnl=realized,
+        unpriced_count=unpriced,
         positions=positions,
         history=history,
     )

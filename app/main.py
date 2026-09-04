@@ -19,6 +19,8 @@ from app.models import (
     ClearHistoryResponse,
     PortfolioAddRequest,
     PortfolioCloseRequest,
+    PortfolioImportRequest,
+    PortfolioImportResponse,
     RunHistoryItem,
     RunStatus,
 )
@@ -191,6 +193,11 @@ async def add_position(request: PortfolioAddRequest):
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return position
+
+
+@app.post("/api/portfolio/import", response_model=PortfolioImportResponse)
+async def import_positions(request: PortfolioImportRequest):
+    return await portfolio.import_positions(request.positions)
 
 
 @app.post("/api/portfolio/close")

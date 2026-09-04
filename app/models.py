@@ -85,6 +85,8 @@ class StockAnalysis(BaseModel):
     forecast_change_5d_pct: float | None = None
     forecast_trend_r2: float | None = None
     forecast_method: str = ""
+    forecast_band_pct: float | None = None  # +/-1 sigma 5-day noise band, in %
+    forecast_z: float | None = None  # forecast change / noise band
     decision: Decision = "HOLD"
     confidence: float = 0.0
     summary: str = ""
@@ -177,6 +179,7 @@ class PortfolioPosition(BaseModel):
     added_at: str = ""
     exit_price: float | None = None
     closed_at: str | None = None
+    external: bool = False  # tracked holding (manual entry / CSV import), not demo cash
 
 
 class PortfolioSummary(BaseModel):
@@ -186,6 +189,7 @@ class PortfolioSummary(BaseModel):
     total_equity: float | None = None
     total_pnl: float | None = None
     realized_pnl: float = 0.0
+    unpriced_count: int = 0  # open positions without a live price, excluded from totals
     positions: list[PortfolioPosition] = []
     history: list[PortfolioPosition] = []
 
@@ -199,3 +203,18 @@ class PortfolioAddRequest(BaseModel):
 class PortfolioCloseRequest(BaseModel):
     position_id: int
     exit_price: float | None = Field(default=None, gt=0)
+
+
+class PortfolioImportItem(BaseModel):
+    ticker: str
+    quantity: float = Field(gt=0)
+    entry_price: float | None = Field(default=None, gt=0)  # None = use the live price
+
+
+class PortfolioImportRequest(BaseModel):
+    positions: list[PortfolioImportItem] = Field(min_length=1, max_length=200)
+
+
+class PortfolioImportResponse(BaseModel):
+    imported: int
+    errors: list[str] = []
