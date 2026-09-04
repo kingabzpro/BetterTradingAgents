@@ -44,7 +44,7 @@ simulated portfolio.
 | 🕘 | **Durable run history** | Completed and interrupted analyses are saved in SQLite and can be reopened from the Runs page. |
 | 🛡️ | **Resilient runs** | If an agent fails, the Portfolio Manager receives the available inputs and still makes a call. |
 | 📊 | **Real market data** | Finnhub, Olostep, and yfinance provide fundamentals, news, and price history; Nixtla TimeGPT optionally provides a 5-day forecast. |
-| 🧠 | **Model flexibility** | Use any OpenAI-compatible LLM, including OpenRouter, DeepSeek, Qwen, GLM, vLLM, and llama.cpp. |
+| 🧠 | **Model flexibility** | Use any OpenAI-compatible LLM — and split it by role: a cheap fast model for the researchers, a stronger one only for the final BUY/HOLD/SELL call. |
 | 🪶 | **No frontend build step** | Vanilla HTML, CSS, and JavaScript are served directly by FastAPI. |
 
 ## How it works
@@ -187,6 +187,19 @@ changing environment variables. TimeGPT is optional; the local forecast remains 
 | [Alibaba Cloud Qwen](https://www.alibabacloud.com/help/en/model-studio/getting-started/models) | `qwen3.8-flash` | High-speed model with strong instruction following and a large context window |
 | [Z.AI](https://docs.z.ai/guides/vlm/glm-5.3-flash) | `glm-5.3-flash` | Efficient reasoning with strong quality at a lower serving cost |
 
+#### Per-role models
+
+Set `LLM_MODEL` to the cheap fast model, then override the manager so the final
+judgment runs on the stronger one — the researchers and debaters stay fast and
+inexpensive while the BUY/HOLD/SELL call gets the deep model. Each role can also
+point at its own endpoint and key (`LLM_BASE_URL_*` / `LLM_API_KEY_*`):
+
+```env
+LLM_MODEL=zai-org/GLM-5.3-Flash
+LLM_MODEL_MANAGER=zai-org/GLM-5.3
+LLM_BASE_URL_MANAGER=https://your-glm-53-endpoint/v1
+```
+
 ### 3. Run
 
 ```bash
@@ -243,10 +256,14 @@ optional; without an LLM key, the app starts in mock mode.
 |---|---|---|
 | `LLM_BASE_URL` | `https://api.openai.com/v1` | OpenAI-compatible API endpoint |
 | `LLM_API_KEY` | Not set | Enables the six CrewAI agents |
-| `LLM_MODEL` | `gpt-4o-mini` | Model used by every agent |
+| `LLM_MODEL` | `gpt-4o-mini` | Model used by every agent without a per-role override |
 | `LLM_TEMPERATURE` | `0.2` | Sampling temperature |
 | `LLM_TIMEOUT_SECONDS` | `90` | Timeout for each agent call |
-| `LLM_REASONING_EFFORT` | Not set | Optional provider-specific reasoning effort |
+| `LLM_REASONING_EFFORT` | Not set | Optional provider-specific reasoning effort (e.g. `none`/`low` for GLM) |
+| `LLM_MODEL_MANAGER` | `LLM_MODEL` | Per-role model for the final BUY/HOLD/SELL call |
+| `LLM_BASE_URL_MANAGER` / `LLM_API_KEY_MANAGER` | global values | Optional endpoint/key just for the manager |
+| `LLM_MODEL_ANALYSTS` (+ `_BASE_URL_` / `_API_KEY_`) | global values | Per-role overrides for the 4 researchers |
+| `LLM_MODEL_DEBATE` (+ `_BASE_URL_` / `_API_KEY_`) | global values | Per-role overrides for the bull/bear debaters |
 | `FINNHUB_API_KEY` | Not set | Company profiles, fundamentals, and news; falls back to yfinance |
 | `OLOSTEP_API_KEY` | Not set | News search and article scraping fallback |
 | `NIXTLA_API_KEY` | Not set | Nixtla TimeGPT 5-day forecast; falls back to the local trend model |
@@ -366,9 +383,9 @@ Detailed, research-backed plans for everything below live in [docs/ROADMAP.md](d
 - [x] Risk layer: volatility-scaled position sizing and exposure caps
 - [x] Rebuttal round in the bull/bear debate
 - [x] 5-day price forecast (Nixtla TimeGPT with local fallback) + Forecast analyst
+- [x] Support per-agent model selection
 - [ ] Backtest agent decisions against buy-and-hold (walk-forward)
 - [ ] Stream agent reasoning while each agent works
-- [ ] Support per-agent model selection
 - [ ] Add Alpaca paper-trading integration
 
 ## Disclaimer

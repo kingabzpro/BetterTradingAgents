@@ -27,6 +27,19 @@ class Settings:
     llm_timeout_seconds: float = float(_env("LLM_TIMEOUT_SECONDS", "90"))
     # Optional provider-specific reasoning effort (e.g. "none"/"low" for GLM).
     llm_reasoning_effort: str = _env("LLM_REASONING_EFFORT")
+    # Per-role overrides (docs/ROADMAP.md 2.3); each falls back to the global
+    # LLM_* value. Roles: analysts = the 4 researchers, debate = bull/bear,
+    # manager = the final BUY/HOLD/SELL call - cheap fast researchers, a
+    # stronger model only where judgment matters.
+    llm_model_manager: str = _env("LLM_MODEL_MANAGER")
+    llm_base_url_manager: str = _env("LLM_BASE_URL_MANAGER")
+    llm_api_key_manager: str = _env("LLM_API_KEY_MANAGER")
+    llm_model_analysts: str = _env("LLM_MODEL_ANALYSTS")
+    llm_base_url_analysts: str = _env("LLM_BASE_URL_ANALYSTS")
+    llm_api_key_analysts: str = _env("LLM_API_KEY_ANALYSTS")
+    llm_model_debate: str = _env("LLM_MODEL_DEBATE")
+    llm_base_url_debate: str = _env("LLM_BASE_URL_DEBATE")
+    llm_api_key_debate: str = _env("LLM_API_KEY_DEBATE")
 
     # Data providers
     finnhub_api_key: str = _env("FINNHUB_API_KEY")
@@ -60,6 +73,15 @@ class Settings:
     @property
     def llm_configured(self) -> bool:
         return bool(self.llm_api_key)
+
+    def llm_for(self, role: str) -> dict:
+        """Resolved {model, base_url, api_key} for one role
+        (manager / analysts / debate); per-role overrides fall back to LLM_*."""
+        return {
+            "model": getattr(self, f"llm_model_{role}", "") or self.llm_model,
+            "base_url": getattr(self, f"llm_base_url_{role}", "") or self.llm_base_url,
+            "api_key": getattr(self, f"llm_api_key_{role}", "") or self.llm_api_key,
+        }
 
 
 settings = Settings()

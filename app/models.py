@@ -105,6 +105,7 @@ class StockAnalysis(BaseModel):
     suggested_size_usd: float | None = None
     risk_flags: list[str] = Field(default_factory=list)
     past_decisions: list[dict] = Field(default_factory=list)  # graded prior calls on this ticker
+    token_usage: dict = Field(default_factory=dict)  # summed LLM tokens for this ticker's run
     as_of: str = ""
     providers: dict[str, str] = Field(default_factory=dict)
     source_references: list[SourceReference] = Field(default_factory=list)

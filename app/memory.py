@@ -252,7 +252,7 @@ async def _llm_reflection(row: dict, outcome: dict) -> str | None:
 
         from app.workflow import get_llm
 
-        llm = get_llm()
+        llm = get_llm("analysts")  # reflection lessons are analyst-grade work
         if llm is None:
             return None
         agent = Agent(

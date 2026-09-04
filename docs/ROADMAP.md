@@ -25,6 +25,16 @@ acceptance criteria. Last updated: 2026-09-04.
   as partial windows); the manager dossier gets the 3 most recent same-ticker
   reflections + 2 cross-ticker lessons, the result card shows the track record;
   reflections are deterministic sentences unless `MEMORY_REFLECT_WITH_LLM=1`
+- **2.3 LLM reliability + per-role models**: per-role LLM overrides
+  (`LLM_MODEL_MANAGER`, `LLM_MODEL_ANALYSTS`, `LLM_MODEL_DEBATE` + matching
+  `_BASE_URL`/`_API_KEY`, falling back to the global `LLM_*`) — cheap fast
+  researchers, a stronger model for the final call; classified retries
+  (429/5xx → backoff 1s/4s, malformed JSON → one retry with the error fed
+  back into the task, `response_format` rejection → JSON mode dropped for the
+  role and the call retried); `response_format={"type": "json_object"}` on by
+  default via `additional_params`; token usage from crew outputs summed per
+  run and shown in `agent_completed` events, `StockAnalysis.token_usage` and
+  the result card
 
 ---
 
@@ -149,33 +159,7 @@ behind `--llm` with an explicit cost estimate printed first; default is mock mod
 
 ### 2.3 LLM reliability & per-agent models
 
-**Why.** Production CrewAI guidance: pass validated structured outputs between
-tasks, validate early, retry with the *error* fed back
-([CrewAI production lessons](https://www.agilesoftlabs.com/blog/2026/06/crewai-in-production-2026-real-lessons)).
-The current single blind retry (`app/workflow.py`) ignores why a call failed.
-
-**Design.**
-
-- Retry v2: on `ValidationError` from `to_result`/`extract_json`, retry once with
-  the validation message appended to the task ("your previous output was rejected:
-  <error>; return ONLY corrected JSON"). On HTTP 429/5xx, exponential backoff
-  (1s, 4s). Distinguish the two in logs.
-- `response_format={"type": "json_object"}` on agents when the provider supports it
-  (feature-detect via a one-time `/models` or first-call probe; silently skip
-  unsupported providers).
-- Per-agent overrides (README roadmap item): env keys `LLM_MODEL_MANAGER`,
-  `LLM_MODEL_ANALYSTS`, `LLM_MODEL_DEBATE` falling back to `LLM_MODEL`; build one
-  LLM per role in `get_llm()`'s cache. Rationale: cheap fast models for analysts,
-  stronger model only for the manager.
-- Token/cost accounting: read `usage_metrics` from CrewAI outputs, sum per run,
-  include in `ticker_completed` event and the results JSON.
-
-**Acceptance.** Unit test feeds a malformed payload through the retry path with a
-stubbed LLM and asserts the corrective second call happened; mixed-model config
-produces different LLM objects per role; run summary shows token totals.
-
-**Effort:** M. **Risk:** provider-specific `response_format` quirks — always keep
-`extract_json` as the fallback parser.
+Shipped — see the baseline above.
 
 ---
 
@@ -239,15 +223,14 @@ unsized, un-gated decision to a broker.
 
 ## Suggested order
 
-1.2 Risk layer, 1.1 Decision memory and 2.1 Rebuttal round are shipped (see the
-baseline above). Remaining work, in order:
+1.2 Risk layer, 1.1 Decision memory, 2.1 Rebuttal round and 2.3 Reliability +
+per-role models are shipped (see the baseline above). Remaining work, in order:
 
 | # | Item | Why this position |
 |---|------|-------------------|
-| 1 | 2.3 Reliability + per-agent models | Cuts cost (cheap analysts) before the expensive backtests |
-| 2 | 2.2 Backtest harness | The measurement tool for tuning everything above |
-| 3 | 3.1–3.3 | Breadth, once measurement exists |
-| 4 | 4.1 Alpaca | Only after risk + memory are proven |
+| 1 | 2.2 Backtest harness | The measurement tool for tuning everything above |
+| 2 | 3.1–3.3 | Breadth, once measurement exists |
+| 3 | 4.1 Alpaca | Only after risk + memory are proven |
 
 ## Bibliography
 

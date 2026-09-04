@@ -25,34 +25,141 @@ logger = logging.getLogger("analysis")
 
 Emit = Callable[[str, dict], Awaitable[None]]
 
-_llm: Any = None
-_llm_initialized = False
+# Which role each agent runs as - per-role LLM overrides (ROADMAP 2.3) key
+# off this: cheap fast models for the researchers, a stronger one for the call.
+ROLE_BY_AGENT = {
+    "technical": "analysts",
+    "fundamental": "analysts",
+    "news": "analysts",
+    "forecast": "analysts",
+    "bull": "debate",
+    "bear": "debate",
+    "manager": "manager",
+}
+ROLES = ("manager", "analysts", "debate")
+
+_llms: dict[str, Any] = {}  # role -> CrewAI LLM (None in mock mode)
+_llm_roles_initialized: set[str] = set()
 _THINK_BLOCK = re.compile(r"<think>.*?</think>", re.DOTALL)
+_BACKOFF_SECONDS = (1.0, 4.0)  # HTTP 429/5xx: wait, retry, wait longer
 
 
-def get_llm():
-    """Build the CrewAI LLM once (single model for every agent)."""
-    global _llm, _llm_initialized
-    if not _llm_initialized:
-        _llm_initialized = True
+# Model prefixes crewai routes itself; anything else (bare names and org/model
+# forms like zai-org/GLM-5.3) must go through the OpenAI-compatible client.
+_KNOWN_PROVIDER_PREFIXES = (
+    "openai/",
+    "openrouter/",
+    "deepseek/",
+    "ollama/",
+    "groq/",
+    "mistral/",
+    "anthropic/",
+    "azure/",
+    "gemini/",
+    "bedrock/",
+    "cerebras/",
+    "dashscope/",
+    "snowflake/",
+)
+
+
+def _route_model(model: str) -> str:
+    if model.startswith(_KNOWN_PROVIDER_PREFIXES):
+        return model
+    return f"openai/{model}"
+
+
+def _build_llm(role: str, json_mode: bool = True) -> Any:
+    """Construct the CrewAI LLM for one role from settings.llm_for(role).
+
+    json_mode asks the provider for guaranteed JSON output; reasoning_effort
+    is also sent verbatim in the request body because the crewai field alone
+    only reaches o1-style models on /chat/completions.
+    """
+    from crewai import LLM
+
+    conf = settings.llm_for(role)
+    extra: dict = {}
+    if settings.llm_reasoning_effort:
+        extra["reasoning_effort"] = settings.llm_reasoning_effort
+    if json_mode:
+        extra["response_format"] = {"type": "json_object"}
+    return LLM(
+        model=_route_model(conf["model"]),
+        base_url=conf["base_url"],
+        api_key=conf["api_key"],
+        temperature=settings.llm_temperature,
+        timeout=settings.llm_timeout_seconds,
+        reasoning_effort=settings.llm_reasoning_effort or None,
+        additional_params=extra,
+    )
+
+
+def get_llm(role: str = "analysts") -> Any:
+    """Build (once) and cache the CrewAI LLM for one role.
+
+    Roles: manager / analysts / debate, resolved via settings.llm_for -
+    per-role env overrides fall back to the global LLM_* values. Returns
+    None when no LLM is configured (mock mode).
+    """
+    if role not in _llm_roles_initialized:
+        _llm_roles_initialized.add(role)
         if settings.llm_configured:
-            from crewai import LLM
+            try:
+                _llms[role] = _build_llm(role)
+            except Exception as exc:  # noqa: BLE001 - degrade to mock, don't crash
+                logger.error("[llm] could not build LLM for role %s: %s", role, exc)
+                _llms[role] = None
+        else:
+            _llms[role] = None
+    return _llms.get(role)
 
-            model = settings.llm_model
-            if not model.startswith("openai/"):
-                model = f"openai/{model}"
-            extra = {}
-            if settings.llm_reasoning_effort:
-                extra["reasoning_effort"] = settings.llm_reasoning_effort
-            _llm = LLM(
-                model=model,
-                base_url=settings.llm_base_url,
-                api_key=settings.llm_api_key,
-                temperature=settings.llm_temperature,
-                timeout=settings.llm_timeout_seconds,
-                **extra,
-            )
-    return _llm
+
+def _drop_json_mode(role: str) -> Any:
+    """Rebuild a role's LLM without response_format after the provider
+    rejected it (feature-detect on first use, not with a probe call)."""
+    try:
+        _llms[role] = _build_llm(role, json_mode=False)
+        logger.warning(
+            "[llm] JSON mode disabled for role %s - provider rejected it", role
+        )
+        return _llms[role]
+    except Exception as exc:  # noqa: BLE001
+        logger.error("[llm] could not rebuild LLM for role %s: %s", role, exc)
+        return None
+
+
+def _classify_failure(exc: Exception) -> str:
+    """Bucket an LLM failure to pick the retry strategy (ROADMAP 2.3)."""
+    text = f"{type(exc).__name__} {exc}".lower()
+    if "response_format" in text:
+        return "response_format"
+    if (
+        "429" in text
+        or "rate limit" in text
+        or "ratelimit" in text
+        or "too many requests" in text
+    ):
+        return "rate_limit"
+    if any(
+        hint in text
+        for hint in (
+            "500",
+            "502",
+            "503",
+            "504",
+            "overloaded",
+            "bad gateway",
+            "service unavailable",
+            "internal server",
+            "timed out",
+            "timeout",
+        )
+    ):
+        return "server"
+    if "json" in text or isinstance(exc, ValueError):
+        return "bad_output"
+    return "other"
 
 
 def extract_json(text: str) -> dict:
@@ -73,47 +180,129 @@ def extract_json(text: str) -> dict:
     raise ValueError(f"no JSON object in model output: {text[:200]!r}")
 
 
-async def _kick_once(agent, task) -> dict:
+def _usage_snapshot(output: Any) -> dict:
+    """Token usage of one crew run, tolerating missing provider metrics."""
+    usage = getattr(output, "token_usage", None)
+    if usage is None:
+        return {}
+    prompt = int(getattr(usage, "prompt_tokens", 0) or 0)
+    completion = int(getattr(usage, "completion_tokens", 0) or 0)
+    reasoning = int(getattr(usage, "reasoning_tokens", 0) or 0)
+    total = int(getattr(usage, "total_tokens", 0) or 0)
+    total = total or (prompt + completion)
+    if not (prompt or completion or total):
+        return {}
+    return {
+        "prompt_tokens": prompt,
+        "completion_tokens": completion,
+        "reasoning_tokens": reasoning,
+        "total_tokens": total,
+    }
+
+
+async def _kick_once(agent, task) -> tuple[dict, dict]:
     from crewai import Crew
 
     crew = Crew(agents=[agent], tasks=[task])
     output = await asyncio.wait_for(
         crew.kickoff_async(), timeout=settings.llm_timeout_seconds
     )
+    usage = _usage_snapshot(output)
     # Prefer CrewAI's pydantic conversion when it produced real content.
     pydantic = getattr(output, "pydantic", None)
     if pydantic is not None and getattr(pydantic, "summary", ""):
-        return pydantic.model_dump()
-    return extract_json(str(getattr(output, "raw", "")))
+        return pydantic.model_dump(), usage
+    json_dict = getattr(output, "json_dict", None)
+    if isinstance(json_dict, dict) and json_dict:
+        return json_dict, usage
+    return extract_json(str(getattr(output, "raw", ""))), usage
 
 
 async def _run_agent(
-    mod, ticker: str, emit: Emit, name: str | None = None, **task_payload
+    mod,
+    ticker: str,
+    emit: Emit,
+    name: str | None = None,
+    token_totals: dict | None = None,
+    **task_payload,
 ) -> dict | None:
-    """Run one agent (LLM or mock), emitting started/completed/failed events."""
+    """Run one agent (LLM or mock), emitting started/completed/failed events.
+
+    LLM failures get one smart retry each (ROADMAP 2.3): 429/5xx waits and
+    retries (1s, then 4s), a rejected response_format disables JSON mode for
+    the role, and a malformed output is retried once with the validation
+    error appended to the task. `token_totals` accumulates per-run usage.
+    """
     agent_name = name or mod.NAME
+    role = ROLE_BY_AGENT.get(mod.NAME, "analysts")
     await emit("agent_started", {"ticker": ticker, "agent": agent_name})
     started = time.perf_counter()
     try:
-        llm = get_llm()
+        llm = get_llm(role)
         if llm is None:
             await asyncio.sleep(0.4)  # mock mode: give the UI a moment
             data = mod.mock(ticker, **task_payload)
+            usage: dict = {}
         else:
             data = None
+            usage = {}
             last_error: Exception | None = None
-            for _ in range(2):  # one retry on transient LLM failures
+            correction: str | None = None
+            for attempt in range(1, 4):
                 try:
                     agent = mod.build_agent(llm)
                     task = mod.build_task(agent, ticker, **task_payload)
-                    data = await _kick_once(agent, task)
+                    if correction is not None:
+                        task.description = correction + task.description
+                    data, usage = await _kick_once(agent, task)
                     break
-                except Exception as exc:  # noqa: BLE001 - retry any agent failure
+                except Exception as exc:  # noqa: BLE001 - classify, maybe retry
                     last_error = exc
+                    kind = _classify_failure(exc)
+                    detail = str(exc)[:120]
+                    if kind == "response_format":
+                        replacement = _drop_json_mode(role)
+                        if replacement is None:
+                            break
+                        logger.warning(
+                            "[%s] provider rejected JSON mode; retrying without it",
+                            agent_name,
+                        )
+                        llm = replacement
+                        continue
+                    if kind in ("rate_limit", "server") and attempt < 3:
+                        wait = _BACKOFF_SECONDS[min(attempt - 1, 1)]
+                        logger.warning(
+                            "[%s] %s error (%s); retry %d/2 in %.0fs",
+                            agent_name,
+                            kind,
+                            detail,
+                            attempt,
+                            wait,
+                        )
+                        await asyncio.sleep(wait)
+                        continue
+                    if kind == "bad_output" and correction is None and attempt < 3:
+                        logger.warning(
+                            "[%s] malformed output (%s); retrying with the error fed back",
+                            agent_name,
+                            detail,
+                        )
+                        correction = (
+                            f"Your previous response was rejected: {str(exc)[:300]} "
+                            "Respond with ONLY a corrected JSON object matching the "
+                            "requested schema - no markdown fences, no text outside "
+                            "the JSON.\n\n"
+                        )
+                        continue
+                    break  # unknown failure or retry budget spent
             if data is None:
                 raise last_error or RuntimeError("agent failed")
         duration = time.perf_counter() - started
         logger.info("[%s] completed %.1fs", agent_name, duration)
+        if token_totals is not None:
+            for key, value in usage.items():
+                token_totals[key] = token_totals.get(key, 0) + value
         await emit(
             "agent_completed",
             {
@@ -123,6 +312,7 @@ async def _run_agent(
                 "signal": data.get("signal") or data.get("decision"),
                 "confidence": data.get("confidence") or data.get("score"),
                 "summary": str(data.get("summary", ""))[:200],
+                "tokens": usage.get("total_tokens", 0),
             },
         )
         return data
@@ -272,6 +462,7 @@ async def analyze_ticker(
 
     # Stage 1: the profile's researchers in parallel. Excluded researchers
     # never run (no events either - the UI shows no row for them).
+    token_totals: dict[str, int] = {}
     user_ctx = user_context(outlook)
     forecast_payload = {
         "price": market.price,
@@ -296,13 +487,18 @@ async def analyze_ticker(
     async def run_research(key: str) -> dict | None:
         if key == "technical":
             return await _run_agent(
-                technical, ticker, emit, payload={**indicators, "user_context": user_ctx}
+                technical,
+                ticker,
+                emit,
+                token_totals=token_totals,
+                payload={**indicators, "user_context": user_ctx},
             )
         if key == "fundamental":
             return await _run_agent(
                 fundamental,
                 ticker,
                 emit,
+                token_totals=token_totals,
                 payload={**market.fundamentals, "user_context": user_ctx},
             )
         if key == "news":
@@ -310,9 +506,12 @@ async def analyze_ticker(
                 news,
                 ticker,
                 emit,
+                token_totals=token_totals,
                 payload={"items": market.news, "user_context": user_ctx},
             )
-        return await _run_agent(forecast, ticker, emit, payload=forecast_payload)
+        return await _run_agent(
+            forecast, ticker, emit, token_totals=token_totals, payload=forecast_payload
+        )
 
     research_keys = [key for key in ("technical", "fundamental", "news", "forecast") if key in research]
     research_data = dict(
@@ -349,8 +548,8 @@ async def analyze_ticker(
 
     # Stage 2: bull and bear in parallel.
     bull_data, bear_data = await asyncio.gather(
-        _run_agent(bull, ticker, emit, payload=context),
-        _run_agent(bear, ticker, emit, payload=context),
+        _run_agent(bull, ticker, emit, token_totals=token_totals, payload=context),
+        _run_agent(bear, ticker, emit, token_totals=token_totals, payload=context),
     )
 
     # Stage 2b: rebuttal round - each side answers the other's argument.
@@ -365,6 +564,7 @@ async def analyze_ticker(
                     ticker,
                     emit,
                     name="bull_rebuttal",
+                    token_totals=token_totals,
                     payload={
                         "research": context,
                         "own_round_1": bull_data,
@@ -377,6 +577,7 @@ async def analyze_ticker(
                     ticker,
                     emit,
                     name="bear_rebuttal",
+                    token_totals=token_totals,
                     payload={
                         "research": context,
                         "own_round_1": bear_data,
@@ -461,7 +662,9 @@ async def analyze_ticker(
         "past_decisions": past_decisions_ctx,
         "cross_ticker_lessons": cross_lessons_ctx,
     }
-    mgr_data = await _run_agent(manager, ticker, emit, payload=full_context)
+    mgr_data = await _run_agent(
+        manager, ticker, emit, token_totals=token_totals, payload=full_context
+    )
 
     if mgr_data:
         final = manager.to_manager_result(mgr_data, ticker)
@@ -520,6 +723,7 @@ async def analyze_ticker(
         suggested_size_usd=size_usd,
         risk_flags=risk_flags,
         past_decisions=past["past_decisions"] if past else [],
+        token_usage=token_totals,
         as_of=market.as_of,
         providers={str(key): str(value) for key, value in market.sources.items()},
         source_references=_source_references(market),
