@@ -4,14 +4,6 @@
 
 **Real-time, multi-agent AI stock research and paper trading, powered by CrewAI.**
 
-BetterTradingAgents is an improved and streamlined version of the TradingAgents concept, with a
-faster parallel workflow, live progress, explainable decisions, risk controls, and paper trading.
-
-Enter up to five stock tickers. Specialized agents analyze technicals, fundamentals,
-news, and the 5-day price forecast in parallel, bull and bear researchers debate across
-a rebuttal round, and a risk-gated **BUY / HOLD / SELL** decision comes back with a
-suggested position size and the full reasoning trail.
-
 [![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-3776ab?logo=python&logoColor=white)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
 [![CrewAI](https://img.shields.io/badge/CrewAI-multi--agent-ff6b35)](https://www.crewai.com/)
@@ -23,6 +15,14 @@ suggested position size and the full reasoning trail.
 </div>
 
 ---
+
+BetterTradingAgents is an improved and streamlined version of the TradingAgents concept, with a
+faster parallel workflow, live progress, explainable decisions, risk controls, and paper trading.
+
+Enter up to five stock tickers. Specialized agents analyze technicals, fundamentals,
+news, and the 5-day price forecast in parallel, bull and bear researchers debate across
+a rebuttal round, and a risk-gated **BUY / HOLD / SELL** decision comes back with a
+suggested position size and the full reasoning trail.
 
 ![BetterTradingAgents home screen](docs/screenshots/home.png)
 
