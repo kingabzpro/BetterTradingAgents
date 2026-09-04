@@ -40,6 +40,7 @@ simulated portfolio.
 | ⚔️ | **Real debate** | Bull and bear each get a rebuttal round to answer the other's strongest points before the call. |
 | ⚖️ | **Risk-gated decisions** | BUYs are volatility-scaled and capped by per-ticker, invested, and cash-buffer limits; a 5-day forecast beyond the stock's own noise band (±1σ) downgrades the trade and one past half the band halves its size. Downgrades are flagged, never silent. |
 | 📜 | **Learns from its calls** | Every completed decision is recorded and later graded on realized return and alpha vs SPY; the manager weighs those lessons on the next run and the results page shows the track record. |
+| 🧪 | **Walk-forward backtests** | Replay the pipeline at past dates with point-in-time data only, grade every call against SPY after costs, and compare with buy-and-hold — free mock mode by default. |
 | 📡 | **Live, honest progress** | Server-Sent Events stream every agent state, with per-ticker progress bars as it happens. |
 | 🕘 | **Durable run history** | Completed and interrupted analyses are saved in SQLite and can be reopened from the Runs page. |
 | 🛡️ | **Resilient runs** | If an agent fails, the Portfolio Manager receives the available inputs and still makes a call. |
@@ -277,6 +278,8 @@ optional; without an LLM key, the app starts in mock mode.
 | `MIN_CASH_PCT` | `0.10` | Risk gate: min cash buffer after a BUY |
 | `MEMORY_HORIZON_DAYS` | `21` | Decision memory: days a past call is held before its realized-return grade is final |
 | `MEMORY_REFLECT_WITH_LLM` | `0` | Decision memory: `1` asks the LLM for reflection lessons instead of deterministic sentences |
+| `BACKTEST_CACHE` | `docs/backtests/cache.db` | Backtests: SQLite snapshot cache location (gitignored) |
+| `BACKTEST_OFFLINE` | `0` | Backtests: `1` makes cache misses fail instead of hitting the network |
 
 ## Portfolio: your own holdings + paper trading
 
