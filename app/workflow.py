@@ -398,8 +398,30 @@ async def analyze_ticker(
         if portfolio_summary is not None
         else await fetch_portfolio_summary()
     )
+    # Standardize the forecast against the stock's own 5-day noise band so the
+    # manager and the risk gate read the same number (see app.risk).
+    vol_ann_pct = indicators.get("volatility_annualized_pct")
+    forecast_change_pct = indicators.get("forecast_change_5d_pct")
+    forecast_band_pct = risk.forecast_noise_pct(vol_ann_pct)
+    forecast_z_value = risk.forecast_z(forecast_change_pct, vol_ann_pct)
+    forecast_assessment = {
+        "forecast_change_5d_pct": forecast_change_pct,
+        "noise_band_1sigma_pct": None
+        if forecast_band_pct is None
+        else round(forecast_band_pct, 2),
+        "z": None if forecast_z_value is None else round(forecast_z_value, 2),
+        "signal": risk.forecast_signal(forecast_z_value),
+        "reading": (
+            "unavailable - no forecast or no volatility"
+            if forecast_z_value is None
+            else f"the forecast is {abs(forecast_z_value):.2f} sigma "
+            f"({'inside' if abs(forecast_z_value) < 0.5 else 'beyond'} the "
+            f"half-sigma noise threshold)"
+        ),
+    }
     full_context = {
         **context,
+        "forecast_assessment": forecast_assessment,
         "bull": bull_r.model_dump() if bull_r else "FAILED - unavailable",
         "bear": bear_r.model_dump() if bear_r else "FAILED - unavailable",
         "debate": {
@@ -428,7 +450,7 @@ async def analyze_ticker(
         bull_case = bull_r.summary if bull_r else ""
         bear_case = bear_r.summary if bear_r else ""
 
-    # Risk gate: deterministic sizing and exposure caps (ROADMAP 1.2).
+    # Risk gate: deterministic sizing, forecast check, and exposure caps.
     size_usd, risk_flags = None, []
     if mgr_data:
         decision, confidence, size_usd, risk_flags = risk.evaluate(
@@ -436,8 +458,9 @@ async def analyze_ticker(
             confidence,
             ticker,
             analysts=(tech, fund, news_r),
-            vol_ann_pct=indicators.get("volatility_annualized_pct"),
+            vol_ann_pct=vol_ann_pct,
             portfolio=portfolio_summ,
+            forecast_change_pct=forecast_change_pct,
         )
     else:
         risk_flags = ["portfolio manager failed - defaulted to HOLD"]
@@ -450,6 +473,8 @@ async def analyze_ticker(
         forecast_change_5d_pct=indicators.get("forecast_change_5d_pct"),
         forecast_trend_r2=indicators.get("forecast_trend_r2"),
         forecast_method=indicators.get("forecast_method", ""),
+        forecast_band_pct=None if forecast_band_pct is None else round(forecast_band_pct, 2),
+        forecast_z=None if forecast_z_value is None else round(forecast_z_value, 2),
         decision=decision,
         confidence=confidence,
         summary=summary,

@@ -36,7 +36,7 @@ simulated portfolio.
 |:---:|---|---|
 | ⚡ | **Parallel by design** | Researchers, data fetches, and debate rounds run concurrently, and multiple tickers run side by side. |
 | ⚔️ | **Real debate** | Bull and bear each get a rebuttal round to answer the other's strongest points before the call. |
-| ⚖️ | **Risk-gated decisions** | BUYs are volatility-scaled and capped by per-ticker, invested, and cash-buffer limits; downgrades are flagged, never silent. |
+| ⚖️ | **Risk-gated decisions** | BUYs are volatility-scaled and capped by per-ticker, invested, and cash-buffer limits; a 5-day forecast beyond the stock's own noise band (±1σ) downgrades the trade and one past half the band halves its size. Downgrades are flagged, never silent. |
 | 📡 | **Live, honest progress** | Server-Sent Events stream every agent state, with per-ticker progress bars as it happens. |
 | 🕘 | **Durable run history** | Completed and interrupted analyses are saved in SQLite and can be reopened from the Runs page. |
 | 🛡️ | **Resilient runs** | If an agent fails, the Portfolio Manager receives the available inputs and still makes a call. |
@@ -76,7 +76,7 @@ flowchart TD
     BEAR --> RB
 
     RB --> PM["Portfolio Manager<br/>Weighs debate + holdings"]
-    PM --> RISK["Risk gate<br/>Vol-scaled size · exposure caps"]
+    PM --> RISK["Risk gate<br/>Vol-scaled size · forecast check · exposure caps"]
     RISK --> RESULT["BUY · HOLD · SELL<br/>Confidence + size + reasoning trail"]
 ```
 
@@ -188,8 +188,20 @@ backend screens U.S.-listed companies using these eligibility rules:
 - At least 10% trailing revenue growth
 - Average daily trading volume above 500,000 shares
 
-The eligible companies are ranked with horizon-weighted momentum, recent trend strength, and
-volatility. The selected Day trading, Short term, or Long term outlook changes the momentum weights.
+The eligible companies are ranked with a score grounded in the published cross-sectional momentum
+literature:
+
+- **3–6 month formation momentum, skipping the most recent month** (Jegadeesh & Titman 1993;
+  Jegadeesh 1990) — stocks that grinded higher over months keep working; a fresh blow-off month is
+  excluded from the signal and penalized, because last-month returns tend to revert.
+- **Path smoothness** (Da, Gurun & Warachka 2014, "frog in the pan") — steady climbs with many up
+  days carry more persistent momentum than jumpy spikes with the same total return.
+- **52-week-high proximity** (George & Hwang 2004) — nearness to the yearly high predicts returns
+  better than raw momentum and does not revert long-term.
+- **Volatility scaling** (Barroso & Santa-Clara 2015) — the momentum term is divided by realized
+  volatility, which is the crash-reducing construction from the momentum-timing literature.
+
+The selected Day trading, Short term, or Long term outlook changes the formation-window weights.
 The five highest-ranked candidates are added to the ticker input and sent through the normal analyst,
 debate, portfolio manager, and risk workflows. The ranking is a research starting point, not a
 guarantee of profit or investment advice.
@@ -224,12 +236,23 @@ optional; without an LLM key, the app starts in mock mode.
 | `MAX_INVESTED_PCT` | `0.60` | Risk gate: max fraction of equity invested |
 | `MIN_CASH_PCT` | `0.10` | Risk gate: min cash buffer after a BUY |
 
-## Demo portfolio
+## Portfolio: your own holdings + paper trading
 
-After a **BUY** recommendation, add the stock to the simulated portfolio in one click. Positions
-persist in SQLite, update with live prices and profit/loss, and can be closed to realize gains or
-losses. The Portfolio Manager also sees your open positions when making its next call. No broker
-is connected and no real orders are placed.
+The portfolio page tracks two kinds of positions in one SQLite-backed book:
+
+- **Tracked holdings** — shares you already own, added on the portfolio page by entering the
+  ticker, quantity, and the price you paid (blank price records at the live price), or imported
+  in bulk from a CSV (`ticker,quantity,entry_price`; a header row is detected automatically and
+  common aliases like `symbol` / `shares` / `avg cost` work too — download a sample from the
+  page). Imports show a row-by-row preview before anything is saved. Tracked holdings are valued
+  at live prices and roll into P&L, but they never touch the simulated cash balance.
+- **Demo trades** — after a **BUY** recommendation, add the stock to the simulated portfolio in
+  one click. Demo buys and closes move the simulated cash, and positions can be closed to
+  realize gains or losses.
+
+The Portfolio Manager agent also sees all open positions (tracked + demo) when making its next
+call, and the risk gate's exposure caps use the combined equity. No broker is connected and no
+real orders are placed.
 
 ![Demo portfolio](docs/screenshots/portfolio.png)
 
@@ -244,13 +267,14 @@ direct `?run=<id>` link can still reopen a specific result, including after a se
 | Method | Route | Purpose |
 |:---:|---|---|
 | `POST` | `/api/analyze` | Start an analysis run for one or more tickers |
-| `GET` | `/api/discover` | Rank liquid growth companies worth $1B to $50B and return up to five research candidates |
+| `GET` | `/api/discover` | Rank liquid growth companies ($1B–$50B) with a research-grounded momentum score and return up to five research candidates |
 | `GET` | `/api/runs` | List saved analysis runs, newest first |
 | `DELETE` | `/api/runs` | Clear the current browser's finished run history |
 | `GET` | `/api/runs/{run_id}` | Read run status and complete results |
 | `GET` | `/api/runs/{run_id}/events` | Stream live progress over SSE |
 | `GET` | `/api/portfolio` | List positions with live prices and profit/loss |
 | `POST` | `/api/portfolio/add` | Add a simulated position |
+| `POST` | `/api/portfolio/import` | Record tracked holdings (manual entry / CSV import, up to 200 per call) |
 | `POST` | `/api/portfolio/close` | Close a position at the live (or given) price and realize P/L |
 | `GET` | `/api/health` | Check configuration and provider status |
 
@@ -271,9 +295,11 @@ curl -X POST http://localhost:8000/api/analyze \
 
 Each result in `GET /api/runs/{run_id}` carries the decision (`BUY`/`HOLD`/`SELL`), confidence,
 the five-day forecast (`forecast_price_5d`, `forecast_change_5d_pct`, and `forecast_method`),
-per-agent reports (including both rebuttal rounds), and the risk gate's output:
-`suggested_size_usd` (the volatility-scaled position size) and `risk_flags` (why a BUY was
-downgraded or confidence capped, if it was).
+plus its noise-band assessment (`forecast_band_pct`, the ±1σ five-day move implied by the
+stock's own volatility, and `forecast_z`, the forecast as a multiple of that band — the manager
+prompt and the risk gate both consume it), per-agent reports (including both rebuttal rounds),
+and the risk gate's output: `suggested_size_usd` (the volatility-scaled position size) and
+`risk_flags` (why a BUY was downgraded or confidence capped, if it was).
 
 ## Development
 
@@ -281,6 +307,9 @@ downgraded or confidence capped, if it was).
 # Offline sanity suite: indicators, portfolio accounting + migration, risk gate
 PYTHONPATH=. uv run python scripts/check_quick_wins.py
 PYTHONPATH=. uv run python scripts/check_risk.py
+
+# Offline checks for tracked holdings: CSV-style import, cash isolation, API surface
+PYTHONPATH=. uv run python scripts/check_portfolio_import.py
 
 # One-shot check that the configured LLM endpoint answers
 PYTHONPATH=. uv run python scripts/smoke_llm.py

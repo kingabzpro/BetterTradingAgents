@@ -593,6 +593,15 @@ function convictionLabel(confidence) {
   return "Low evidence";
 }
 
+function forecastBandNote(analysis) {
+  // Noise-band context so a red -2% forecast next to a BUY stops looking
+  // contradictory: inside +/-1 sigma it is statistical noise, not a signal.
+  if (analysis.forecast_band_pct == null) return "";
+  const z = analysis.forecast_z;
+  const beyond = z != null && Math.abs(z) >= 1;
+  return ` · noise band ±${Number(analysis.forecast_band_pct).toFixed(1)}%${z == null ? "" : ` (z ${z >= 0 ? "+" : ""}${Number(z).toFixed(2)})`}${beyond ? " · beyond band" : ""}`;
+}
+
 function decisionMeta(decision) {
   return { BUY: { cls: "buy", icon: "▲" }, HOLD: { cls: "hold", icon: "■" }, SELL: { cls: "sell", icon: "▼" } }[decision] || { cls: "hold", icon: "■" };
 }
@@ -617,7 +626,7 @@ function renderSummaryTable() {
       return `<tr>
         <td data-label="Ticker"><strong>${escapeHtml(analysis.ticker)}</strong></td>
         <td data-label="Decision">${decisionBadge(analysis)}</td>
-        <td data-label="5-day forecast" class="num">${analysis.forecast_price_5d != null ? `$${Number(analysis.forecast_price_5d).toFixed(2)} (${Number(analysis.forecast_change_5d_pct) >= 0 ? "+" : ""}${Number(analysis.forecast_change_5d_pct).toFixed(2)}%)` : "Not available"}<small>${analysis.forecast_method === "timegpt-1" ? "Nixtla TimeGPT" : "Local model"}</small></td>
+        <td data-label="5-day forecast" class="num">${analysis.forecast_price_5d != null ? `$${Number(analysis.forecast_price_5d).toFixed(2)} (${Number(analysis.forecast_change_5d_pct) >= 0 ? "+" : ""}${Number(analysis.forecast_change_5d_pct).toFixed(2)}%)` : "Not available"}<small>${analysis.forecast_method === "timegpt-1" ? "Nixtla TimeGPT" : "Local model"}${forecastBandNote(analysis)}</small></td>
         <td data-label="Evidence" class="num">${Math.round((analysis.confidence || 0) * 100)}% · ${convictionLabel(analysis.confidence)}</td>
         <td data-label="Suggested size" class="num">${analysis.suggested_size_usd ? fmtUsd(analysis.suggested_size_usd) : "Not available"}</td>
         <td data-label="Risk">${analysis.error ? '<span class="flag-warn">⚠ Unavailable</span>' : flags.length ? `<span class="flag-warn">⚠ ${flags.length} flag${flags.length > 1 ? "s" : ""}</span>` : '<span class="flag-ok">✓ Clear</span>'}</td>
@@ -724,7 +733,7 @@ function renderResultCard(analysis) {
   card.innerHTML = `
     <button class="result-summary" type="button" aria-expanded="false" aria-controls="${detailId}"><span class="result-identity"><span class="tk">${escapeHtml(ticker)}</span><span class="company">${escapeHtml(analysis.company_name || "Company name unavailable")}</span></span>${decisionBadge(analysis)}<span class="summary-action">Evidence &amp; sources <span class="caret" aria-hidden="true">▶</span></span></button>
     <div class="decision-brief">
-      <div class="decision-facts"><div><span>Current price</span><strong>${analysis.price != null ? `$${Number(analysis.price).toFixed(2)}` : "Unavailable"}</strong></div><div><span>5-day forecast</span><strong>${analysis.forecast_price_5d != null ? `$${Number(analysis.forecast_price_5d).toFixed(2)} (${Number(analysis.forecast_change_5d_pct) >= 0 ? "+" : ""}${Number(analysis.forecast_change_5d_pct).toFixed(2)}%)` : "Unavailable"}</strong><small>${analysis.forecast_method === "timegpt-1" ? "Nixtla TimeGPT; not a price guarantee." : analysis.forecast_trend_r2 != null ? `Local trend fit R² ${Number(analysis.forecast_trend_r2).toFixed(2)}; not a price guarantee.` : "Local historical projection; not a price guarantee."}</small></div><div><span>Data as of</span><strong>${escapeHtml(asOf)}</strong></div><div><span>Confidence</span><strong>${confidencePct}% · ${convictionLabel(analysis.confidence)}</strong><small>Evidence strength, not profit probability.</small></div><div><span>Suggested size</span><strong>${analysis.suggested_size_usd ? fmtUsd(analysis.suggested_size_usd) : "No position"}</strong><small>Simulated risk-layer output.</small></div></div>
+      <div class="decision-facts"><div><span>Current price</span><strong>${analysis.price != null ? `$${Number(analysis.price).toFixed(2)}` : "Unavailable"}</strong></div><div><span>5-day forecast</span><strong>${analysis.forecast_price_5d != null ? `$${Number(analysis.forecast_price_5d).toFixed(2)} (${Number(analysis.forecast_change_5d_pct) >= 0 ? "+" : ""}${Number(analysis.forecast_change_5d_pct).toFixed(2)}%)` : "Unavailable"}</strong><small>${analysis.forecast_method === "timegpt-1" ? "Nixtla TimeGPT" : analysis.forecast_trend_r2 != null ? `Local trend fit R² ${Number(analysis.forecast_trend_r2).toFixed(2)}` : "Local historical projection"}${forecastBandNote(analysis)}; not a price guarantee.</small></div><div><span>Data as of</span><strong>${escapeHtml(asOf)}</strong></div><div><span>Confidence</span><strong>${confidencePct}% · ${convictionLabel(analysis.confidence)}</strong><small>Evidence strength, not profit probability.</small></div><div><span>Suggested size</span><strong>${analysis.suggested_size_usd ? fmtUsd(analysis.suggested_size_usd) : "No position"}</strong><small>Simulated risk-layer output.</small></div></div>
       <div class="manager-conclusion"><span class="eyebrow">Manager conclusion</span><p class="plain-english">${escapeHtml(plainEnglish(analysis))}</p><p class="thesis">${escapeHtml(analysis.summary || analysis.error || "No manager summary was returned.")}</p></div>
       ${analysis.error ? `<div class="risk-flags"><strong>Analysis unavailable</strong><span>⚠ ${escapeHtml(analysis.error)}</span></div>` : flags.length ? `<div class="risk-flags"><strong>Risk flags</strong>${flags.map((flag) => `<span>⚠ ${escapeHtml(flag)}</span>`).join("")}</div>` : '<div class="risk-clear"><span aria-hidden="true">✓</span> No risk rules were triggered.</div>'}
     </div>
