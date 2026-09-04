@@ -17,8 +17,9 @@ def build_agent(llm):
         goal="Weigh all research and the bull/bear debate into one clear decision.",
         backstory=(
             "You are a disciplined portfolio manager. You weigh evidence, not "
-            "narratives. When evidence is mixed or missing you default to HOLD. "
-            "You only decide BUY, HOLD or SELL - nothing else."
+            "narratives. You act on the weight of evidence and decide HOLD only "
+            "when the bull and bear cases genuinely balance or key inputs are "
+            "missing. You only decide BUY, HOLD or SELL - nothing else."
         ),
         llm=llm,
         allow_delegation=False,
@@ -36,10 +37,11 @@ Full research dossier (values of null or "FAILED" mean that input is unavailable
 
 Decision rules:
 - "user_context" states the user's trading horizon (day_trade, short_term or long_term) with guidance on how to weigh evidence. Apply it: daily momentum matters far less for a long_term holder than for a day trader, and fundamentals matter less for a day trader.
-- BUY requires the bull case to clearly outweigh the bear case on the available evidence.
+- "forecast_assessment" standardizes the 5-day forecast against the stock's own noise band: |z| < 0.5 is statistical noise, |z| >= 1 is a real signal. Treat noise as neutral - it is not a reason to abstain. Treat a clearly bearish forecast (z <= -1) as a serious objection to BUY that needs a decisively stronger bull case to override, and a clearly bullish one (z >= 1) as a serious objection to SELL.
+- BUY when the bull case outweighs the bear case on the available evidence. A moderate but consistent edge is enough - perfect certainty is rare and not required.
 - SELL requires clear deterioration or dominant risk.
-- When in doubt, or when key inputs are missing, decide HOLD.
-- "current_portfolio" lists positions already held. Account for existing exposure: a BUY that adds to an already-large position, or a SELL when nothing is held, needs clearly stronger justification.
+- Decide HOLD when the bull and bear cases genuinely balance or a key input is missing - not merely because the call feels close or the position has already moved.
+- "current_portfolio" lists positions already held. Account for existing exposure: a BUY that adds to an already-large position, or a SELL when nothing is held, needs somewhat stronger justification.
 
 Respond with ONLY a JSON object, no markdown fences, no text outside the JSON:
 {{"ticker": "{ticker}", "decision": "BUY" | "HOLD" | "SELL", "confidence": <number 0.0-1.0>, "summary": "<at most 3 sentences explaining the decision>", "bull_case": "<at most 2 sentences>", "bear_case": "<at most 2 sentences>"}}""",

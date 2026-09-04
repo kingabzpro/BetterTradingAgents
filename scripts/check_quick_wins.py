@@ -54,16 +54,46 @@ print("indicators OK:", {k: ind[k] for k in ("macd", "macd_histogram",
       "forecast_trend_r2")})
 
 # ---- feeling-lucky discovery ranking ---------------------------------------
-steady_up = [100 * (1.003**i) for i in range(70)]
-flat = [100.0 for _ in range(70)]
-down = [100 * (0.997**i) for i in range(70)]
+steady_up = [100 * (1.003**i) for i in range(200)]
+flat = [100.0 for _ in range(200)]
+down = [100 * (0.997**i) for i in range(200)]
 caps = {"UP": 2_000_000_000, "FLAT": 1_000_000_001, "DOWN": 3_000_000_000}
 ranked = rank_candidates({"UP": steady_up, "FLAT": flat, "DOWN": down}, caps, "short_term", 3)
 assert [item["ticker"] for item in ranked] == ["UP", "FLAT", "DOWN"], ranked
 assert rank_candidates({"SMALL": steady_up}, {"SMALL": 1_000_000_000}, "long_term", 5) == []
 assert rank_candidates({"BIG": steady_up}, {"BIG": 50_000_000_000}, "long_term", 5) == []
 assert rank_candidates({"SHORT": [1.0] * 20}, {"SHORT": 2_000_000_000}, "long_term", 5) == []
-print("discovery ranking OK:", [item["ticker"] for item in ranked])
+
+# Frog in the pan (Da et al. 2014): a smooth climb outranks a jumpy path to
+# the same price - steady 0.3%/day vs the same total return in decade-block
+# jumps (the jumpy path even ends 0.3% higher, biasing against the assertion).
+jumpy = [100 * ((1.003 ** 10) ** (i // 10 + 1)) for i in range(200)]
+assert abs(jumpy[-1] - steady_up[-1]) < 1.0, (jumpy[-1], steady_up[-1])
+frog = rank_candidates(
+    {"SMOOTH": steady_up, "JUMPY": jumpy},
+    {"SMOOTH": 2_000_000_000, "JUMPY": 2_000_000_000},
+    "short_term",
+    2,
+)
+assert [item["ticker"] for item in frog] == ["SMOOTH", "JUMPY"], frog
+
+# Last-month blow-off (Jegadeesh 1990 reversal): a TARS-style +50% month on a
+# flat base ranks far below a steady climber that reaches the same price.
+climber = [100 * (1.0025**i) for i in range(200)]
+blowoff = [100 * (1.0005**i) for i in range(179)]
+final_jump = climber[-1] / blowoff[-1]
+blowoff += [blowoff[-1] * final_jump ** ((k + 1) / 21) for k in range(21)]
+assert abs(blowoff[-1] - climber[-1]) < 1e-6
+spike = rank_candidates(
+    {"CLIMB": climber, "BLOWOFF": blowoff},
+    {"CLIMB": 2_000_000_000, "BLOWOFF": 2_000_000_000},
+    "short_term",
+    2,
+)
+assert [item["ticker"] for item in spike] == ["CLIMB", "BLOWOFF"], spike
+print("discovery ranking OK:", [item["ticker"] for item in ranked],
+      "| frog-in-the-pan:", [item["ticker"] for item in frog],
+      "| blow-off demoted:", [item["ticker"] for item in spike])
 
 # ---- discovery provider cache ----------------------------------------------
 cache_calls = 0
