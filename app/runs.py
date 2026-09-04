@@ -7,12 +7,15 @@ import uuid
 
 from app.config import settings
 from app.depth import DEFAULT_DEPTH, normalize_depth
-from app.models import RunHistoryItem, RunStatus, StockAnalysis
+from app.models import PortfolioSummary, RunHistoryItem, RunStatus, StockAnalysis
 from app.outlook import DEFAULT_OUTLOOK, normalize_outlook
 from app import run_history
 from app.workflow import analyze_ticker, fetch_portfolio_summary
 
 logger = logging.getLogger("analysis")
+ANALYSIS_CACHE_TTL_SECONDS = 60 * 60
+
+AnalysisCacheKey = tuple[str, str, str, int, bool, str]
 
 
 class Run:
@@ -64,6 +67,12 @@ class RunStore:
 
     def __init__(self) -> None:
         self.runs: dict[str, Run] = {}
+        self.analysis_cache: dict[
+            AnalysisCacheKey, tuple[float, StockAnalysis]
+        ] = {}
+        self.analysis_inflight: dict[
+            AnalysisCacheKey, asyncio.Task[StockAnalysis]
+        ] = {}
 
     async def init(self) -> None:
         await run_history.init()
@@ -112,6 +121,99 @@ class RunStore:
         except Exception as exc:  # noqa: BLE001 - analysis must survive DB trouble
             logger.error("[history] could not save run %s: %s", run.run_id, exc)
 
+    @staticmethod
+    def _cache_key(
+        run: Run, ticker: str, portfolio: PortfolioSummary | None
+    ) -> AnalysisCacheKey:
+        return (
+            ticker.upper(),
+            run.outlook,
+            run.depth,
+            settings.debate_rounds,
+            run.mock_mode,
+            portfolio.model_dump_json() if portfolio is not None else "unavailable",
+        )
+
+    @staticmethod
+    async def _emit_cached(run: Run, result: StockAnalysis) -> None:
+        await run.emit(
+            "ticker_started", {"ticker": result.ticker, "cached": True}
+        )
+        await run.emit(
+            "ticker_data",
+            {
+                "ticker": result.ticker,
+                "price": result.price,
+                "company_name": result.company_name,
+                "sources": result.providers,
+                "cached": True,
+            },
+        )
+        await run.emit(
+            "ticker_completed",
+            {
+                "ticker": result.ticker,
+                "decision": result.decision,
+                "confidence": result.confidence,
+                "duration_s": 0.0,
+                "analysis": result.model_dump(),
+                "cached": True,
+            },
+        )
+
+    async def _analyze_one(
+        self,
+        run: Run,
+        ticker: str,
+        portfolio: PortfolioSummary | None,
+    ) -> StockAnalysis:
+        key = self._cache_key(run, ticker, portfolio)
+        cached = self.analysis_cache.get(key)
+        if cached and time.monotonic() - cached[0] < ANALYSIS_CACHE_TTL_SECONDS:
+            result = cached[1].model_copy(deep=True)
+            logger.info("[analysis] %s cache hit", ticker)
+            await self._emit_cached(run, result)
+            return result
+
+        task = self.analysis_inflight.get(key)
+        if task is not None:
+            try:
+                result = await asyncio.shield(task)
+            finally:
+                if self.analysis_inflight.get(key) is task and task.done():
+                    self.analysis_inflight.pop(key, None)
+            if not result.error:
+                self.analysis_cache[key] = (
+                    time.monotonic(),
+                    result.model_copy(deep=True),
+                )
+            result = result.model_copy(deep=True)
+            logger.info("[analysis] %s joined cached in-flight analysis", ticker)
+            await self._emit_cached(run, result)
+            return result
+
+        task = asyncio.create_task(
+            analyze_ticker(
+                ticker,
+                run.emit,
+                portfolio_summary=portfolio,
+                outlook=run.outlook,
+                depth=run.depth,
+            )
+        )
+        self.analysis_inflight[key] = task
+        try:
+            result = await asyncio.shield(task)
+        finally:
+            if self.analysis_inflight.get(key) is task and task.done():
+                self.analysis_inflight.pop(key, None)
+        if not result.error:
+            self.analysis_cache[key] = (
+                time.monotonic(),
+                result.model_copy(deep=True),
+            )
+        return result
+
     async def _execute(self, run: Run) -> None:
         try:
             semaphore = asyncio.Semaphore(settings.max_tickers)
@@ -122,13 +224,7 @@ class RunStore:
             async def analyze_one(ticker: str) -> StockAnalysis:
                 async with semaphore:
                     try:
-                        return await analyze_ticker(
-                            ticker,
-                            run.emit,
-                            portfolio_summary=portfolio_summary,
-                            outlook=run.outlook,
-                            depth=run.depth,
-                        )
+                        return await self._analyze_one(run, ticker, portfolio_summary)
                     except Exception as exc:  # noqa: BLE001 - last-resort guard
                         logger.error("[analysis] %s crashed: %s", ticker, exc)
                         return StockAnalysis(ticker=ticker, error=str(exc)[:300])
