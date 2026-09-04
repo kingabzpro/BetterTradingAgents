@@ -10,7 +10,7 @@
   <link rel="icon" href="/static/favicon.ico?v=2" sizes="any">
   <link rel="icon" type="image/png" href="/static/favicon.png?v=2">
   <link rel="apple-touch-icon" href="/static/favicon.png?v=2">
-  <link rel="stylesheet" href="/static/style.css?v=12">
+  <link rel="stylesheet" href="/static/style.css?v=13">
 </head>
 <body>
   <div class="container">
@@ -40,6 +40,7 @@
                  spellcheck="false" aria-describedby="ticker-hint">
           <button id="add-ticker-btn" class="tag-add-btn" type="button">Add</button>
         </div>
+        <button id="feeling-lucky-btn" class="lucky-btn" type="button" aria-describedby="ticker-hint">I Am Feeling Lucky</button>
         <button id="analyze-btn">Analyze Stocks</button>
       </div>
       <div class="chips" id="example-chips">
@@ -67,7 +68,7 @@
           </div>
         </div>
       </details>
-      <p class="hint" id="ticker-hint">Add up to 5 tickers — one at a time or paste several at once (comma or space separated).</p>
+      <p class="hint" id="ticker-hint">Add up to 5 tickers, or let “I Am Feeling Lucky” find liquid, growing companies worth $1B to $50B with breakout potential and analyze its five highest-ranked candidates. Rankings use recent market data and cannot guarantee profit.</p>
       <p id="error-msg" class="error hidden" role="alert"></p>
       <p id="restore-notice" class="restore-notice hidden" role="status"></p>
     </section>
@@ -78,7 +79,7 @@
           <div class="how-num">1</div>
           <div>
             <div class="how-title">Research</div>
-            <div class="how-text">Technical, Fundamental, News and Forecast analysts work on your ticker at the same time — the depth profile picks how many run.</div>
+            <div class="how-text">Technical, Fundamental, News and Forecast analysts work on your ticker at the same time. The depth profile picks how many run.</div>
           </div>
         </div>
         <div class="how-card">
@@ -92,7 +93,7 @@
           <div class="how-num">3</div>
           <div>
             <div class="how-title">Decision</div>
-            <div class="how-text">The Portfolio Manager weighs the debate and your portfolio; a risk layer sizes the trade and applies exposure caps. Educational simulation — not investment advice.</div>
+            <div class="how-text">The Portfolio Manager weighs the debate and your portfolio; a risk layer sizes the trade and applies exposure caps. This is an educational simulation, not investment advice.</div>
           </div>
         </div>
       </div>
@@ -125,6 +126,6 @@
   </div>
 
   <div id="toast" class="toast hidden" role="status" aria-live="polite" aria-atomic="true"></div>
-  <script src="/static/app.js?v=16"></script>
+  <script src="/static/app.js?v=17"></script>
 </body>
 </html>

@@ -42,7 +42,7 @@ function renderHistory(runs) {
 
 async function clearHistory() {
   const confirmed = window.confirm(
-    "Delete all completed and interrupted runs from this browser's history? This cannot be undone. Active runs will be kept."
+    "Delete all completed and interrupted runs from this browser history? This action cannot be undone. Active runs will be kept."
   );
   if (!confirmed) return;
   $("clear-history").disabled = true;

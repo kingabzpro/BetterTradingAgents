@@ -13,6 +13,7 @@ os.environ["DB_PATH"] = str(_TMP)
 
 from app.tools.indicators import compute_indicators, historical_forecast, macd  # noqa: E402
 from app.tools.market_data import _normalize_timegpt_forecast  # noqa: E402
+from app.discovery import rank_candidates  # noqa: E402
 
 # ---- indicators -----------------------------------------------------------
 random.seed(7)
@@ -50,6 +51,18 @@ print("indicators OK:", {k: ind[k] for k in ("macd", "macd_histogram",
       "bollinger_percent_b", "bollinger_width_pct", "atr_14", "atr_pct_of_price",
       "relative_volume", "forecast_price_5d", "forecast_change_5d_pct",
       "forecast_trend_r2")})
+
+# ---- feeling-lucky discovery ranking ---------------------------------------
+steady_up = [100 * (1.003**i) for i in range(70)]
+flat = [100.0 for _ in range(70)]
+down = [100 * (0.997**i) for i in range(70)]
+caps = {"UP": 2_000_000_000, "FLAT": 1_000_000_001, "DOWN": 3_000_000_000}
+ranked = rank_candidates({"UP": steady_up, "FLAT": flat, "DOWN": down}, caps, "short_term", 3)
+assert [item["ticker"] for item in ranked] == ["UP", "FLAT", "DOWN"], ranked
+assert rank_candidates({"SMALL": steady_up}, {"SMALL": 1_000_000_000}, "long_term", 5) == []
+assert rank_candidates({"BIG": steady_up}, {"BIG": 50_000_000_000}, "long_term", 5) == []
+assert rank_candidates({"SHORT": [1.0] * 20}, {"SHORT": 2_000_000_000}, "long_term", 5) == []
+print("discovery ranking OK:", [item["ticker"] for item in ranked])
 
 # ---- rebuttal mocks (deterministic, offline) --------------------------------
 from app.agents import bear, bull, forecast as forecast_agent  # noqa: E402

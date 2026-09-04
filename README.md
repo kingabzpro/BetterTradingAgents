@@ -1,8 +1,11 @@
 <div align="center">
 
-<img src="static/logo-full.png" width="700" alt="BetterTradingAgents — multi-agent market intelligence"/>
+<img src="static/logo-full.png" width="700" alt="BetterTradingAgents multi-agent market intelligence"/>
 
-**Real-time, multi-agent AI stock research and paper trading—powered by CrewAI.**
+**Real-time, multi-agent AI stock research and paper trading, powered by CrewAI.**
+
+BetterTradingAgents is an improved and streamlined version of the TradingAgents concept, with a
+faster parallel workflow, live progress, explainable decisions, risk controls, and paper trading.
 
 Enter up to five stock tickers. Specialized agents analyze technicals, fundamentals,
 news, and the 5-day price forecast in parallel, bull and bear researchers debate across
@@ -33,7 +36,7 @@ simulated portfolio.
 |:---:|---|---|
 | ⚡ | **Parallel by design** | Researchers, data fetches, and debate rounds run concurrently, and multiple tickers run side by side. |
 | ⚔️ | **Real debate** | Bull and bear each get a rebuttal round to answer the other's strongest points before the call. |
-| ⚖️ | **Risk-gated decisions** | BUYs are volatility-scaled and capped by per-ticker, invested, and cash-buffer limits — downgrades are flagged, never silent. |
+| ⚖️ | **Risk-gated decisions** | BUYs are volatility-scaled and capped by per-ticker, invested, and cash-buffer limits; downgrades are flagged, never silent. |
 | 📡 | **Live, honest progress** | Server-Sent Events stream every agent state, with per-ticker progress bars as it happens. |
 | 🕘 | **Durable run history** | Completed and interrupted analyses are saved in SQLite and can be reopened from the Runs page. |
 | 🛡️ | **Resilient runs** | If an agent fails, the Portfolio Manager receives the available inputs and still makes a call. |
@@ -78,15 +81,15 @@ flowchart TD
 ```
 
 The research, data-fetch, and debate stages run concurrently with `asyncio.gather`. Multiple tickers
-also run side by side—up to five by default—with one portfolio snapshot shared across the run.
+also run side by side, with up to five by default and one portfolio snapshot shared across the run.
 
 ### TimeGPT forecasting
 
 Each analysis now includes a five-trading-day price forecast alongside the current price. The app
 sends up to 512 historical daily closes from yfinance to Nixtla's pretrained `timegpt-1` model,
 then reports the fifth predicted close and its percentage change from today's price. A dedicated
-Forecast Analyst interprets that projection—weighing it against implied volatility and the local
-trend fit—so the debate gets an interpreted view, not just raw numbers. Projections are supporting
+Forecast Analyst interprets that projection by weighing it against implied volatility and the local
+trend fit, so the debate gets an interpreted view, not just raw numbers. Projections are supporting
 evidence, never a guaranteed target or probability of profit.
 
 TimeGPT is optional and resilient by design:
@@ -100,7 +103,7 @@ TimeGPT is optional and resilient by design:
 ### Live execution
 
 Server-Sent Events update the interface as every agent moves from waiting to running, complete,
-or failed—progress bars tick per ticker as each agent finishes.
+or failed. Progress bars tick per ticker as each agent finishes.
 
 ![Live agent progress](docs/screenshots/live-analysis.png)
 
@@ -143,7 +146,7 @@ NIXTLA_API_KEY=your_key_here
 ```
 
 Keep the key in `.env`; never commit or expose it in browser-side code. Restart the app after
-changing environment variables. TimeGPT is optional—the local forecast remains available without it.
+changing environment variables. TimeGPT is optional; the local forecast remains available without it.
 
 > [!TIP]
 > No LLM key yet? Leave `LLM_API_KEY` empty. The complete workflow remains available in clearly
@@ -168,12 +171,18 @@ uv run uvicorn app.main:app --reload
 ```
 
 Open [http://localhost:8000](http://localhost:8000), add tickers such as `NVDA, AMD, META`
-(one at a time, paste several at once, or use the quick-add chips — up to 5), pick your
+(one at a time, paste several at once, or use the quick-add chips, up to 5), pick your
 outlook (**Day trading**, **Short term**, or **Long term**) and depth (**Fast** = technical +
 news + single debate round, 5 agents · **Medium** = all researchers, 7 agents ·
 **Expert** = adds the bull/bear rebuttal round, 9 agents), then select **Analyze Stocks**.
 The outlook is sent to every agent, so they all weigh evidence for the horizon you actually
 trade; the depth picks how many agents run, trading thoroughness for speed.
+
+Not sure which symbols to enter? **I Am Feeling Lucky** screens liquid U.S.-listed growth companies
+worth $1 billion to $50 billion with at least $100 million in trailing revenue and 10% trailing revenue growth,
+then ranks them using horizon-weighted, volatility-adjusted momentum and runs the normal full
+analysis on the five highest-ranked candidates. It is a starting point for research, not a guarantee
+of profit or investment advice.
 
 ## Configuration
 
@@ -183,14 +192,14 @@ optional; without an LLM key, the app starts in mock mode.
 | Variable | Default | Purpose |
 |---|---|---|
 | `LLM_BASE_URL` | `https://api.openai.com/v1` | OpenAI-compatible API endpoint |
-| `LLM_API_KEY` | — | Enables the six CrewAI agents |
+| `LLM_API_KEY` | Not set | Enables the six CrewAI agents |
 | `LLM_MODEL` | `gpt-4o-mini` | Model used by every agent |
 | `LLM_TEMPERATURE` | `0.2` | Sampling temperature |
 | `LLM_TIMEOUT_SECONDS` | `90` | Timeout for each agent call |
-| `LLM_REASONING_EFFORT` | — | Optional provider-specific reasoning effort |
-| `FINNHUB_API_KEY` | — | Company profiles, fundamentals, and news; falls back to yfinance |
-| `OLOSTEP_API_KEY` | — | News search and article scraping fallback |
-| `NIXTLA_API_KEY` | — | Nixtla TimeGPT 5-day forecast; falls back to the local trend model |
+| `LLM_REASONING_EFFORT` | Not set | Optional provider-specific reasoning effort |
+| `FINNHUB_API_KEY` | Not set | Company profiles, fundamentals, and news; falls back to yfinance |
+| `OLOSTEP_API_KEY` | Not set | News search and article scraping fallback |
+| `NIXTLA_API_KEY` | Not set | Nixtla TimeGPT 5-day forecast; falls back to the local trend model |
 | `MAX_TICKERS` | `5` | Maximum tickers accepted in one analysis |
 | `DEBATE_ROUNDS` | `2` | Bull/bear debate depth: `1` = single round, `2`+ adds one rebuttal exchange (capped at 3) |
 | `STARTING_CASH` | `100000` | Initial simulated portfolio balance |
@@ -204,7 +213,7 @@ optional; without an LLM key, the app starts in mock mode.
 
 After a **BUY** recommendation, add the stock to the simulated portfolio in one click. Positions
 persist in SQLite, update with live prices and profit/loss, and can be closed to realize gains or
-losses — the Portfolio Manager also sees your open positions when making its next call. No broker
+losses. The Portfolio Manager also sees your open positions when making its next call. No broker
 is connected and no real orders are placed.
 
 ![Demo portfolio](docs/screenshots/portfolio.png)
@@ -220,6 +229,7 @@ direct `?run=<id>` link can still reopen a specific result, including after a se
 | Method | Route | Purpose |
 |:---:|---|---|
 | `POST` | `/api/analyze` | Start an analysis run for one or more tickers |
+| `GET` | `/api/discover` | Rank liquid growth companies worth $1B to $50B and return up to five research candidates |
 | `GET` | `/api/runs` | List saved analysis runs, newest first |
 | `DELETE` | `/api/runs` | Clear the current browser's finished run history |
 | `GET` | `/api/runs/{run_id}` | Read run status and complete results |
@@ -293,8 +303,8 @@ Detailed, research-backed plans for everything below live in [docs/ROADMAP.md](d
 > BetterTradingAgents is an educational project, not investment advice. The portfolio is simulated;
 > nothing in this project executes real trades.
 
-Inspired by [TradingAgents](https://github.com/TauricResearch/TradingAgents);
-this is an independent, much smaller implementation.
+This project is an improved and streamlined implementation inspired by
+[TradingAgents](https://github.com/TauricResearch/TradingAgents).
 
 ## License
 

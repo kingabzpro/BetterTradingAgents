@@ -91,9 +91,9 @@ root = Path(__file__).resolve().parents[1]
 html = (root / "static" / "index.html").read_text(encoding="utf-8")
 js = (root / "static" / "app.js").read_text(encoding="utf-8")
 css = (root / "static" / "style.css").read_text(encoding="utf-8")
-for token in ("overall-progress", 'role="status"', 'role="alert"', 'tabindex="-1"'):
+for token in ("overall-progress", "feeling-lucky-btn", 'role="status"', 'role="alert"', 'tabindex="-1"'):
     assert token in html
-for token in ("localStorage", "?run", "aria-expanded", "aria-controls", "restoreSavedRun", "retryTicker"):
+for token in ("localStorage", "?run", "aria-expanded", "aria-controls", "restoreSavedRun", "retryTicker", "feelingLucky", "/api/discover"):
     if token == "?run":
         assert 'searchParams.set("run"' in js
     else:

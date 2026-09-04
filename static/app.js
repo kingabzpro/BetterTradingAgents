@@ -46,6 +46,7 @@ const EVIDENCE_META = {
 const $ = (id) => document.getElementById(id);
 const state = {
   running: false,
+  discovering: false,
   finishing: false,
   es: null,
   runId: null,
@@ -64,6 +65,7 @@ const state = {
 
 document.addEventListener("DOMContentLoaded", async () => {
   $("analyze-btn").addEventListener("click", () => startAnalysis());
+  $("feeling-lucky-btn").addEventListener("click", () => feelingLucky());
   $("analyze-another-btn").addEventListener("click", () => analyzeAnother());
   $("add-ticker-btn").addEventListener("click", () => addTickerTags($("ticker-input").value));
   $("ticker-input").addEventListener("keydown", (event) => {
@@ -122,7 +124,7 @@ function addTickerTags(raw) {
   if (!parts.length) return;
   const invalid = parts.filter((ticker) => !TICKER_PATTERN.test(ticker));
   if (invalid.length) {
-    showError(`That doesn't look like a ticker symbol: ${invalid.join(", ")}.`);
+    showError(`That does not look like a ticker symbol: ${invalid.join(", ")}.`);
     return;
   }
   const next = [...state.tickerTags];
@@ -161,7 +163,7 @@ function renderTickerTags() {
     button.addEventListener("click", () => removeTickerTag(button.dataset.remove));
   });
   $("add-ticker-btn").disabled = state.tickerTags.length >= state.maxTickers;
-  if (!state.running) $("analyze-btn").disabled = state.tickerTags.length === 0;
+  if (!state.running && !state.discovering) $("analyze-btn").disabled = state.tickerTags.length === 0;
 }
 
 /* ---------- outlook + depth selectors ---------- */
@@ -247,7 +249,7 @@ async function restoreSavedRun() {
     const response = await fetch(`/api/runs/${encodeURIComponent(runId)}`);
     if (response.status === 404) {
       clearSavedRun(runId);
-      if (urlRun) showRestoreNotice("That analysis is no longer available on this server. Start a new run when you’re ready.");
+      if (urlRun) showRestoreNotice("That analysis is no longer available on this server. Start a new run when you are ready.");
       return;
     }
     if (!response.ok) throw new Error(`status ${response.status}`);
@@ -272,7 +274,7 @@ async function restoreSavedRun() {
     finishRun({ duration: run.duration_s, focusResults: false, failed: run.status === "failed" });
     showRestoreNotice(run.status === "failed" ? "Restored an interrupted analysis. You can retry any ticker below." : "Restored analysis from run history.");
   } catch (_) {
-    if (urlRun) showRestoreNotice("We couldn’t restore that analysis. You can start a new run.");
+    if (urlRun) showRestoreNotice("We could not restore that analysis. You can start a new run.");
   }
 }
 
@@ -284,8 +286,37 @@ function showRestoreNotice(message) {
 
 /* ---------- analysis ---------- */
 
+async function feelingLucky() {
+  if (state.running || state.discovering) return;
+  const button = $("feeling-lucky-btn");
+  const originalLabel = button.textContent;
+  state.discovering = true;
+  button.disabled = true;
+  $("analyze-btn").disabled = true;
+  button.textContent = "Screening market…";
+  hideError();
+  try {
+    const response = await fetch(`/api/discover?outlook=${encodeURIComponent(state.outlook)}`);
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.detail || `screen failed (${response.status})`);
+    setTickerTags(payload.tickers.join(","));
+    showToast(`Selected ${payload.tickers.join(", ")} from ${payload.universe_size} emerging growth stocks. Starting full analysis…`);
+    state.discovering = false;
+    await startAnalysis();
+  } catch (error) {
+    showError(`Could not select candidates: ${error.message}`);
+  } finally {
+    state.discovering = false;
+    button.textContent = originalLabel;
+    if (!state.running) {
+      button.disabled = false;
+      $("analyze-btn").disabled = state.tickerTags.length === 0;
+    }
+  }
+}
+
 async function startAnalysis() {
-  if (state.running) return;
+  if (state.running || state.discovering) return;
   addTickerTags($("ticker-input").value); // pick up a half-typed symbol too
   if (!state.tickerTags.length) {
     showError("Add at least one ticker first (e.g. NVDA).");
@@ -332,6 +363,7 @@ function beginRun(tickers, options = {}) {
   }]));
   state.runStartedAtMs = options.startedAtMs || Date.now();
   $("analyze-btn").disabled = true;
+  $("feeling-lucky-btn").disabled = true;
   $("how-section").classList.add("hidden");
   $("results-section").classList.add("hidden");
   $("analyze-another-btn").classList.add("hidden");
@@ -442,6 +474,7 @@ function finishRun({ duration = null, focusResults = true, failed = false } = {}
   state.running = false;
   state.finishing = false;
   $("analyze-btn").disabled = state.tickerTags.length === 0;
+  $("feeling-lucky-btn").disabled = false;
   window.clearInterval(state.timer);
   state.timer = null;
   const elapsed = duration == null ? Math.max(0, (Date.now() - state.runStartedAtMs) / 1000) : Number(duration);
@@ -464,7 +497,7 @@ function analyzeAnother(prefill = "") {
 
 function retryTicker(ticker) {
   analyzeAnother(ticker);
-  showToast(`${ticker} is ready to retry. Press Analyze Stocks when you’re ready.`);
+  showToast(`${ticker} is ready to retry. Press Analyze Stocks when you are ready.`);
 }
 
 /* ---------- SSE events -> progress UI ---------- */
@@ -584,9 +617,9 @@ function renderSummaryTable() {
       return `<tr>
         <td data-label="Ticker"><strong>${escapeHtml(analysis.ticker)}</strong></td>
         <td data-label="Decision">${decisionBadge(analysis)}</td>
-        <td data-label="5-day forecast" class="num">${analysis.forecast_price_5d != null ? `$${Number(analysis.forecast_price_5d).toFixed(2)} (${Number(analysis.forecast_change_5d_pct) >= 0 ? "+" : ""}${Number(analysis.forecast_change_5d_pct).toFixed(2)}%)` : "—"}<small>${analysis.forecast_method === "timegpt-1" ? "Nixtla TimeGPT" : "Local model"}</small></td>
+        <td data-label="5-day forecast" class="num">${analysis.forecast_price_5d != null ? `$${Number(analysis.forecast_price_5d).toFixed(2)} (${Number(analysis.forecast_change_5d_pct) >= 0 ? "+" : ""}${Number(analysis.forecast_change_5d_pct).toFixed(2)}%)` : "Not available"}<small>${analysis.forecast_method === "timegpt-1" ? "Nixtla TimeGPT" : "Local model"}</small></td>
         <td data-label="Evidence" class="num">${Math.round((analysis.confidence || 0) * 100)}% · ${convictionLabel(analysis.confidence)}</td>
-        <td data-label="Suggested size" class="num">${analysis.suggested_size_usd ? fmtUsd(analysis.suggested_size_usd) : "—"}</td>
+        <td data-label="Suggested size" class="num">${analysis.suggested_size_usd ? fmtUsd(analysis.suggested_size_usd) : "Not available"}</td>
         <td data-label="Risk">${analysis.error ? '<span class="flag-warn">⚠ Unavailable</span>' : flags.length ? `<span class="flag-warn">⚠ ${flags.length} flag${flags.length > 1 ? "s" : ""}</span>` : '<span class="flag-ok">✓ Clear</span>'}</td>
         <td data-label="Action"><button class="table-open-btn" type="button" data-open-ticker="${escapeAttr(analysis.ticker)}">View evidence</button></td>
       </tr>`;

@@ -12,6 +12,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app import portfolio
 from app.config import settings
+from app.discovery import discover_stocks
 from app.models import (
     AnalysisRequest,
     AnalysisResponse,
@@ -21,6 +22,7 @@ from app.models import (
     RunHistoryItem,
     RunStatus,
 )
+from app.outlook import DEFAULT_OUTLOOK, Outlook
 from app.runs import store
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
@@ -73,6 +75,14 @@ async def health():
         "max_tickers": settings.max_tickers,
         "debate_rounds": settings.debate_rounds,
     }
+
+
+@app.get("/api/discover")
+async def discover(outlook: Outlook = Query(default=DEFAULT_OUTLOOK)):
+    try:
+        return await discover_stocks(outlook, min(5, settings.max_tickers))
+    except ValueError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
 @app.post("/api/analyze", response_model=AnalysisResponse)
