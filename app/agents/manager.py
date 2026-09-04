@@ -42,6 +42,7 @@ Decision rules:
 - SELL requires clear deterioration or dominant risk.
 - Decide HOLD when the bull and bear cases genuinely balance or a key input is missing - not merely because the call feels close or the position has already moved.
 - "current_portfolio" lists positions already held. Account for existing exposure: a BUY that adds to an already-large position, or a SELL when nothing is held, needs somewhat stronger justification.
+- "past_decisions" is this system's own track record on this ticker (earlier calls with realized returns, alpha vs SPY and a one-line lesson); "cross_ticker_lessons" carries lessons from other tickers. Use them to repeat what worked and correct what did not - but one or two outcomes are weak evidence, never a substitute for the current research above.
 
 Respond with ONLY a JSON object, no markdown fences, no text outside the JSON:
 {{"ticker": "{ticker}", "decision": "BUY" | "HOLD" | "SELL", "confidence": <number 0.0-1.0>, "summary": "<at most 3 sentences explaining the decision>", "bull_case": "<at most 2 sentences>", "bear_case": "<at most 2 sentences>"}}""",

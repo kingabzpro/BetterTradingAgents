@@ -150,6 +150,17 @@ async def fetch_portfolio_summary() -> PortfolioSummary | None:
         return None
 
 
+async def fetch_past_decisions(ticker: str) -> dict | None:
+    """Graded past calls on this ticker + cross-ticker lessons; best-effort."""
+    try:
+        from app import memory
+
+        return await memory.get_reflections(ticker)
+    except Exception as exc:  # noqa: BLE001 - memory context is best-effort
+        logger.warning("[memory] reflections failed: %s", exc)
+        return None
+
+
 def _portfolio_context(summary: PortfolioSummary | None) -> list[dict] | str:
     """Compact view of open positions for the manager prompt."""
     if summary is None:
@@ -206,6 +217,7 @@ async def analyze_ticker(
     portfolio_summary: PortfolioSummary | None = None,
     outlook: str = DEFAULT_OUTLOOK,
     depth: str = DEFAULT_DEPTH,
+    run_id: str = "",
 ) -> StockAnalysis:
     """Full 3-stage workflow for one ticker.
 
@@ -214,7 +226,8 @@ async def analyze_ticker(
     user's chosen horizon (day_trade / short_term / long_term) and is injected
     into every agent payload so the whole crew weighs evidence for that horizon.
     `depth` (fast / medium / expert) selects which researchers run and whether
-    the debate gets a rebuttal round - fewer agents, faster run.
+    the debate gets a rebuttal round - fewer agents, faster run. `run_id` tags
+    the decision-memory row written at the end of a successful run.
     """
     started = time.perf_counter()
     await emit("ticker_started", {"ticker": ticker})
@@ -398,6 +411,19 @@ async def analyze_ticker(
         if portfolio_summary is not None
         else await fetch_portfolio_summary()
     )
+    # Decision memory (ROADMAP 1.1): the system's own graded past calls act as
+    # a track record in the dossier; best-effort exactly like the portfolio.
+    past = await fetch_past_decisions(ticker)
+    past_decisions_ctx = (
+        "UNAVAILABLE - decision memory lookup failed"
+        if past is None
+        else (past["past_decisions"] or "none yet - no recorded decisions for this ticker")
+    )
+    cross_lessons_ctx = (
+        "UNAVAILABLE - decision memory lookup failed"
+        if past is None
+        else (past["cross_ticker_lessons"] or "none yet - no graded decisions on other tickers")
+    )
     # Standardize the forecast against the stock's own 5-day noise band so the
     # manager and the risk gate read the same number (see app.risk).
     vol_ann_pct = indicators.get("volatility_annualized_pct")
@@ -432,6 +458,8 @@ async def analyze_ticker(
             "bear_rebuttal": bear_rebuttal,
         },
         "current_portfolio": _portfolio_context(portfolio_summ),
+        "past_decisions": past_decisions_ctx,
+        "cross_ticker_lessons": cross_lessons_ctx,
     }
     mgr_data = await _run_agent(manager, ticker, emit, payload=full_context)
 
@@ -491,6 +519,7 @@ async def analyze_ticker(
         duration_s=round(time.perf_counter() - started, 1),
         suggested_size_usd=size_usd,
         risk_flags=risk_flags,
+        past_decisions=past["past_decisions"] if past else [],
         as_of=market.as_of,
         providers={str(key): str(value) for key, value in market.sources.items()},
         source_references=_source_references(market),
@@ -498,6 +527,15 @@ async def analyze_ticker(
     logger.info(
         "[analysis] %s completed in %.1fs (%s)", ticker, analysis.duration_s, decision
     )
+    # Record the decision for future reflection (ROADMAP 1.1). A failure here
+    # must never surface to the user or block the result.
+    if analysis.error is None:
+        try:
+            from app import memory
+
+            await memory.record_decision(run_id, analysis)
+        except Exception as exc:  # noqa: BLE001 - best-effort like the portfolio
+            logger.warning("[memory] could not record decision: %s", exc)
     await emit(
         "ticker_completed",
         {

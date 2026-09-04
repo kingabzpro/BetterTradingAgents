@@ -199,6 +199,7 @@ class RunStore:
                 portfolio_summary=portfolio,
                 outlook=run.outlook,
                 depth=run.depth,
+                run_id=run.run_id,
             )
         )
         self.analysis_inflight[key] = task

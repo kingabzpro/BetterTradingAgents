@@ -10,7 +10,7 @@ from fastapi import FastAPI, Header, HTTPException, Query
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
-from app import portfolio
+from app import memory, portfolio
 from app.config import settings
 from app.discovery import discover_stocks
 from app.models import (
@@ -41,6 +41,7 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 @app.on_event("startup")
 async def startup() -> None:
     await portfolio.init()
+    await memory.init()
     await store.init()
     mode = "mock (no LLM_API_KEY)" if not settings.llm_configured else settings.llm_model
     logger.info("[startup] BetterTradingAgents ready | llm=%s", mode)

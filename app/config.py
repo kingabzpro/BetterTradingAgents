@@ -48,6 +48,15 @@ class Settings:
     max_invested_pct: float = float(_env("MAX_INVESTED_PCT", "0.60"))
     min_cash_pct: float = float(_env("MIN_CASH_PCT", "0.10"))
 
+    # Decision memory (docs/ROADMAP.md 1.1): days a decision is held before its
+    # outcome is final; LLM-written reflections are opt-in (off = deterministic).
+    memory_horizon_days: int = max(1, int(_env("MEMORY_HORIZON_DAYS", "21")))
+    memory_reflect_with_llm: bool = _env("MEMORY_REFLECT_WITH_LLM", "0").lower() in (
+        "1",
+        "true",
+        "yes",
+    )
+
     @property
     def llm_configured(self) -> bool:
         return bool(self.llm_api_key)

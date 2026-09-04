@@ -2,7 +2,7 @@
 
 Research-backed implementation plans for everything after the current quick wins.
 Each item lists the evidence behind it, the concrete design in this codebase, and
-acceptance criteria. Last updated: 2026-09-02.
+acceptance criteria. Last updated: 2026-09-04.
 
 **Already shipped** (this is the baseline the plans build on):
 
@@ -18,51 +18,17 @@ acceptance criteria. Last updated: 2026-09-02.
 - **2.1 Rebuttal round**: `DEBATE_ROUNDS >= 2` runs a second bull/bear exchange
   where each side answers the other; the manager sees the full transcript and the
   final positions are the post-rebuttal ones
+- **1.1 Decision memory**: `app/memory.py` + a `decisions` table in `portfolio.db`
+  — every completed run records its call; past decisions are graded against
+  realized closes (own return + alpha vs SPY over `MEMORY_HORIZON_DAYS`, default
+  21; mature outcomes computed once and stored, younger ones re-graded cheaply
+  as partial windows); the manager dossier gets the 3 most recent same-ticker
+  reflections + 2 cross-ticker lessons, the result card shows the track record;
+  reflections are deterministic sentences unless `MEMORY_REFLECT_WITH_LLM=1`
 
 ---
 
 ## Phase 1 — Learn from outcomes, size the risk
-
-### 1.1 Decision memory with realized-return reflection
-
-**Why.** TradingAgents attributes much of its edge to exactly this mechanism: every
-completed run appends its decision to a memory log; on the next run of the same
-ticker the framework fetches the realized return (raw and alpha vs SPY), generates
-a one-paragraph reflection, and injects recent same-ticker decisions plus
-cross-ticker lessons into the Portfolio Manager prompt ([TradingAgents repo](https://github.com/TauricResearch/TradingAgents),
-[arXiv 2412.20138](https://arxiv.org/html/2412.20138v5)). Layered memory with decay
-is the recurring theme across FinMem (3-level memory, working → short-term →
-long-term with promotion/decay, [arXiv 2311.13743](https://arxiv.org/abs/2311.13743))
-and TradingGPT (3 layers, custom decay per layer, [arXiv 2309.03736](https://www.alphaxiv.org/abs/2309.03736)).
-
-**Design.**
-
-- New SQLite table `decisions` (reuse `portfolio.db`): `run_id, ticker, date, decision,
-  confidence, price_at_decision, summary, bull_case, bear_case`. Written at the end of
-  `analyze_ticker` in `app/workflow.py`.
-- New module `app/memory.py`:
-  - `record_decision(analysis, price)` — append after each run.
-  - `get_reflections(ticker) -> list[dict]` — for each past decision older than
-    N days (start with 21), compute realized return and alpha vs SPY from yfinance
-    (`_yf_all`-style helper with `start/end` dates; SPY closes come free from the
-    same call). Store the computed outcome back on the row so it's computed once.
-  - Reflection text: in mock mode a deterministic sentence; with an LLM, one extra
-    single-agent crew ("given decision X at price Y and realized return Z vs SPY,
-    write a 2-sentence lesson").
-- Inject into the manager dossier in `app/workflow.py` as
-  `"past_decisions": [...]` (most recent 3 for the ticker + 2 cross-ticker lessons),
-  mirroring the existing `current_portfolio` pattern.
-- Decay: only the most recent K reflections are injected (start K=5). Full FinMem-style
-  layered promotion is out of scope for v1; the DB keeps everything for the backtester.
-
-**Acceptance.** Second run of the same ticker shows non-empty `past_decisions` with a
-computed `realized_return_pct` and `alpha_vs_spy_pct`; a decision row exists for every
-completed `ticker_completed`; portfolio/analysis failures never block a run (same
-try/except pattern as `_portfolio_snapshot`).
-
-**Effort:** M (1–2 days). **Risk:** yfinance history lookups add latency — cache
-outcome computation on the decisions row; reflection LLM call adds cost — make it
-optional behind `MEMORY_REFLECT_WITH_LLM` (default off, deterministic sentence).
 
 ### 1.2 Risk layer + position sizing
 
@@ -273,15 +239,15 @@ unsized, un-gated decision to a broker.
 
 ## Suggested order
 
+1.2 Risk layer, 1.1 Decision memory and 2.1 Rebuttal round are shipped (see the
+baseline above). Remaining work, in order:
+
 | # | Item | Why this position |
 |---|------|-------------------|
-| 1 | 1.2 Risk layer + sizing | Deterministic, no cost, immediate safety; prerequisite for 4.1 |
-| 2 | 1.1 Decision memory | Highest research-backed ROI; trade history just shipped feeds it |
-| 3 | 2.1 Rebuttal round | Small, visible quality win; cheap A/B via config |
-| 4 | 2.3 Reliability + per-agent models | Cuts cost (cheap analysts) before the expensive backtests |
-| 5 | 2.2 Backtest harness | The measurement tool for tuning everything above |
-| 6 | 3.1–3.3 | Breadth, once measurement exists |
-| 7 | 4.1 Alpaca | Only after risk + memory are proven |
+| 1 | 2.3 Reliability + per-agent models | Cuts cost (cheap analysts) before the expensive backtests |
+| 2 | 2.2 Backtest harness | The measurement tool for tuning everything above |
+| 3 | 3.1–3.3 | Breadth, once measurement exists |
+| 4 | 4.1 Alpaca | Only after risk + memory are proven |
 
 ## Bibliography
 

@@ -130,6 +130,28 @@ async def get_current_price(ticker: str) -> float | None:
     return price
 
 
+async def get_closes_between(ticker: str, start: str, end: str) -> dict[str, float]:
+    """Daily closes as {ISO date: close} between start and end (inclusive).
+
+    Used by decision memory to grade past calls against realized prices.
+    """
+    return await asyncio.to_thread(_yf_closes_between, ticker, start, end)
+
+
+def _yf_closes_between(ticker: str, start: str, end: str) -> dict[str, float]:
+    try:
+        hist = yf.Ticker(ticker).history(start=start, end=end, interval="1d")
+    except Exception as exc:  # noqa: BLE001 - yfinance raises many shapes
+        logger.warning("[%s] close history fetch failed: %s", ticker, exc)
+        return {}
+    if hist.empty:
+        return {}
+    return {
+        ts.strftime("%Y-%m-%d"): round(float(close), 4)
+        for ts, close in hist["Close"].dropna().items()
+    }
+
+
 async def get_timegpt_forecast(
     closes: list[float], horizon: int = 5
 ) -> dict | None:

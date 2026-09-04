@@ -704,6 +704,20 @@ function renderSources(references) {
   }).join("")}</ul>`;
 }
 
+function renderTrackRecord(analysis, ticker) {
+  const decisions = analysis.past_decisions || [];
+  if (!decisions.length) return "";
+  const pct = (value) => `${Number(value) >= 0 ? "+" : ""}${Number(value).toFixed(1)}%`;
+  const rows = decisions.map((d) => {
+    const graded = d.realized_return_pct != null;
+    const outcome = graded
+      ? `<strong>${pct(d.realized_return_pct)}</strong> over ${Number(d.window_days)}d${d.alpha_vs_spy_pct != null ? ` · SPY ${pct(d.spy_return_pct)} · alpha <strong>${pct(d.alpha_vs_spy_pct)}</strong>` : ""}${d.mature ? "" : " · partial window"}`
+      : "outcome pending";
+    return `<li><div class="memory-line"><span>${escapeHtml(d.date)} ${decisionBadge(d)} at $${Number(d.price_at_decision).toFixed(2)}</span><span class="memory-outcome">${outcome}</span></div><small>${escapeHtml(d.reflection || "")}</small></li>`;
+  }).join("");
+  return `<section class="result-block" aria-labelledby="memory-title-${ticker}"><div class="block-heading"><div><span class="eyebrow">Track record</span><h3 id="memory-title-${ticker}">What happened after previous calls</h3></div><p>Completed decisions are graded against SPY once their window closes; the manager weighs the same lessons.</p></div><ul class="memory-list">${rows}</ul></section>`;
+}
+
 function renderResultCard(analysis) {
   $("results-section").classList.remove("hidden");
   const ticker = analysis.ticker;
@@ -740,6 +754,7 @@ function renderResultCard(analysis) {
     <div class="result-detail" id="${detailId}" hidden>
       <section class="result-block" aria-labelledby="evidence-title-${ticker}"><div class="block-heading"><div><span class="eyebrow">Evidence</span><h3 id="evidence-title-${ticker}">What the researchers found</h3></div><p>Signals summarize the direction of available evidence; open each source below to verify the underlying news.</p></div><div class="grid-3">${evidenceHtml}</div>${skippedResearch.length ? `<p class="hint">${escapeHtml(profile.label)} depth: ${skippedResearch.map((key) => EVIDENCE_META[key].title).join(" and ")} research skipped for speed.</p>` : ""}</section>
       <section class="result-block" aria-labelledby="debate-title-${ticker}"><div class="block-heading"><div><span class="eyebrow">Debate</span><h3 id="debate-title-${ticker}">Strongest cases on both sides</h3></div><p>Strength scores describe each argument, not expected return.</p></div><div class="debate"><article class="debate-side bull-side"><div class="mc-title">▲ Bull case</div><div class="mc-score">${Math.round((analysis.bull?.confidence ?? 0) * 100)}% argument strength</div><p class="mc-sum">${escapeHtml(analysis.bull?.summary || analysis.bull_case || "No bull case was returned.")}</p></article><article class="debate-side bear-side"><div class="mc-title">▼ Bear case</div><div class="mc-score">${Math.round((analysis.bear?.confidence ?? 0) * 100)}% risk strength</div><p class="mc-sum">${escapeHtml(analysis.bear?.summary || analysis.bear_case || "No bear case was returned.")}</p></article></div></section>
+      ${renderTrackRecord(analysis, ticker)}
       <section class="result-block sources-block" aria-labelledby="sources-title-${ticker}"><div class="block-heading"><div><span class="eyebrow">Sources</span><h3 id="sources-title-${ticker}">Check the evidence yourself</h3></div><p>${escapeHtml(providerText(analysis.providers))}</p></div>${renderSources(analysis.source_references)}</section>
       <div class="result-actions">${canAdd ? `<div class="add-row"><label for="qty-${ticker}">Shares</label><input id="qty-${ticker}" type="number" min="1" step="1" value="${defaultQty}"><button class="add-btn" id="add-${ticker}" type="button">Add to Demo Portfolio</button><span class="muted">Prefilled from the suggested size (${fmtUsd(positionSize)})</span><span class="added-note hidden" id="added-${ticker}" role="status"></span></div>` : '<span class="muted">Demo portfolio additions are offered for BUY recommendations.</span>'}<button class="secondary-btn retry-btn" type="button">Retry ${escapeHtml(ticker)}</button></div>
     </div>`;

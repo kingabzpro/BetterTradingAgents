@@ -235,6 +235,8 @@ optional; without an LLM key, the app starts in mock mode.
 | `MAX_POSITION_PCT` | `0.10` | Risk gate: max fraction of equity in one ticker |
 | `MAX_INVESTED_PCT` | `0.60` | Risk gate: max fraction of equity invested |
 | `MIN_CASH_PCT` | `0.10` | Risk gate: min cash buffer after a BUY |
+| `MEMORY_HORIZON_DAYS` | `21` | Decision memory: days a past call is held before its realized-return grade is final |
+| `MEMORY_REFLECT_WITH_LLM` | `0` | Decision memory: `1` asks the LLM for reflection lessons instead of deterministic sentences |
 
 ## Portfolio: your own holdings + paper trading
 
@@ -336,7 +338,7 @@ scripts/         sanity checks
 
 Detailed, research-backed plans for everything below live in [docs/ROADMAP.md](docs/ROADMAP.md).
 
-- [ ] Decision memory: learn from realized returns and SPY alpha across runs
+- [x] Decision memory: learn from realized returns and SPY alpha across runs
 - [x] Risk layer: volatility-scaled position sizing and exposure caps
 - [x] Rebuttal round in the bull/bear debate
 - [x] 5-day price forecast (Nixtla TimeGPT with local fallback) + Forecast analyst

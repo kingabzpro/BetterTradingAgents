@@ -637,6 +637,12 @@ td.num, th.num { text-align: right; }
 .source-list a:hover { color: #79e3a5; }
 .source-list li div { margin-top: 3px; color: var(--muted); font-size: 11px; }
 .empty-sources { margin: 0; color: var(--muted); font-size: 13px; }
+
+.memory-list { list-style: none; margin: 0; padding: 0; }
+.memory-list li { padding: 11px 0; border-top: 1px solid rgba(255, 255, 255, 0.065); }
+.memory-line { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; color: #dce7f9; font-size: 14px; font-weight: 600; }
+.memory-outcome { color: var(--muted); font-weight: 400; font-size: 13px; }
+.memory-list small { display: block; margin-top: 3px; color: var(--muted); font-size: 12px; line-height: 1.5; }
 .result-actions {
   display: flex; justify-content: space-between; align-items: center; gap: 15px; flex-wrap: wrap;
   padding-top: 18px; border-top: 1px solid rgba(255, 255, 255, 0.075);
