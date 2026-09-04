@@ -14,7 +14,7 @@ import json
 import logging
 from math import isfinite
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from time import monotonic
 from urllib.parse import urlparse
 
@@ -150,6 +150,42 @@ def _yf_closes_between(ticker: str, start: str, end: str) -> dict[str, float]:
         ts.strftime("%Y-%m-%d"): round(float(close), 4)
         for ts, close in hist["Close"].dropna().items()
     }
+
+
+async def get_ohlcv_between(ticker: str, start: str, end: str) -> dict:
+    """OHLCV history between dates, for point-in-time (backtest) snapshots.
+
+    `price` is the last close in the window - the price known at `end`.
+    """
+    return await asyncio.to_thread(_yf_ohlcv_between, ticker, start, end)
+
+
+def _yf_ohlcv_between(ticker: str, start: str, end: str) -> dict:
+    out: dict = {"closes": [], "highs": [], "lows": [], "volumes": [], "price": None}
+    try:
+        hist = yf.Ticker(ticker).history(start=start, end=end, interval="1d")
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("[%s] OHLCV history fetch failed: %s", ticker, exc)
+        return out
+    if hist.empty:
+        return out
+    hist = hist.dropna(subset=["Close"])
+    out["closes"] = [round(float(c), 4) for c in hist["Close"].tolist()]
+    out["highs"] = [round(float(h), 4) for h in hist["High"].tolist()]
+    out["lows"] = [round(float(l), 4) for l in hist["Low"].tolist()]
+    out["volumes"] = [int(v) for v in hist["Volume"].tolist()]
+    out["price"] = out["closes"][-1] if out["closes"] else None
+    return out
+
+
+async def get_news_between(ticker: str, from_date: str, to_date: str) -> list[dict]:
+    """Company news published in [from_date, to_date] - historical windows for
+    backtests (the caller still filters to `published <= to_date`)."""
+    return await _finnhub_news(
+        ticker,
+        datetime.strptime(from_date, "%Y-%m-%d").date(),
+        datetime.strptime(to_date, "%Y-%m-%d").date(),
+    )
 
 
 async def get_timegpt_forecast(
@@ -367,18 +403,21 @@ async def _finnhub_fundamentals(ticker: str) -> dict:
     return out
 
 
-async def _finnhub_news(ticker: str) -> list[dict]:
+async def _finnhub_news(
+    ticker: str, from_date: date | None = None, to_date: date | None = None
+) -> list[dict]:
     if not settings.finnhub_api_key:
         return []
-    today = datetime.now(timezone.utc).date()
+    to_day = to_date or datetime.now(timezone.utc).date()
+    from_day = from_date or (to_day - timedelta(days=14))
     try:
         async with httpx.AsyncClient(timeout=15) as client:
             response = await client.get(
                 f"{FINNHUB_BASE}/company-news",
                 params={
                     "symbol": ticker,
-                    "from": (today - timedelta(days=14)).isoformat(),
-                    "to": today.isoformat(),
+                    "from": from_day.isoformat(),
+                    "to": to_day.isoformat(),
                     "token": settings.finnhub_api_key,
                 },
             )

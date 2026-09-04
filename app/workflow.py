@@ -19,7 +19,11 @@ from app.depth import DEFAULT_DEPTH, depth_profile
 from app.models import AgentResult, PortfolioSummary, SourceReference, StockAnalysis
 from app.outlook import DEFAULT_OUTLOOK, user_context
 from app.tools.indicators import compute_indicators, historical_forecast
-from app.tools.market_data import get_stock_data, get_timegpt_forecast
+from app.tools.market_data import (
+    MarketData,
+    get_stock_data,
+    get_timegpt_forecast,
+)
 
 logger = logging.getLogger("analysis")
 
@@ -408,6 +412,8 @@ async def analyze_ticker(
     outlook: str = DEFAULT_OUTLOOK,
     depth: str = DEFAULT_DEPTH,
     run_id: str = "",
+    market_data: MarketData | None = None,
+    live_context: bool = True,
 ) -> StockAnalysis:
     """Full 3-stage workflow for one ticker.
 
@@ -418,19 +424,29 @@ async def analyze_ticker(
     `depth` (fast / medium / expert) selects which researchers run and whether
     the debate gets a rebuttal round - fewer agents, faster run. `run_id` tags
     the decision-memory row written at the end of a successful run.
+    `market_data` injects a pre-built snapshot (backtests replay date T with
+    only data known at T); `live_context=False` is the backtest mode: no
+    portfolio fetch, no decision-memory lookup or recording - both would leak
+    information from after the replayed date.
     """
     started = time.perf_counter()
     await emit("ticker_started", {"ticker": ticker})
     logger.info("[analysis] Starting %s", ticker)
 
-    try:
-        market = await get_stock_data(ticker)
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("[analysis] %s aborted: market data failed: %s", ticker, exc)
-        await emit("ticker_failed", {"ticker": ticker, "error": str(exc)[:200]})
-        return StockAnalysis(
-            ticker=ticker, error=f"market data failed: {exc}"[:300]
-        )
+    if market_data is not None:
+        market = market_data
+        if market.price is None:
+            await emit("ticker_failed", {"ticker": ticker, "error": "no price in snapshot"})
+            return StockAnalysis(ticker=ticker, error="no price in snapshot")
+    else:
+        try:
+            market = await get_stock_data(ticker)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("[analysis] %s aborted: market data failed: %s", ticker, exc)
+            await emit("ticker_failed", {"ticker": ticker, "error": str(exc)[:200]})
+            return StockAnalysis(
+                ticker=ticker, error=f"market data failed: {exc}"[:300]
+            )
 
     indicators = compute_indicators(
         market.closes, market.highs, market.lows, market.volumes
@@ -606,15 +622,19 @@ async def analyze_ticker(
 
     # Stage 3: portfolio manager (sees existing holdings so decisions account
     # for exposure already taken; the debate transcript shows how the final
-    # positions were reached).
-    portfolio_summ = (
-        portfolio_summary
-        if portfolio_summary is not None
-        else await fetch_portfolio_summary()
-    )
-    # Decision memory (ROADMAP 1.1): the system's own graded past calls act as
-    # a track record in the dossier; best-effort exactly like the portfolio.
-    past = await fetch_past_decisions(ticker)
+    # positions were reached). Backtest replay skips live context entirely.
+    if live_context:
+        portfolio_summ = (
+            portfolio_summary
+            if portfolio_summary is not None
+            else await fetch_portfolio_summary()
+        )
+        # Decision memory (ROADMAP 1.1): the system's own graded past calls act
+        # as a track record in the dossier; best-effort exactly like the portfolio.
+        past = await fetch_past_decisions(ticker)
+    else:
+        portfolio_summ = None
+        past = {"past_decisions": [], "cross_ticker_lessons": []}
     past_decisions_ctx = (
         "UNAVAILABLE - decision memory lookup failed"
         if past is None
@@ -732,8 +752,9 @@ async def analyze_ticker(
         "[analysis] %s completed in %.1fs (%s)", ticker, analysis.duration_s, decision
     )
     # Record the decision for future reflection (ROADMAP 1.1). A failure here
-    # must never surface to the user or block the result.
-    if analysis.error is None:
+    # must never surface to the user or block the result. Backtest replays
+    # never write - they are not live decisions.
+    if analysis.error is None and live_context:
         try:
             from app import memory
 

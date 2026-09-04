@@ -35,6 +35,20 @@ acceptance criteria. Last updated: 2026-09-04.
   default via `additional_params`; token usage from crew outputs summed per
   run and shown in `agent_completed` events, `StockAnalysis.token_usage` and
   the result card
+- **2.2 Backtest harness**: `app/backtest/` with a walk-forward CLI
+  (`uv run python -m app.backtest --tickers NVDA,AMD --start ... --end ... --step 21`)
+  — point-in-time snapshots (6mo OHLCV ending at T, Finnhub news filtered to
+  `published <= T`, current-vintage fundamentals stated as a known bias) fed
+  to the real pipeline via `market_data` injection with `live_context=False`
+  (no portfolio/memory look-ahead, no decision recording); grading in pure
+  functions (BUY long / SELL short-or-0 / HOLD 0, minus 2×5bp round-trip
+  cost, alpha vs SPY over the horizon); aggregates (hit rate, cumulative,
+  Sharpe, max drawdown, buy-and-hold baseline); SQLite snapshot cache keyed
+  ticker+date so warm re-runs make zero network calls (`BACKTEST_OFFLINE=1`
+  enforces it); mock mode default, `--llm` gated behind a printed cost
+  estimate; JSON+markdown reports in `docs/backtests/` with the
+  memorization-risk flag; `scripts/backtest_smoke.py` regenerates the
+  3-ticker × 6-date baseline
 
 ---
 
@@ -120,42 +134,7 @@ on, but documented; mock mode needs a deterministic rebuttal stub.
 
 ### 2.2 Backtesting & evaluation harness
 
-**Why.** Nothing in the repo can answer "is this better than buy-and-hold?". The
-literature is unambiguous about the two traps: (1) classic look-ahead/data-snooping
-bias — validate walk-forward with point-in-time data only
-([arXiv 2512.12924](https://arxiv.org/html/2512.12924v1)); (2) an LLM-specific trap —
-the model's *training data already contains historical outcomes*, so backtests on
-dates the model memorized are inflated ([paperswithbacktest](https://paperswithbacktest.com/course/look-ahead-bias-llm-trading)).
-Standard metrics: cumulative return, Sharpe, max drawdown, win rate vs baseline
-(the same set TradingAgents and the [LLM+RL trading papers](https://arxiv.org/html/2502.01574v1) report).
-
-**Design.**
-
-- `app/backtest/` package, CLI entry `uv run python -m app.backtest --tickers NVDA,AMD --start 2024-01-01 --end 2025-06-30 --step 21d`:
-  - For each date T in the walk-forward grid, build `MarketData` **as-of T**
-    (`yf.download(start=T-6mo, end=T)` — extend `_yf_all` with date bounds) and run
-    the agent pipeline (mock mode counts as the cheap first baseline).
-  - Grade: BUY → long T→T+21d return, SELL → short (or 0 for long-only mode),
-    HOLD → 0; subtract `2×5bp` round-trip cost; compare vs SPY same window.
-  - Aggregate: hit rate per decision type, cumulative return, Sharpe, max drawdown,
-    buy-and-hold baseline. Write JSON + markdown report to `docs/backtests/`.
-- **Anti-look-ahead rules, enforced in code**: (a) news items filtered to
-  `published <= T`; (b) fundamentals are current-vintage — acceptable known bias,
-  must be stated in the report; (c) LLM-mode backtests on dates < model knowledge
-  cutoff are flagged `memorization_risk: high` in the report; prefer mock mode or
-  recent dates for headline numbers.
-- Data caching layer (`app/backtest/cache.py`, SQLite keyed by ticker+date) so
-  re-runs don't re-fetch yfinance.
-- Weekly local job (not CI — network + cost): `scripts/backtest_smoke.py` runs
-  3 tickers × 6 dates and regenerates the report.
-
-**Acceptance.** One completed report exists in `docs/backtests/` for ≥3 tickers;
-grading unit-tested against hand-computed windows; re-running with a warm cache
-makes zero network calls; report includes the memorization-risk flag when LLM mode
-is used.
-
-**Effort:** L (3–5 days). **Risk:** LLM backtests cost real money — gate LLM mode
-behind `--llm` with an explicit cost estimate printed first; default is mock mode.
+Shipped — see the baseline above.
 
 ### 2.3 LLM reliability & per-agent models
 
@@ -223,14 +202,14 @@ unsized, un-gated decision to a broker.
 
 ## Suggested order
 
-1.2 Risk layer, 1.1 Decision memory, 2.1 Rebuttal round and 2.3 Reliability +
-per-role models are shipped (see the baseline above). Remaining work, in order:
+Phase 2 is complete: 2.1 Rebuttal round, 2.3 Reliability + per-role models and
+2.2 Backtest harness are shipped (see the baseline above), alongside 1.1
+Decision memory and 1.2 Risk layer from Phase 1. Remaining work, in order:
 
 | # | Item | Why this position |
 |---|------|-------------------|
-| 1 | 2.2 Backtest harness | The measurement tool for tuning everything above |
-| 2 | 3.1–3.3 | Breadth, once measurement exists |
-| 3 | 4.1 Alpaca | Only after risk + memory are proven |
+| 1 | 3.1–3.3 | Breadth, measured with the new harness |
+| 2 | 4.1 Alpaca | Only after risk + memory are proven |
 
 ## Bibliography
 

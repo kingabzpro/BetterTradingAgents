@@ -4,6 +4,9 @@ __pycache__/
 .env
 portfolio.db
 
+# backtest snapshot cache (regenerated on demand; reports are committed)
+docs/backtests/*.db
+
 # local dev artifacts
 .playwright-mcp/
 gui-test-screenshots/

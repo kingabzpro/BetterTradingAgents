@@ -365,6 +365,7 @@ app/
   main.py        FastAPI routes, SSE stream
   workflow.py    3-stage pipeline (research -> debate -> manager) + risk gate
   risk.py        deterministic sizing + exposure caps
+  backtest/      walk-forward harness (point-in-time data, grading, reports)
   agents/        one module per agent (prompt, schema, mock fallback)
   tools/         market data (Finnhub/Olostep/yfinance), indicators
   runs.py        active run coordination and event fan-out
@@ -375,6 +376,34 @@ static/          vanilla HTML/CSS/JS, no build step
 scripts/         sanity checks
 ```
 
+## Backtesting
+
+The walk-forward harness answers "is the pipeline better than buy-and-hold?" — it
+replays the full analysis at each grid date using only data known at that date:
+
+```bash
+uv run python -m app.backtest --tickers NVDA,AMD,META --start 2026-03-01 --end 2026-06-30 --step 21
+```
+
+- **Point-in-time data**: six months of OHLCV ending at each decision date, company
+  news filtered to `published <= date` (anti-look-ahead, enforced in code), and
+  current-vintage fundamentals — a known bias the report states explicitly.
+  Portfolio context and decision memory are disabled during replay so nothing
+  leaks from after the date.
+- **Grading**: BUY earns the window's return minus a 2×5bp round-trip cost, SELL
+  scores 0 by default (long-only; `--short` grades shorts), HOLD scores 0, each
+  compared with SPY over the same window. Aggregates: hit rate, cumulative
+  return, Sharpe, max drawdown, buy-and-hold baseline.
+- **Mock mode is the default** — free and deterministic. `--llm` runs the real
+  agents after printing a cost estimate, and flags the result
+  `memorization_risk: high` because the model's training data already contains
+  historical outcomes.
+- Reports land in [`docs/backtests/`](docs/backtests/) as JSON + markdown;
+  snapshots are cached in SQLite (`BACKTEST_CACHE`, `BACKTEST_OFFLINE=1` makes
+  cache misses fail instead of hitting the network), so re-runs with a warm
+  cache make zero network calls. `uv run python scripts/backtest_smoke.py`
+  regenerates the 3-ticker baseline report.
+
 ## Roadmap
 
 Detailed, research-backed plans for everything below live in [docs/ROADMAP.md](docs/ROADMAP.md).
@@ -384,7 +413,7 @@ Detailed, research-backed plans for everything below live in [docs/ROADMAP.md](d
 - [x] Rebuttal round in the bull/bear debate
 - [x] 5-day price forecast (Nixtla TimeGPT with local fallback) + Forecast analyst
 - [x] Support per-agent model selection
-- [ ] Backtest agent decisions against buy-and-hold (walk-forward)
+- [x] Backtest agent decisions against buy-and-hold (walk-forward)
 - [ ] Stream agent reasoning while each agent works
 - [ ] Add Alpaca paper-trading integration
 
