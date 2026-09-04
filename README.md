@@ -178,11 +178,26 @@ news + single debate round, 5 agents Â· **Medium** = all researchers, 7 agents Â
 The outlook is sent to every agent, so they all weigh evidence for the horizon you actually
 trade; the depth picks how many agents run, trading thoroughness for speed.
 
-Not sure which symbols to enter? **I Am Feeling Lucky** screens liquid U.S.-listed growth companies
-worth $1 billion to $50 billion with at least $100 million in trailing revenue and 10% trailing revenue growth,
-then ranks them using horizon-weighted, volatility-adjusted momentum and runs the normal full
-analysis on the five highest-ranked candidates. It is a starting point for research, not a guarantee
-of profit or investment advice.
+### I Am Feeling Lucky discovery
+
+Select **I Am Feeling Lucky** when you want the app to find research candidates automatically. The
+backend screens U.S.-listed companies using these eligibility rules:
+
+- Market capitalization above $1 billion and below $50 billion
+- At least $100 million in trailing revenue
+- At least 10% trailing revenue growth
+- Average daily trading volume above 500,000 shares
+
+The eligible companies are ranked with horizon-weighted momentum, recent trend strength, and
+volatility. The selected Day trading, Short term, or Long term outlook changes the momentum weights.
+The five highest-ranked candidates are added to the ticker input and sent through the normal analyst,
+debate, portfolio manager, and risk workflows. The ranking is a research starting point, not a
+guarantee of profit or investment advice.
+
+The backend caches the expensive market screen and price-history snapshot for 3,600 seconds. Requests
+during that hour reuse the same provider data, but each outlook still calculates its own ranking. A
+lock also prevents simultaneous requests from starting duplicate provider refreshes. Failed or
+incomplete snapshots are not cached, and restarting the application clears the in-memory cache.
 
 ## Configuration
 
@@ -238,6 +253,10 @@ direct `?run=<id>` link can still reopen a specific result, including after a se
 | `POST` | `/api/portfolio/add` | Add a simulated position |
 | `POST` | `/api/portfolio/close` | Close a position at the live (or given) price and realize P/L |
 | `GET` | `/api/health` | Check configuration and provider status |
+
+`GET /api/discover?outlook=short_term` returns the five ticker symbols, screen thresholds, ranking
+method, cache status, and cache duration. The `cached` field reports whether the request used the
+existing snapshot, and `cache_ttl_seconds` reports the 3,600-second cache duration.
 
 <details>
 <summary><strong>Example: start an analysis</strong></summary>

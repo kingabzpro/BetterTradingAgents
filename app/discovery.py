@@ -4,6 +4,8 @@ import asyncio
 import logging
 from math import sqrt
 from statistics import mean, pstdev
+from threading import Lock
+from time import monotonic
 
 import yfinance as yf
 
@@ -16,6 +18,12 @@ MIN_REVENUE_GROWTH_PCT = 10
 MIN_TRAILING_REVENUE_USD = 100_000_000
 MIN_AVG_DAILY_VOLUME = 500_000
 SCREEN_SIZE = 60
+CACHE_TTL_SECONDS = 60 * 60
+
+_candidate_cache: tuple[
+    float, tuple[dict[str, list[float]], dict[str, float]]
+] | None = None
+_candidate_cache_lock = Lock()
 
 MOMENTUM_WEIGHTS = {
     "day_trade": (0.60, 0.30, 0.10),
@@ -26,7 +34,7 @@ MOMENTUM_WEIGHTS = {
 
 async def discover_stocks(outlook: Outlook, limit: int = 5) -> dict:
     """Return the strongest risk-adjusted momentum candidates right now."""
-    histories, market_caps = await asyncio.to_thread(_download_candidates)
+    (histories, market_caps), cache_hit = await asyncio.to_thread(_cached_candidates)
     ranked = rank_candidates(histories, market_caps, outlook, limit)
     if len(ranked) < limit:
         raise ValueError("not enough current market data to select five candidates")
@@ -36,6 +44,8 @@ async def discover_stocks(outlook: Outlook, limit: int = 5) -> dict:
         "minimum_market_cap_usd": MIN_MARKET_CAP_USD,
         "maximum_market_cap_usd": MAX_MARKET_CAP_USD,
         "minimum_revenue_growth_pct": MIN_REVENUE_GROWTH_PCT,
+        "cached": cache_hit,
+        "cache_ttl_seconds": CACHE_TTL_SECONDS,
         "method": "growth eligibility plus horizon-weighted, volatility-adjusted momentum",
         "disclaimer": "Candidates are not guaranteed to be profitable or investment advice.",
     }
@@ -74,6 +84,21 @@ def rank_candidates(
 
 def _pct_change(closes: list[float], days: int) -> float:
     return (closes[-1] / closes[-days - 1] - 1) * 100
+
+
+def _cached_candidates() -> tuple[
+    tuple[dict[str, list[float]], dict[str, float]], bool
+]:
+    """Reuse one provider snapshot for an hour and prevent duplicate refreshes."""
+    global _candidate_cache
+    with _candidate_cache_lock:
+        now = monotonic()
+        if _candidate_cache and now - _candidate_cache[0] < CACHE_TTL_SECONDS:
+            return _candidate_cache[1], True
+        candidates = _download_candidates()
+        if len(candidates[0]) >= 5:
+            _candidate_cache = (monotonic(), candidates)
+        return candidates, False
 
 
 def _download_candidates() -> tuple[dict[str, list[float]], dict[str, float]]:

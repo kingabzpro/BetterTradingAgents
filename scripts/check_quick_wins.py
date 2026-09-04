@@ -13,6 +13,7 @@ os.environ["DB_PATH"] = str(_TMP)
 
 from app.tools.indicators import compute_indicators, historical_forecast, macd  # noqa: E402
 from app.tools.market_data import _normalize_timegpt_forecast  # noqa: E402
+from app import discovery  # noqa: E402
 from app.discovery import rank_candidates  # noqa: E402
 
 # ---- indicators -----------------------------------------------------------
@@ -63,6 +64,35 @@ assert rank_candidates({"SMALL": steady_up}, {"SMALL": 1_000_000_000}, "long_ter
 assert rank_candidates({"BIG": steady_up}, {"BIG": 50_000_000_000}, "long_term", 5) == []
 assert rank_candidates({"SHORT": [1.0] * 20}, {"SHORT": 2_000_000_000}, "long_term", 5) == []
 print("discovery ranking OK:", [item["ticker"] for item in ranked])
+
+# ---- discovery provider cache ----------------------------------------------
+cache_calls = 0
+original_download = discovery._download_candidates
+discovery._candidate_cache = None
+
+
+def fake_candidates():
+    global cache_calls
+    cache_calls += 1
+    return ({ticker: steady_up for ticker in ("A", "B", "C", "D", "E")},
+            {ticker: 2_000_000_000 for ticker in ("A", "B", "C", "D", "E")})
+
+
+try:
+    discovery._download_candidates = fake_candidates
+    first, first_hit = discovery._cached_candidates()
+    second, second_hit = discovery._cached_candidates()
+    assert first == second and not first_hit and second_hit and cache_calls == 1
+    discovery._candidate_cache = (
+        discovery._candidate_cache[0] - discovery.CACHE_TTL_SECONDS - 1,
+        discovery._candidate_cache[1],
+    )
+    _, expired_hit = discovery._cached_candidates()
+    assert not expired_hit and cache_calls == 2
+finally:
+    discovery._download_candidates = original_download
+    discovery._candidate_cache = None
+print("discovery cache OK: one-hour hit and expiry refresh")
 
 # ---- rebuttal mocks (deterministic, offline) --------------------------------
 from app.agents import bear, bull, forecast as forecast_agent  # noqa: E402
