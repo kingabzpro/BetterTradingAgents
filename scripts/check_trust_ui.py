@@ -119,6 +119,7 @@ assert "scroll-padding-top" in css
 assert "background-repeat: repeat, no-repeat, no-repeat" in css
 assert "background: #090e19" in css
 assert "grid-template-columns: minmax(0, 1fr) auto minmax(150px, 46%)" in css
+assert "grid-column: -2 / -1" in css
 
 
 # The existing status endpoint returns saved results and cleanly identifies stale IDs.
@@ -145,7 +146,7 @@ async def endpoint_checks() -> None:
         assert stale.status_code == 404
         # UI assets must always revalidate: a heuristically cached stale
         # stylesheet paired with fresh markup produces broken layout.
-        for path in ("/static/style.css?v=15", "/static/app.js?v=18", "/"):
+        for path in ("/static/style.css?v=16", "/static/app.js?v=19", "/"):
             asset = await client.get(path)
             assert asset.headers.get("cache-control") == "no-cache", path
     store.runs.pop(run.run_id, None)

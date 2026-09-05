@@ -10,7 +10,7 @@
   <link rel="icon" href="/static/favicon.ico?v=2" sizes="any">
   <link rel="icon" type="image/png" href="/static/favicon.png?v=2">
   <link rel="apple-touch-icon" href="/static/favicon.png?v=2">
-  <link rel="stylesheet" href="/static/style.css?v=15">
+  <link rel="stylesheet" href="/static/style.css?v=16">
 </head>
 <body>
   <div class="container">
@@ -315,7 +315,7 @@
       const box = $("csv-preview");
       box.classList.remove("hidden");
       box.innerHTML = `
-        <div class="preview-title">Preview: ${{ready.length}} ready, ${failed.length} with errors</div>
+        <div class="preview-title">Preview: ${ready.length} ready, ${failed.length} with errors</div>
         <div class="table-wrap"><table class="preview-table">
           <thead><tr><th>Ticker</th><th class="num">Quantity</th><th class="num">Entry price</th><th>Status</th></tr></thead>
           <tbody>${rowsHtml}</tbody>

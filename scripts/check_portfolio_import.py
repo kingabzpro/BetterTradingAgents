@@ -133,6 +133,7 @@ async def checks() -> None:
         assert any(p["external"] is True for p in payload["positions"])
         page = await client.get("/portfolio")
         assert page.status_code == 200 and "Import from CSV" in page.text
+        assert "${{ready.length}}" not in page.text
     print("API checks OK: import, validation, listing, page")
 
     with sqlite3.connect(_TMP) as connection:

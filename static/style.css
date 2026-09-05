@@ -572,6 +572,7 @@ td.num, th.num { text-align: right; }
 .agent-left { min-width: 0; }
 .status {
   display: grid; grid-template-columns: 8px minmax(0, auto) auto; align-items: center;
+  grid-column: -2 / -1;
   min-width: 0; max-width: 100%; justify-self: stretch; justify-content: end;
   gap: 7px; white-space: nowrap; line-height: 1.35;
 }
