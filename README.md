@@ -53,18 +53,21 @@ simulated portfolio.
 ## How it works
 
 ```mermaid
-flowchart TD
+flowchart LR
     T["📈 Tickers<br/>up to five per run"] --> D["📡 Market data<br/>yfinance · Finnhub · Olostep · TimeGPT"]
 
     subgraph RESEARCH["🔬 Research: five analysts in parallel"]
+        direction TB
         TA["Technical<br/>SMA · RSI · MACD · volume"]
         FA["Fundamentals<br/>growth · margins · valuation"]
         NA["News<br/>headlines · catalysts"]
         SA["Sentiment<br/>Reddit · StockTwits chatter"]
         FC["Forecast<br/>TimeGPT vs own noise band"]
+        TA ~~~ FA ~~~ NA ~~~ SA ~~~ FC
     end
 
     subgraph DEBATE["⚔️ Debate: bull vs bear"]
+        direction TB
         BULL["🐂 Bull researcher<br/>strongest case to buy"]
         RB["Rebuttal round<br/>each side answers the other"]
         BEAR["🐻 Bear researcher<br/>risks and downsides"]
