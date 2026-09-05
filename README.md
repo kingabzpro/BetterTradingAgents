@@ -443,16 +443,22 @@ uv run python -m app.backtest --tickers NVDA,AMD,META --start 2026-03-01 --end 2
 
 ## Roadmap
 
-Detailed, research-backed plans for everything below live in [docs/ROADMAP.md](docs/ROADMAP.md).
+The detailed, research-backed plan lives in [docs/ROADMAP.md](docs/ROADMAP.md).
+The next work focuses on trust and measurable decision quality before broker
+integration:
 
-- [x] Decision memory: learn from realized returns and SPY alpha across runs
-- [x] Risk layer: volatility-scaled position sizing and exposure caps
-- [x] Rebuttal round in the bull/bear debate
-- [x] 5-day price forecast (Nixtla TimeGPT with local fallback) + Forecast analyst
-- [x] Support per-agent model selection
-- [x] Backtest agent decisions against buy-and-hold (walk-forward)
-- [ ] Stream agent reasoning while each agent works
-- [ ] Add Alpaca paper-trading integration
+- [ ] Decision brief: surface freshness, analyst coverage, disagreement, and risk changes at a glance
+- [ ] Run controls: cancel, rerun with the same settings, and preserve partial results
+- [ ] Accessibility and small-screen completion pass
+- [ ] Calibrate confidence against mature outcomes and show sample sizes
+- [ ] Reproducible holdout experiments with simple baselines and no default fundamentals leakage
+- [ ] Portfolio-level concentration and correlation risk
+- [ ] Watchlist with decision-change tracking
+- [ ] Alpaca paper trading with order review, idempotency, and full order states
+
+Completed foundations include decision memory, deterministic risk sizing, rebuttal
+debate, forecasting, per-role models, walk-forward backtests, social sentiment,
+durable run history, provenance, caching, and the optional reasoning stream.
 
 ## Disclaimer
 

@@ -1,226 +1,346 @@
-# BetterTradingAgents - Development Roadmap
+# BetterTradingAgents development roadmap
 
-Research-backed implementation plans for everything after the current quick wins.
-Each item lists the evidence behind it, the concrete design in this codebase, and
-acceptance criteria. Last updated: 2026-09-05.
+Practical next steps for turning the current research demo into a trustworthy
+decision workspace. Last updated: 2026-09-05.
 
-**Already shipped** (this is the baseline the plans build on):
+This roadmap is ordered by user value and risk reduction, not novelty. The app
+already has enough agents. The next releases should make existing analysis easier
+to judge, easier to control, and easier to evaluate before adding execution.
 
-- Technical indicators: MACD, Bollinger percent_b, ATR, volume/relative-volume
-- Portfolio: close positions, realized P&L, trade history, cash-balance guard
-- Portfolio Manager sees current holdings (`current_portfolio` in its dossier)
-- Old SQLite schemas migrate automatically via `ALTER TABLE`
-- **1.2 Risk layer + sizing**: deterministic gate in `app/risk.py` - BUYs get a
-  vol-scaled size (`default × confidence × min(1, 15/vol)`, floored at 0.25×) and
-  are downgraded to HOLD when they would breach `MAX_POSITION_PCT` (10%),
-  `MAX_INVESTED_PCT` (60%) or `MIN_CASH_PCT` (10%); 2+ failed analysts cap
-  confidence at 0.5; results carry `suggested_size_usd` + `risk_flags`
-- **2.1 Rebuttal round**: `DEBATE_ROUNDS >= 2` runs a second bull/bear exchange
-  where each side answers the other; the manager sees the full transcript and the
-  final positions are the post-rebuttal ones
-- **1.1 Decision memory**: `app/memory.py` + a `decisions` table in `portfolio.db`
-  - every completed run records its call; past decisions are graded against
-  realized closes (own return + alpha vs SPY over `MEMORY_HORIZON_DAYS`, default
-  21; mature outcomes computed once and stored, younger ones re-graded cheaply
-  as partial windows); the manager dossier gets the 3 most recent same-ticker
-  reflections + 2 cross-ticker lessons, the result card shows the track record;
-  reflections are deterministic sentences unless `MEMORY_REFLECT_WITH_LLM=1`
-- **2.3 LLM reliability + per-role models**: per-role LLM overrides
-  (`LLM_MODEL_MANAGER`, `LLM_MODEL_ANALYSTS`, `LLM_MODEL_DEBATE` + matching
-  `_BASE_URL`/`_API_KEY`, falling back to the global `LLM_*`) - cheap fast
-  researchers, a stronger model for the final call; classified retries
-  (429/5xx → backoff 1s/4s, malformed JSON → one retry with the error fed
-  back into the task, `response_format` rejection → JSON mode dropped for the
-  role and the call retried); `response_format={"type": "json_object"}` on by
-  default via `additional_params`; token usage from crew outputs summed per
-  run and shown in `agent_completed` events, `StockAnalysis.token_usage` and
-  the result card
-- **2.2 Backtest harness**: `app/backtest/` with a walk-forward CLI
-  (`uv run python -m app.backtest --tickers NVDA,AMD --start ... --end ... --step 21`)
-  - point-in-time snapshots (6mo OHLCV ending at T, Finnhub news filtered to
-  `published <= T`, current-vintage fundamentals stated as a known bias) fed
-  to the real pipeline via `market_data` injection with `live_context=False`
-  (no portfolio/memory look-ahead, no decision recording); grading in pure
-  functions (BUY long / SELL short-or-0 / HOLD 0, minus 2×5bp round-trip
-  cost, alpha vs SPY over the horizon); aggregates (hit rate, cumulative,
-  Sharpe, max drawdown, buy-and-hold baseline); SQLite snapshot cache keyed
-  ticker+date so warm re-runs make zero network calls (`BACKTEST_OFFLINE=1`
-  enforces it); mock mode default, `--llm` gated behind a printed cost
-  estimate; JSON+markdown reports in `docs/backtests/` with the
-  memorization-risk flag; `scripts/backtest_smoke.py` regenerates the
-  3-ticker × 6-date baseline
+## Product rules
 
-- **3.1 Sentiment / social analyst**: `app/agents/sentiment.py` - a 5th researcher
-  in the stage-1 gather (Medium/Expert depth) reading Reddit/StockTwits posts from
-  an Olostep site-restricted search (`{ticker} stock (site:reddit.com OR
-  site:stocktwits.com)`, `MarketData.social`), same `AnalystResult` schema; fewer
-  than 3 posts reads as neutral with low confidence ("social volume too thin to
-  mean anything") in both LLM and mock modes; social threads surface as
-  `kind="social"` source references; the risk gate's missing-input brake now counts
-  4 analyst slots; backtest replays get an empty social set (no point-in-time
-  archive) so the honest neutral applies; UI: 5th research row + evidence card,
-  old runs show "Not recorded"
-- **3.2 Live reasoning stream**: LLMs can be built with `stream=True`
-  (`STREAM_REASONING`) so CrewAI emits `LLMStreamChunkEvent`s; a scoped
-  `add_stream_sink` per agent run (concurrent agents never see each other's
-  tokens) forwards content chunks as `agent_token` SSE events - live-only
-  (never persisted for reconnect replay), sliding ~2 KB window in the UI pane,
-  16 KB per-agent forward guard, thinking deltas excluded; provider stream
-  rejection is classified, drops streaming for the role and retries (JSON
-  mode preserved), exactly like the `response_format` fallback; mock mode
-  streams the deterministic summary word-by-word, skipped in backtest
-  replays; UI: collapsible per-agent reasoning pane behind the agent row.
-  **Shipped off by default after live evaluation**: what streams is mostly
-  the final JSON blob, which reads as noise next to the result card - enable
-  with `STREAM_REASONING=1` if wanted
+- Evidence before persuasion. Show freshness, missing inputs, disagreement, and
+  risk adjustments beside every call.
+- Keep confidence honest. It means evidence strength until historical results
+  demonstrate calibration; it is not a probability of profit.
+- Deterministic code owns money and limits. LLMs summarize evidence; `app/risk.py`
+  sizes and gates positions.
+- Paper first, live never by accident. A recommendation and an order are separate
+  user actions with a review step between them.
+- Keep the current stack. FastAPI, SQLite, vanilla HTML/CSS/JS, and the installed
+  dependencies cover the planned work.
 
----
+## Current baseline
 
-## Phase 1 - Learn from outcomes, size the risk
+Already shipped:
 
-### 1.2 Risk layer + position sizing
+- parallel technical, fundamental, news, sentiment, and forecast research
+- bull/bear debate with an optional rebuttal round
+- portfolio-aware deterministic sizing and exposure caps
+- decision memory graded against realized returns and SPY
+- walk-forward backtests, with current-vintage fundamentals clearly flagged
+- per-role models, classified retries, and optional token streaming
+- durable run history, reconnect recovery, per-ticker retry, and a one-hour
+  analysis cache
+- source links, data timestamps, provider labels, responsive result cards, and
+  keyboard-visible focus styles
 
-**Why.** TradingAgents uses a dedicated risk-management team whose reports the
-Portfolio Manager must weigh ([arXiv 2412.20138](https://arxiv.org/html/2412.20138v5)).
-FinCon's risk controller uses CVaR and rewrites analyst prompts from realized
-performance ([emergentmind overview](https://www.emergentmind.com/topics/multi-agent-llm-financial-trading)).
-On sizing, dollar-volatility parity is the standard robust default - size each
-position so its dollar volatility is equal (a 10%-vol stock gets twice the dollar
-size of a 20%-vol stock) ([QuanterLab](https://quanterlab.com/articles/foundations-position-sizing)),
-and the Kelly fraction `f = μ/σ²` justifies scaling size linearly with conviction
-and inversely with variance; fractional Kelly is the practical form
-([Breaking Alpha summary of MacLean et al.](https://breakingalpha.io/insights/position-sizing-algorithmic-trading)).
+## Priority map
 
-**Design.**
+| Priority | Outcome | Area | Effort | Gate |
+|---|---|---|---|---|
+| P0.1 | Decision brief users can audit in seconds | UI/UX + API | M | Next release |
+| P0.2 | Cancel, rerun, and recover without guessing | UX + run logic | S | Next release |
+| P0.3 | Accessible, mobile-safe core journey | UI quality | S-M | Next release |
+| P1.1 | Historical confidence calibration | Logic + evaluation | M | Before execution |
+| P1.2 | Honest experiment and backtest workflow | Evaluation | M | Before tuning prompts or depth |
+| P1.3 | Portfolio-level concentration risk | Risk logic + UI | M | Before execution |
+| P1.4 | Watchlist and decision-change workflow | Product UX | M | After P0 |
+| P2.1 | Alpaca paper-order workflow | Integration | L | After P1.1-P1.3 |
+| P2.2 | Deployment and operational hardening | Platform | M | Before any shared deployment |
 
-- Deterministic risk gate in `app/risk.py` (rules, not an LLM - free, testable,
-  no hallucination surface). Runs after the manager decides, before the result is
-  emitted:
-  1. **Position size**: `size_usd = DEFAULT_POSITION_SIZE × confidence × min(1, 15 / vol_ann)`
-     where `vol_ann` is the already-computed `volatility_annualized_pct`. Clamped to
-     `[0.25×, 1.5×]` of the default. Attached to the result as `suggested_size_usd`
-     (dollar-vol parity scaled by conviction).
-  2. **Exposure caps**: max 10% of equity per ticker, max 60% invested overall,
-     min 10% cash buffer - computed from `portfolio.get_portfolio()`. A BUY that
-     breaches a cap is downgraded to HOLD with an explicit reason string.
-  3. **Missing-input brake**: if 2+ of the three analyst slots failed, cap
-     confidence at 0.5 and note it (currently only a total manager failure degrades
-     the decision).
-- New fields on `ManagerResult`/`StockAnalysis`: `suggested_size_usd`,
-  `risk_flags: list[str]` (e.g. `"downgraded: position would exceed 10% of equity"`).
-- UI: show size + flags on the result card; "Add to Demo Portfolio" uses the
-  suggested size instead of `DEFAULT_POSITION_SIZE`.
-- Optional v2 (only if the backtester from 2.2 proves value): an LLM risk agent in
-  the loop, FinCon-style, fed CVaR of the current book.
+## P0 - Make today's analysis useful
 
-**Acceptance.** Unit tests: size formula cases (high/low vol, confidence clamp),
-cap downgrades, missing-input brake. A BUY on an already-10% holding returns HOLD
-with `risk_flags` explaining why.
+### P0.1 Decision brief and trust state
 
-**Effort:** M. **Risk:** over-restrictive caps make everything HOLD - expose caps
-as env settings (`MAX_POSITION_PCT`, `MAX_INVESTED_PCT`, `MIN_CASH_PCT`) and tune
-with the backtester.
+**Problem.** The summary table is compact, but users must open each result to learn
+when the data was fetched, which inputs were missing, why analysts disagreed, and
+whether the risk gate changed the manager's call. The model's original decision is
+currently overwritten by the risk gate, so that change cannot be shown explicitly.
 
----
+**Build.**
 
-## Phase 2 - Better reasoning, measurable results
+- Preserve `manager_decision` and `manager_confidence` on `StockAnalysis`, then keep
+  `decision` and `confidence` as the final risk-adjusted values.
+- Add a server-computed `data_quality` object: data timestamp, expected/available
+  analysts, failed analysts, stale flag, and provider fallbacks. Define stale from
+  the selected outlook, not one global threshold.
+- Change the first visible result row to show: final call, evidence-strength label,
+  current price, horizon, data age, analyst coverage, and a risk-adjusted badge.
+- Put a compact signal split directly below it, such as `3 bullish / 1 neutral /
+  1 bearish`. Derive it from existing analyst results; do not add an LLM call.
+- Make the expanded brief follow one reading order: decision summary, risk changes,
+  bull/bear disagreement, analyst evidence, sources, then prior outcomes.
+- Add two structured manager fields, `would_upgrade_if` and `would_downgrade_if`,
+  limited to conditions supported by the dossier. Label them as conditions, not
+  alerts or guaranteed price levels.
+- On cached results, show `cached` and the original `as_of` time. Never make a
+  zero-second cache hit look like newly collected research.
 
-### 2.1 Rebuttal round in the bull/bear debate
+**Acceptance.**
 
-**Why.** Today bull and bear run in parallel on identical inputs and never see each
-other (`app/workflow.py` stage 2) - it's two monologues, not a debate. Multi-agent
-debate where agents read and critique each other converges on better answers
-(Du et al.: accuracy rose with rounds, diminishing returns after ~3;
-[arXiv 2305.14325](https://www.alphaxiv.org/abs/2305.14325)). But each extra round
-grows context and cost ([ACL 2026](https://aclanthology.org/2026.acl-srw.1.pdf)),
-and TradingAgents itself uses a small fixed number of rounds. One rebuttal round
-(2 total) is the sweet spot for a 6-agent budget.
+- A user can identify freshness, coverage, disagreement, and risk intervention
+  without expanding a card.
+- A manager BUY downgraded to HOLD renders `Manager: BUY -> Final: HOLD` with the
+  exact deterministic risk flag.
+- Old persisted runs still parse with safe defaults for every new field.
+- The table remains readable at 360 px, 768 px, and 1440 px without horizontal page
+  scrolling.
 
-**Design.**
+**Why now.** FINRA identifies inaccurate or misleading GenAI output presented as
+fact as a decision-making risk. The UI should therefore make data provenance and
+system intervention part of the primary result, not secondary detail
+([FINRA 2026 GenAI guidance](https://www.finra.org/rules-guidance/guidance/reports/2026-finra-annual-regulatory-oversight-report/gen-ai)).
 
-- After the parallel bull/bear stage, run a second cheap pass per side with a
-  modified task: each gets the other side's first-round summary and must
-  (a) rebut the strongest opposing point and (b) concede or restate its own score.
-- New `build_rebuttal_task` in `app/agents/bull.py` / `bear.py` (same output schema,
-  extra field `rebuttal`), new `rebuttal` payload key. Skip if the first round for
-  either side failed (degrade exactly like stage 1 does).
-- The manager dossier gets both rounds; the SSE event stream gets
-  `agent_started/completed` events for `bull_rebuttal`/`bear_rebuttal` so the UI
-  shows the extra stage live.
-- Config: `DEBATE_ROUNDS` (default 2, hard cap 3) so it can be turned off.
+### P0.2 Run controls: cancel, rerun, and clear status
 
-**Acceptance.** A run with `DEBATE_ROUNDS=2` emits 4 stage-2 agent events; results
-include rebuttal text; failure of a rebuttal pass never fails the run; A/B compare
-on 20 ticker-runs shows the manager citing rebuttals (spot check).
+**Problem.** Runs survive navigation and individual failures can be retried, but a
+user cannot cancel a slow or mistaken run. The backend also has no `cancelled`
+state, and the history screen does not offer a one-click rerun with the same
+outlook and depth.
 
-**Effort:** S–M. **Risk:** +2 LLM calls per ticker (~33% cost increase) - default
-on, but documented; mock mode needs a deterministic rebuttal stub.
+**Build.**
 
-### 2.2 Backtesting & evaluation harness
+- Retain the task created by `RunStore.create()` and add
+  `POST /api/runs/{run_id}/cancel`.
+- Add `cancelled` to run status models. Cancel child ticker tasks, persist the
+  partial results, and always emit one terminal `analysis_completed` event.
+- Add a visible Cancel button during a run. After completion, replace it with
+  `Run again` and `Analyze another`; keep the original tickers, outlook, and depth.
+- In Runs, add `Rerun` for completed/failed/cancelled items and explain partial
+  results in plain text.
+- Keep completed ticker results when the rest of a run is cancelled. Never record
+  a decision for an interrupted ticker.
+- Explain that cancellation stops this pipeline from advancing but may not revoke
+  an LLM request already accepted by an external provider.
 
-Shipped - see the baseline above.
+**Acceptance.**
 
-### 2.3 LLM reliability & per-agent models
+- Cancel reaches a terminal UI state within one second after the server accepts it.
+- Refreshing a cancelled run restores the same partial results and status.
+- Repeated cancel requests are harmless, and a cancelled run cannot later flip to
+  completed.
+- One offline check covers cancellation during data fetch and during agent work.
 
-Shipped - see the baseline above.
+### P0.3 Accessibility and small-screen completion pass
 
----
+**Build.**
 
-## Phase 3 - Breadth & experience
+- Test the full keyboard path: add/remove ticker, select outlook/depth, start,
+  cancel, open evidence, retry, add a demo position, and close it.
+- Announce meaningful state changes through the existing live regions, but do not
+  announce every token or progress tick.
+- Verify focus returns to the initiating control when disclosures or review panels
+  close and moves to the results heading when a run finishes.
+- Give every icon-only control a programmatic name and a minimum 44 by 44 CSS-pixel
+  target where layout allows.
+- Ensure tables reflow into labeled cards at narrow widths and that 200% text zoom
+  does not hide actions or totals.
+- Add one automated browser smoke test for the core journey plus a documented
+  manual screen-reader check. Do not change frontend frameworks for this work.
 
-### 3.1 Sentiment / social analyst (4th researcher)
+**Acceptance.** The home, results, runs, and portfolio journeys work without a
+mouse; focus is always visible; status changes are announced once; no core action
+is lost at 320 CSS pixels or 200% zoom.
 
-Shipped - see the baseline above.
+W3C's guidance specifically calls for visible keyboard focus and programmatic
+status messages, including progress and completion updates
+([focus visible](https://www.w3.org/WAI/WCAG22/Understanding/focus-visible.html),
+[status messages](https://www.w3.org/WAI/WCAG22/Understanding/status-messages.html)).
 
-### 3.2 Stream agent reasoning live (README roadmap)
+## P1 - Prove and improve the logic
 
-Shipped - see the baseline above.
+### P1.1 Calibrate confidence from outcomes
 
-### 3.3 Researcher-configurable debate depth
+**Problem.** Manager confidence is model-authored evidence strength. A value such as
+`0.72` has not been shown to mean a 72% win rate, yet numeric percentages can imply
+that precision.
 
-Only after 2.1 + 2.2 exist: use the backtester to compare `DEBATE_ROUNDS` 1 vs 2
-vs 3 on the same grid and pick the default from data, following the diminishing-
-returns curve in [Du et al.](https://www.alphaxiv.org/abs/2305.14325) rather than
-guessing. **Effort:** S once the harness exists.
+**Build.**
 
----
+- Keep the UI label `evidence strength`; use Low/Moderate/Strong as the primary
+  display and the raw value as secondary detail.
+- Add an evaluation query over mature decisions grouped by decision, outlook,
+  depth, model, and confidence bucket. For BUY/SELL, return directional hit rate,
+  positive-alpha rate, mean alpha, and median alpha. For HOLD, show missed upside
+  and avoided downside instead of inventing a win rate. Always return sample size.
+- Show `Track record unavailable` until a bucket has enough mature observations.
+  Use a configurable minimum, default 30, and always show `n`.
+- Add a manager probability field only after its success event and horizon are
+  frozen in the schema. Score it with a reliability table and Brier loss; do not
+  relabel existing confidence.
+- Version decision policy and prompt configuration in every recorded decision so
+  outcomes from materially different systems are not pooled silently.
 
-## Phase 4 - Execution (explicit opt-in)
+**Acceptance.** No screen calls model confidence a probability. Historical rates
+always show their sample size and configuration scope. A calibration report can be
+regenerated from SQLite with one command and no LLM calls.
 
-### 4.1 Alpaca paper trading (README roadmap)
+Reliability diagrams compare predicted probabilities with observed frequencies,
+while proper scores such as Brier loss assess probabilistic predictions
+([scikit-learn calibration guide](https://scikit-learn.org/stable/modules/calibration.html)).
 
-**Why.** The current SQLite portfolio is manual; Alpaca's paper API gives real
-order semantics (fills, partials, slippage) with zero real-money risk, and it's
-the README's own roadmap item.
+### P1.2 Honest experiment and backtest workflow
 
-**Design.** `app/brokers/alpaca.py` behind a `Broker` protocol (`submit(order)`,
-`positions()`, `price(ticker)`) with the SQLite portfolio as the default
-implementation; `BROKER=alpaca|local` env switch; the risk layer's
-`suggested_size_usd` becomes the order size. Orders only after the risk gate
-passes; every submission logged to the decisions table for 1.1's reflection loop.
+**Problem.** The harness can replay decisions, but current-vintage fundamentals
+leak later information into historical runs. It also lacks a fixed comparison
+matrix, an untouched test period, and uncertainty around reported metrics. Tuning
+debate depth on the same dates used for the headline result would overfit the demo.
 
-**Effort:** M. **Prerequisite:** 1.2 must be solid first - never forward an
-unsized, un-gated decision to a broker.
+**Build.**
 
----
+- Make the honest default exclude the fundamental analyst from historical replay
+  when point-in-time fundamentals are unavailable. Keep current-vintage data only
+  behind `--allow-current-fundamentals`, with a large report warning.
+- Persist a manifest beside each report: code revision, model/provider, prompt
+  version, ticker universe, dates, costs, data snapshot hashes, and random seeds.
+- Add simple baselines: all HOLD, buy-and-hold, and the existing deterministic
+  discovery momentum score. A multi-agent result must beat a cheap baseline to
+  justify its extra cost.
+- Add paired experiment mode for exactly one change at a time: depth, rebuttals,
+  forecast, sentiment, or model. Reuse the same cached snapshots.
+- Split date ranges into tune and untouched test periods. Report sample size and a
+  bootstrap interval for mean alpha; avoid promoting a winner when intervals are
+  too wide or fewer than 30 positioned decisions exist.
+- Move debate-depth tuning here. Do not set `DEBATE_ROUNDS=3` merely because one
+  backtest has a higher Sharpe ratio.
 
-## Suggested order
+**Acceptance.** The same manifest and cache reproduce the same mock report. Default
+reports contain no current-vintage fundamentals. Every comparison states the
+baseline, holdout dates, sample size, costs, and uncertainty.
 
-Phases 1 and 2 are complete (see the baseline above), and 3.1 Sentiment analyst
-and 3.2 Live reasoning stream are shipped. Remaining work, in order:
+### P1.3 Portfolio-level concentration risk
 
-| # | Item | Why this position |
-|---|------|-------------------|
-| 1 | 3.3 Debate-depth tuning | Needs the 2.2 harness, which exists - run the `DEBATE_ROUNDS` 1 vs 2 vs 3 grid and set the default from data |
-| 2 | 4.1 Alpaca | Only after risk + memory are proven |
+**Problem.** Current risk rules cap each ticker, total invested capital, and cash,
+but five highly correlated technology positions can pass those limits while still
+behaving like one concentrated bet.
 
-## Bibliography
+**Build.**
 
-- TradingAgents framework - [arXiv 2412.20138](https://arxiv.org/html/2412.20138v5) · [repo (decision log, risk team)](https://github.com/TauricResearch/TradingAgents)
-- Multi-agent debate rounds - Du et al., [arXiv 2305.14325](https://www.alphaxiv.org/abs/2305.14325) · [rounds-vs-cost](https://aclanthology.org/2026.acl-srw.1.pdf)
-- Layered memory - FinMem [arXiv 2311.13743](https://arxiv.org/abs/2311.13743) · TradingGPT [arXiv 2309.03736](https://www.alphaxiv.org/abs/2309.03736) · [overview table](https://www.emergentmind.com/topics/multi-agent-llm-financial-trading)
-- Position sizing - [vol-parity & Kelly basics](https://quanterlab.com/articles/foundations-position-sizing) · [vol targeting intro](https://quantpedia.com/an-introduction-to-volatility-targeting) · [Kelly f=μ/σ², MacLean et al.](https://breakingalpha.io/insights/position-sizing-algorithmic-trading)
-- Backtesting rigor - [walk-forward framework, arXiv 2512.12924](https://arxiv.org/html/2512.12924v1) · [LLM look-ahead/memorization bias](https://paperswithbacktest.com/course/look-ahead-bias-llm-trading)
-- Sentiment - [StockTwits + FinBERT, PMC](https://pmc.ncbi.nlm.nih.gov/articles/PMC10280432)
-- CrewAI in production - [lessons 2026](https://www.agilesoftlabs.com/blog/2026/06/crewai-in-production-2026-real-lessons)
-- LLM trading evaluation metrics - [end-to-end LLM trading system, arXiv 2502.01574](https://arxiv.org/html/2502.01574v1)
+- Extend the deterministic risk snapshot with sector concentration, largest-name
+  concentration, and 60-day return correlation among priced holdings.
+- Before a demo buy, calculate and show portfolio exposure before and after the
+  proposed position.
+- Add two explainable brakes: a configurable sector cap and a correlated-exposure
+  warning. Start warnings-only, measure frequency, then enable blocking only if
+  tests show sensible behavior.
+- Treat missing prices or insufficient history as `unknown`, never zero risk.
+- Keep the calculation in `app/risk.py`; no risk-agent LLM and no new numerical
+  dependency are needed for the first version.
+
+**Acceptance.** Adding a stock highly correlated with the largest holding produces
+an explicit warning and before/after exposure. Missing market data cannot lower the
+reported risk. Existing ticker and cash caps remain intact.
+
+Diversification can reduce overall portfolio risk, including concentration within
+an asset class ([Investor.gov diversification guide](https://www.investor.gov/additional-resources/general-resources/publications-research/info-sheets/beginners-guide-asset)).
+
+### P1.4 Watchlist and change detection
+
+**Build.**
+
+- Let users save a result or discovery candidate to a SQLite-backed watchlist with
+  an optional note and preferred outlook/depth.
+- Show last call, current call, decision change, evidence-strength change, price
+  move since analysis, data age, and unresolved risk flags.
+- Provide `Analyze selected` and `Analyze all`, still subject to `MAX_TICKERS`.
+- Start with manual refresh. Add scheduled analysis, email, or push notifications
+  only after users demonstrate that manual watchlists are useful.
+
+**Acceptance.** A saved ticker survives restart, links to its last comparable run,
+and distinguishes `no change` from `not reanalyzed`.
+
+## P2 - Connect safely and operate reliably
+
+### P2.1 Alpaca paper trading
+
+**Scope.** Paper accounts only. Real-money endpoints, automated submission, options,
+short selling, and background strategy execution are explicitly out of scope.
+
+**Build.**
+
+- Use the installed `httpx` dependency for a small `alpaca-paper` adapter; do not
+  add an SDK until the REST surface becomes painful.
+- Keep Analyze and Place paper order as separate actions. The order action opens a
+  review step showing symbol, side, quantity/notional, order type, time in force,
+  reference-price timestamp, buying power, and portfolio exposure before/after.
+- Require an explicit confirmation. Recommendations never auto-submit.
+- Generate and persist a unique `client_order_id` before submission. Retries reuse
+  it, so a network timeout cannot create a duplicate order.
+- Store the full lifecycle: accepted, partial fill, filled, cancelled, expired,
+  rejected, and replaced. Reconcile by REST polling on submission and page load;
+  add a streaming client only if real usage needs lower latency.
+- Add cancel for open orders, a connection test, a paper-mode banner, and a local
+  kill switch that disables all submissions.
+- Keep Alpaca credentials server-side and redact them from logs and errors.
+
+**Acceptance.** A duplicate HTTP retry cannot place a second order. Partial fills
+update quantity and average price correctly. A rejected order never becomes a
+portfolio position. Tests use a fake HTTP transport and make no broker calls.
+
+Alpaca documents partial fills and several simulation limits, including simplified
+market impact and liquidity behavior, so the UI must not present paper results as
+live-trading proof ([paper trading limitations](https://docs.alpaca.markets/us/docs/paper-trading)).
+Alpaca also supports client-assigned order IDs and multiple terminal/non-terminal
+order states ([working with orders](https://docs.alpaca.markets/us/docs/working-with-orders)).
+
+### P2.2 Deployment and operational hardening
+
+**Problem.** The current client ID is a browser-generated history filter, not
+authentication. Run-detail and portfolio endpoints are appropriate for a local
+single-user app but not for a public multi-user deployment.
+
+**Build.**
+
+- State `single-user local app` clearly in configuration and startup logs.
+- Before shared deployment, add real authentication and owner checks to run,
+  watchlist, portfolio, decision-memory, and order endpoints.
+- Add CSRF protection for cookie-authenticated writes, request-size limits, and
+  per-user analysis concurrency limits.
+- Replace import-time SQLite schema edits with numbered, transactional migrations
+  and a documented backup/restore command.
+- Emit structured run metrics: duration by stage, failure class, provider fallback,
+  cache hit, token use, and estimated model cost. Never log prompts containing
+  credentials or imported portfolio rows.
+- Add readiness checks for the database and configured providers; keep `/api/health`
+  free of secrets.
+
+**Acceptance.** A user cannot read or mutate another user's data. A failed migration
+rolls back. Operators can distinguish provider, model, data, and validation failures
+without exposing sensitive payloads.
+
+## Explicitly deferred
+
+- More analyst personas: measure the five current researchers first.
+- More than two debate rounds: only ship if the paired holdout experiment wins.
+- Live chain-of-thought UI: the current optional token stream is mostly final JSON
+  and should remain off by default.
+- Real-money trading or unattended orders: outside this educational project's
+  safety boundary.
+- Gamified streaks, confetti, leaderboards, and pressure notifications: they do not
+  improve decision quality and can encourage activity for its own sake. The SEC
+  notes that engagement-oriented trading features can create conflicts between
+  platform goals and investor interests
+  ([SEC digital engagement statement](https://www.sec.gov/newsroom/speeches-statements/gensler-dep-request-comment)).
+- A frontend framework migration: revisit only when vanilla code blocks a measured
+  product need.
+
+## Release gates
+
+| Release | Must be true |
+|---|---|
+| Trustworthy research | P0 complete; freshness, coverage, cancellation, keyboard, and mobile checks pass |
+| Evidence-based logic | P1.1 and P1.2 complete; a holdout report with baselines and sample sizes exists |
+| Paper execution | P1.3 and P2.1 complete; duplicate, partial-fill, rejection, and cancel tests pass |
+| Shared deployment | P2.2 complete; owner isolation and migration rollback are tested |
+
+## Research references
+
+- [FINRA 2026 GenAI guidance](https://www.finra.org/rules-guidance/guidance/reports/2026-finra-annual-regulatory-oversight-report/gen-ai)
+- [SEC statement on digital engagement practices](https://www.sec.gov/newsroom/speeches-statements/gensler-dep-request-comment)
+- [W3C WCAG 2.2 quick reference](https://www.w3.org/WAI/WCAG22/quickref)
+- [scikit-learn probability calibration guide](https://scikit-learn.org/stable/modules/calibration.html)
+- [Investor.gov asset allocation and diversification guide](https://www.investor.gov/additional-resources/general-resources/publications-research/info-sheets/beginners-guide-asset)
+- [Alpaca paper trading documentation](https://docs.alpaca.markets/us/docs/paper-trading)
+- [Alpaca order lifecycle documentation](https://docs.alpaca.markets/us/docs/working-with-orders)
+- [TradingAgents paper](https://arxiv.org/html/2412.20138v5)
