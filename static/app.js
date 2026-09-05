@@ -255,7 +255,7 @@ async function restoreSavedRun() {
     const response = await fetch(`/api/runs/${encodeURIComponent(runId)}`);
     if (response.status === 404) {
       clearSavedRun(runId);
-      if (urlRun) showRestoreNotice("That analysis is no longer on this server — start a new run when ready.");
+      if (urlRun) showRestoreNotice("That analysis is no longer on this server; start a new run when ready.");
       return;
     }
     if (!response.ok) throw new Error(`status ${response.status}`);
@@ -278,9 +278,9 @@ async function restoreSavedRun() {
     }
     hydrateResults(run.results || {}, true);
     finishRun({ duration: run.duration_s, focusResults: false, failed: run.status === "failed" });
-    showRestoreNotice(run.status === "failed" ? "Restored an interrupted run — retry any ticker below." : "Restored from run history.");
+    showRestoreNotice(run.status === "failed" ? "Restored an interrupted run; retry any ticker below." : "Restored from run history.");
   } catch (_) {
-    if (urlRun) showRestoreNotice("Could not restore that analysis — start a new run.");
+    if (urlRun) showRestoreNotice("Could not restore that analysis; start a new run.");
   }
 }
 
@@ -306,7 +306,7 @@ async function feelingLucky() {
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(payload.detail || `screen failed (${response.status})`);
     setTickerTags(payload.tickers.join(","));
-    showToast(`Picked ${payload.tickers.join(", ")} from ${payload.universe_size} candidates — analyzing…`);
+    showToast(`Picked ${payload.tickers.join(", ")} from ${payload.universe_size} candidates, analyzing…`);
     state.discovering = false;
     await startAnalysis();
   } catch (error) {
@@ -666,7 +666,7 @@ function renderSummaryTable() {
       </tr>`;
     }).join("")}</tbody>`;
   $("summary-panel").appendChild(table);
-  $("summary-panel").insertAdjacentHTML("beforeend", '<p class="results-help"><strong>Confidence = evidence strength, not profit odds.</strong> Educational simulation — not advice.</p>');
+  $("summary-panel").insertAdjacentHTML("beforeend", '<p class="results-help"><strong>Confidence = evidence strength, not profit odds.</strong> Educational simulation, not advice.</p>');
   $("summary-panel").querySelectorAll("[data-open-ticker]").forEach((button) => button.addEventListener("click", () => openResult(button.dataset.openTicker)));
 }
 

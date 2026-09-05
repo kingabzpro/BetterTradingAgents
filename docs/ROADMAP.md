@@ -1,4 +1,4 @@
-# BetterTradingAgents — Development Roadmap
+# BetterTradingAgents - Development Roadmap
 
 Research-backed implementation plans for everything after the current quick wins.
 Each item lists the evidence behind it, the concrete design in this codebase, and
@@ -10,7 +10,7 @@ acceptance criteria. Last updated: 2026-09-05.
 - Portfolio: close positions, realized P&L, trade history, cash-balance guard
 - Portfolio Manager sees current holdings (`current_portfolio` in its dossier)
 - Old SQLite schemas migrate automatically via `ALTER TABLE`
-- **1.2 Risk layer + sizing**: deterministic gate in `app/risk.py` — BUYs get a
+- **1.2 Risk layer + sizing**: deterministic gate in `app/risk.py` - BUYs get a
   vol-scaled size (`default × confidence × min(1, 15/vol)`, floored at 0.25×) and
   are downgraded to HOLD when they would breach `MAX_POSITION_PCT` (10%),
   `MAX_INVESTED_PCT` (60%) or `MIN_CASH_PCT` (10%); 2+ failed analysts cap
@@ -19,7 +19,7 @@ acceptance criteria. Last updated: 2026-09-05.
   where each side answers the other; the manager sees the full transcript and the
   final positions are the post-rebuttal ones
 - **1.1 Decision memory**: `app/memory.py` + a `decisions` table in `portfolio.db`
-  — every completed run records its call; past decisions are graded against
+  - every completed run records its call; past decisions are graded against
   realized closes (own return + alpha vs SPY over `MEMORY_HORIZON_DAYS`, default
   21; mature outcomes computed once and stored, younger ones re-graded cheaply
   as partial windows); the manager dossier gets the 3 most recent same-ticker
@@ -27,7 +27,7 @@ acceptance criteria. Last updated: 2026-09-05.
   reflections are deterministic sentences unless `MEMORY_REFLECT_WITH_LLM=1`
 - **2.3 LLM reliability + per-role models**: per-role LLM overrides
   (`LLM_MODEL_MANAGER`, `LLM_MODEL_ANALYSTS`, `LLM_MODEL_DEBATE` + matching
-  `_BASE_URL`/`_API_KEY`, falling back to the global `LLM_*`) — cheap fast
+  `_BASE_URL`/`_API_KEY`, falling back to the global `LLM_*`) - cheap fast
   researchers, a stronger model for the final call; classified retries
   (429/5xx → backoff 1s/4s, malformed JSON → one retry with the error fed
   back into the task, `response_format` rejection → JSON mode dropped for the
@@ -37,7 +37,7 @@ acceptance criteria. Last updated: 2026-09-05.
   the result card
 - **2.2 Backtest harness**: `app/backtest/` with a walk-forward CLI
   (`uv run python -m app.backtest --tickers NVDA,AMD --start ... --end ... --step 21`)
-  — point-in-time snapshots (6mo OHLCV ending at T, Finnhub news filtered to
+  - point-in-time snapshots (6mo OHLCV ending at T, Finnhub news filtered to
   `published <= T`, current-vintage fundamentals stated as a known bias) fed
   to the real pipeline via `market_data` injection with `live_context=False`
   (no portfolio/memory look-ahead, no decision recording); grading in pure
@@ -50,7 +50,7 @@ acceptance criteria. Last updated: 2026-09-05.
   memorization-risk flag; `scripts/backtest_smoke.py` regenerates the
   3-ticker × 6-date baseline
 
-- **3.1 Sentiment / social analyst**: `app/agents/sentiment.py` — a 5th researcher
+- **3.1 Sentiment / social analyst**: `app/agents/sentiment.py` - a 5th researcher
   in the stage-1 gather (Medium/Expert depth) reading Reddit/StockTwits posts from
   an Olostep site-restricted search (`{ticker} stock (site:reddit.com OR
   site:stocktwits.com)`, `MarketData.social`), same `AnalystResult` schema; fewer
@@ -63,7 +63,7 @@ acceptance criteria. Last updated: 2026-09-05.
 - **3.2 Live reasoning stream**: LLMs can be built with `stream=True`
   (`STREAM_REASONING`) so CrewAI emits `LLMStreamChunkEvent`s; a scoped
   `add_stream_sink` per agent run (concurrent agents never see each other's
-  tokens) forwards content chunks as `agent_token` SSE events — live-only
+  tokens) forwards content chunks as `agent_token` SSE events - live-only
   (never persisted for reconnect replay), sliding ~2 KB window in the UI pane,
   16 KB per-agent forward guard, thinking deltas excluded; provider stream
   rejection is classified, drops streaming for the role and retries (JSON
@@ -71,12 +71,12 @@ acceptance criteria. Last updated: 2026-09-05.
   streams the deterministic summary word-by-word, skipped in backtest
   replays; UI: collapsible per-agent reasoning pane behind the agent row.
   **Shipped off by default after live evaluation**: what streams is mostly
-  the final JSON blob, which reads as noise next to the result card — enable
+  the final JSON blob, which reads as noise next to the result card - enable
   with `STREAM_REASONING=1` if wanted
 
 ---
 
-## Phase 1 — Learn from outcomes, size the risk
+## Phase 1 - Learn from outcomes, size the risk
 
 ### 1.2 Risk layer + position sizing
 
@@ -84,7 +84,7 @@ acceptance criteria. Last updated: 2026-09-05.
 Portfolio Manager must weigh ([arXiv 2412.20138](https://arxiv.org/html/2412.20138v5)).
 FinCon's risk controller uses CVaR and rewrites analyst prompts from realized
 performance ([emergentmind overview](https://www.emergentmind.com/topics/multi-agent-llm-financial-trading)).
-On sizing, dollar-volatility parity is the standard robust default — size each
+On sizing, dollar-volatility parity is the standard robust default - size each
 position so its dollar volatility is equal (a 10%-vol stock gets twice the dollar
 size of a 20%-vol stock) ([QuanterLab](https://quanterlab.com/articles/foundations-position-sizing)),
 and the Kelly fraction `f = μ/σ²` justifies scaling size linearly with conviction
@@ -93,7 +93,7 @@ and inversely with variance; fractional Kelly is the practical form
 
 **Design.**
 
-- Deterministic risk gate in `app/risk.py` (rules, not an LLM — free, testable,
+- Deterministic risk gate in `app/risk.py` (rules, not an LLM - free, testable,
   no hallucination surface). Runs after the manager decides, before the result is
   emitted:
   1. **Position size**: `size_usd = DEFAULT_POSITION_SIZE × confidence × min(1, 15 / vol_ann)`
@@ -101,7 +101,7 @@ and inversely with variance; fractional Kelly is the practical form
      `[0.25×, 1.5×]` of the default. Attached to the result as `suggested_size_usd`
      (dollar-vol parity scaled by conviction).
   2. **Exposure caps**: max 10% of equity per ticker, max 60% invested overall,
-     min 10% cash buffer — computed from `portfolio.get_portfolio()`. A BUY that
+     min 10% cash buffer - computed from `portfolio.get_portfolio()`. A BUY that
      breaches a cap is downgraded to HOLD with an explicit reason string.
   3. **Missing-input brake**: if 2+ of the three analyst slots failed, cap
      confidence at 0.5 and note it (currently only a total manager failure degrades
@@ -117,18 +117,18 @@ and inversely with variance; fractional Kelly is the practical form
 cap downgrades, missing-input brake. A BUY on an already-10% holding returns HOLD
 with `risk_flags` explaining why.
 
-**Effort:** M. **Risk:** over-restrictive caps make everything HOLD — expose caps
+**Effort:** M. **Risk:** over-restrictive caps make everything HOLD - expose caps
 as env settings (`MAX_POSITION_PCT`, `MAX_INVESTED_PCT`, `MIN_CASH_PCT`) and tune
 with the backtester.
 
 ---
 
-## Phase 2 — Better reasoning, measurable results
+## Phase 2 - Better reasoning, measurable results
 
 ### 2.1 Rebuttal round in the bull/bear debate
 
 **Why.** Today bull and bear run in parallel on identical inputs and never see each
-other (`app/workflow.py` stage 2) — it's two monologues, not a debate. Multi-agent
+other (`app/workflow.py` stage 2) - it's two monologues, not a debate. Multi-agent
 debate where agents read and critique each other converges on better answers
 (Du et al.: accuracy rose with rounds, diminishing returns after ~3;
 [arXiv 2305.14325](https://www.alphaxiv.org/abs/2305.14325)). But each extra round
@@ -153,28 +153,28 @@ and TradingAgents itself uses a small fixed number of rounds. One rebuttal round
 include rebuttal text; failure of a rebuttal pass never fails the run; A/B compare
 on 20 ticker-runs shows the manager citing rebuttals (spot check).
 
-**Effort:** S–M. **Risk:** +2 LLM calls per ticker (~33% cost increase) — default
+**Effort:** S–M. **Risk:** +2 LLM calls per ticker (~33% cost increase) - default
 on, but documented; mock mode needs a deterministic rebuttal stub.
 
 ### 2.2 Backtesting & evaluation harness
 
-Shipped — see the baseline above.
+Shipped - see the baseline above.
 
 ### 2.3 LLM reliability & per-agent models
 
-Shipped — see the baseline above.
+Shipped - see the baseline above.
 
 ---
 
-## Phase 3 — Breadth & experience
+## Phase 3 - Breadth & experience
 
 ### 3.1 Sentiment / social analyst (4th researcher)
 
-Shipped — see the baseline above.
+Shipped - see the baseline above.
 
 ### 3.2 Stream agent reasoning live (README roadmap)
 
-Shipped — see the baseline above.
+Shipped - see the baseline above.
 
 ### 3.3 Researcher-configurable debate depth
 
@@ -185,7 +185,7 @@ guessing. **Effort:** S once the harness exists.
 
 ---
 
-## Phase 4 — Execution (explicit opt-in)
+## Phase 4 - Execution (explicit opt-in)
 
 ### 4.1 Alpaca paper trading (README roadmap)
 
@@ -199,7 +199,7 @@ implementation; `BROKER=alpaca|local` env switch; the risk layer's
 `suggested_size_usd` becomes the order size. Orders only after the risk gate
 passes; every submission logged to the decisions table for 1.1's reflection loop.
 
-**Effort:** M. **Prerequisite:** 1.2 must be solid first — never forward an
+**Effort:** M. **Prerequisite:** 1.2 must be solid first - never forward an
 unsized, un-gated decision to a broker.
 
 ---
@@ -211,16 +211,16 @@ and 3.2 Live reasoning stream are shipped. Remaining work, in order:
 
 | # | Item | Why this position |
 |---|------|-------------------|
-| 1 | 3.3 Debate-depth tuning | Needs the 2.2 harness, which exists — run the `DEBATE_ROUNDS` 1 vs 2 vs 3 grid and set the default from data |
+| 1 | 3.3 Debate-depth tuning | Needs the 2.2 harness, which exists - run the `DEBATE_ROUNDS` 1 vs 2 vs 3 grid and set the default from data |
 | 2 | 4.1 Alpaca | Only after risk + memory are proven |
 
 ## Bibliography
 
-- TradingAgents framework — [arXiv 2412.20138](https://arxiv.org/html/2412.20138v5) · [repo (decision log, risk team)](https://github.com/TauricResearch/TradingAgents)
-- Multi-agent debate rounds — Du et al., [arXiv 2305.14325](https://www.alphaxiv.org/abs/2305.14325) · [rounds-vs-cost](https://aclanthology.org/2026.acl-srw.1.pdf)
-- Layered memory — FinMem [arXiv 2311.13743](https://arxiv.org/abs/2311.13743) · TradingGPT [arXiv 2309.03736](https://www.alphaxiv.org/abs/2309.03736) · [overview table](https://www.emergentmind.com/topics/multi-agent-llm-financial-trading)
-- Position sizing — [vol-parity & Kelly basics](https://quanterlab.com/articles/foundations-position-sizing) · [vol targeting intro](https://quantpedia.com/an-introduction-to-volatility-targeting) · [Kelly f=μ/σ², MacLean et al.](https://breakingalpha.io/insights/position-sizing-algorithmic-trading)
-- Backtesting rigor — [walk-forward framework, arXiv 2512.12924](https://arxiv.org/html/2512.12924v1) · [LLM look-ahead/memorization bias](https://paperswithbacktest.com/course/look-ahead-bias-llm-trading)
-- Sentiment — [StockTwits + FinBERT, PMC](https://pmc.ncbi.nlm.nih.gov/articles/PMC10280432)
-- CrewAI in production — [lessons 2026](https://www.agilesoftlabs.com/blog/2026/06/crewai-in-production-2026-real-lessons)
-- LLM trading evaluation metrics — [end-to-end LLM trading system, arXiv 2502.01574](https://arxiv.org/html/2502.01574v1)
+- TradingAgents framework - [arXiv 2412.20138](https://arxiv.org/html/2412.20138v5) · [repo (decision log, risk team)](https://github.com/TauricResearch/TradingAgents)
+- Multi-agent debate rounds - Du et al., [arXiv 2305.14325](https://www.alphaxiv.org/abs/2305.14325) · [rounds-vs-cost](https://aclanthology.org/2026.acl-srw.1.pdf)
+- Layered memory - FinMem [arXiv 2311.13743](https://arxiv.org/abs/2311.13743) · TradingGPT [arXiv 2309.03736](https://www.alphaxiv.org/abs/2309.03736) · [overview table](https://www.emergentmind.com/topics/multi-agent-llm-financial-trading)
+- Position sizing - [vol-parity & Kelly basics](https://quanterlab.com/articles/foundations-position-sizing) · [vol targeting intro](https://quantpedia.com/an-introduction-to-volatility-targeting) · [Kelly f=μ/σ², MacLean et al.](https://breakingalpha.io/insights/position-sizing-algorithmic-trading)
+- Backtesting rigor - [walk-forward framework, arXiv 2512.12924](https://arxiv.org/html/2512.12924v1) · [LLM look-ahead/memorization bias](https://paperswithbacktest.com/course/look-ahead-bias-llm-trading)
+- Sentiment - [StockTwits + FinBERT, PMC](https://pmc.ncbi.nlm.nih.gov/articles/PMC10280432)
+- CrewAI in production - [lessons 2026](https://www.agilesoftlabs.com/blog/2026/06/crewai-in-production-2026-real-lessons)
+- LLM trading evaluation metrics - [end-to-end LLM trading system, arXiv 2502.01574](https://arxiv.org/html/2502.01574v1)

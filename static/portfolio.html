@@ -83,7 +83,7 @@
         <tbody id="positions-body"></tbody>
       </table>
       <p class="empty-note hidden" id="empty-note">
-        No positions yet — add a holding, import a CSV, or use
+        No positions yet: add a holding, import a CSV, or use
         <strong>Add to Demo Portfolio</strong> on a BUY.
       </p>
     </div>
@@ -156,7 +156,7 @@
       for (const position of data.positions) {
         const pnlClass = position.pnl == null ? "" : position.pnl >= 0 ? "pnl-green" : "pnl-red";
         const tracked = position.external
-          ? '<span class="src-tag" title="Tracked holding — added manually or imported; does not use demo cash">tracked</span>'
+          ? '<span class="src-tag" title="Tracked holding: added manually or imported; does not use demo cash">tracked</span>'
           : "";
         const row = document.createElement("tr");
         row.innerHTML = `
@@ -272,7 +272,7 @@
       let startLine = 1;
       if (t !== -1 || q !== -1 || p !== -1) {
         if (t === -1 || q === -1 || p === -1) {
-          return { error: "Header row found but a required column is missing — need a ticker (ticker/symbol), a quantity (quantity/shares) and a price (entry_price/price) column." };
+          return { error: "Header row found but a required column is missing: need a ticker (ticker/symbol), a quantity (quantity/shares) and a price (entry_price/price) column." };
         }
         cols = { t, q, p };
         dataLines = lines.slice(1);
@@ -309,13 +309,13 @@
       const ready = csvRows.filter((row) => !row.error);
       const failed = csvRows.filter((row) => row.error);
       const rowsHtml = csvRows.map((row) => row.error
-        ? `<tr class="row-error"><td>${esc(row.rawTicker) || "—"}</td><td class="num">—</td><td class="num">—</td><td>${esc(row.error)} (line ${row.line})</td></tr>`
+        ? `<tr class="row-error"><td>${esc(row.rawTicker) || "n/a"}</td><td class="num">n/a</td><td class="num">n/a</td><td>${esc(row.error)} (line ${row.line})</td></tr>`
         : `<tr><td><strong>${esc(row.ticker)}</strong></td><td class="num">${row.quantity % 1 === 0 ? row.quantity : row.quantity.toFixed(4)}</td><td class="num">${row.price == null ? "live price" : `$${row.price}`}</td><td>ready</td></tr>`
       ).join("");
       const box = $("csv-preview");
       box.classList.remove("hidden");
       box.innerHTML = `
-        <div class="preview-title">Preview — ${ready.length} ready, ${failed.length} with errors</div>
+        <div class="preview-title">Preview: ${{ready.length}} ready, ${failed.length} with errors</div>
         <div class="table-wrap"><table class="preview-table">
           <thead><tr><th>Ticker</th><th class="num">Quantity</th><th class="num">Entry price</th><th>Status</th></tr></thead>
           <tbody>${rowsHtml}</tbody>

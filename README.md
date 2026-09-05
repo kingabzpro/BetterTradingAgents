@@ -38,15 +38,15 @@ simulated portfolio.
 |:---:|---|---|
 | ⚡ | **Parallel by design** | Researchers, data fetches, and debate rounds run concurrently, and multiple tickers run side by side. |
 | ⚔️ | **Real debate** | Bull and bear each get a rebuttal round to answer the other's strongest points before the call. |
-| 🗣️ | **Social sentiment** | A fifth researcher reads Reddit and StockTwits chatter — and says so when the crowd is too thin to mean anything. |
+| 🗣️ | **Social sentiment** | A fifth researcher reads Reddit and StockTwits chatter, and says so when the crowd is too thin to mean anything. |
 | ⚖️ | **Risk-gated decisions** | BUYs are volatility-scaled and capped by per-ticker, invested, and cash-buffer limits; a 5-day forecast beyond the stock's own noise band (±1σ) downgrades the trade and one past half the band halves its size. Downgrades are flagged, never silent. |
 | 📜 | **Learns from its calls** | Every completed decision is recorded and later graded on realized return and alpha vs SPY; the manager weighs those lessons on the next run and the results page shows the track record. |
-| 🧪 | **Walk-forward backtests** | Replay the pipeline at past dates with point-in-time data only, grade every call against SPY after costs, and compare with buy-and-hold — free mock mode by default. |
-| 📡 | **Live, honest progress** | Server-Sent Events stream every agent state with per-ticker progress bars — and each agent's tokens stream into a collapsible live-reasoning pane while it thinks. |
+| 🧪 | **Walk-forward backtests** | Replay the pipeline at past dates with point-in-time data only, grade every call against SPY after costs, and compare with buy-and-hold; free mock mode by default. |
+| 📡 | **Live, honest progress** | Server-Sent Events stream every agent state with per-ticker progress bars, and each agent's tokens stream into a collapsible live-reasoning pane while it thinks. |
 | 🕘 | **Durable run history** | Completed and interrupted analyses are saved in SQLite and can be reopened from the Runs page. |
 | 🛡️ | **Resilient runs** | If an agent fails, the Portfolio Manager receives the available inputs and still makes a call. |
 | 📊 | **Real market data** | Finnhub, Olostep, and yfinance provide fundamentals, news, and price history; Nixtla TimeGPT optionally provides a 5-day forecast. |
-| 🧠 | **Model flexibility** | Use any OpenAI-compatible LLM — and split it by role: a cheap fast model for the researchers, a stronger one only for the final BUY/HOLD/SELL call. |
+| 🧠 | **Model flexibility** | Use any OpenAI-compatible LLM, split by role: a cheap fast model for the researchers, a stronger one only for the final BUY/HOLD/SELL call. |
 | 🪶 | **No frontend build step** | Vanilla HTML, CSS, and JavaScript are served directly by FastAPI. |
 
 ## How it works
@@ -114,7 +114,7 @@ TimeGPT is optional and resilient by design:
 
 A Sentiment Analyst joins the research stage at Medium and Expert depth. Olostep runs a
 site-restricted search (`{ticker} stock (site:reddit.com OR site:stocktwits.com)`) and the
-agent reads the crowd's mood for the bull/bear debate — weighing hype skeptically rather
+agent reads the crowd's mood for the bull/bear debate, weighing hype skeptically rather
 than mistaking bravado for conviction. Honesty about thin data is built in: fewer than three
 posts reads as **neutral with low confidence** ("social volume too thin to mean anything"),
 never as a signal, and the results card shows the reading with links to the underlying
@@ -134,7 +134,7 @@ TradingAgents credits for much of its edge:
 - On the next run of the same ticker, the Portfolio Manager sees the three most recent
   graded calls plus two cross-ticker lessons, each with a one-line verdict such as
   "the bullish call beat the market" or "standing aside missed a 4.9% gain". The manager
-  is instructed to treat them as weak evidence — one or two outcomes never outweigh
+  is instructed to treat them as weak evidence: one or two outcomes never outweigh
   current research.
 - The results page shows the same track record under **What happened after previous calls**.
 - Lessons are deterministic sentences by default. Set `MEMORY_REFLECT_WITH_LLM=1` to have
@@ -146,7 +146,7 @@ Server-Sent Events update the interface as every agent moves from waiting to run
 or failed. Progress bars tick per ticker as each agent finishes.
 
 An opt-in live reasoning stream exists (`STREAM_REASONING=1`): each agent's tokens fill a
-collapsible pane under its row while it works. It is **off by default** — in practice the
+collapsible pane under its row while it works. It is **off by default**: in practice, the
 stream is mostly the model's final JSON blob, which reads as noise next to the result card
 rather than as insight. Token events are live-only (reconnects and run history replay
 results, never thousands of cosmetic chunks), a provider that rejects streaming is
@@ -216,7 +216,7 @@ changing environment variables. TimeGPT is optional; the local forecast remains 
 #### Per-role models
 
 Set `LLM_MODEL` to the cheap fast model, then override the manager so the final
-judgment runs on the stronger one — the researchers and debaters stay fast and
+judgment runs on the stronger one; the researchers and debaters stay fast and
 inexpensive while the BUY/HOLD/SELL call gets the deep model. Each role can also
 point at its own endpoint and key (`LLM_BASE_URL_*` / `LLM_API_KEY_*`):
 
@@ -254,13 +254,13 @@ The eligible companies are ranked with a score grounded in the published cross-s
 literature:
 
 - **3–6 month formation momentum, skipping the most recent month** (Jegadeesh & Titman 1993;
-  Jegadeesh 1990) — stocks that grinded higher over months keep working; a fresh blow-off month is
+  Jegadeesh 1990): stocks that grinded higher over months keep working; a fresh blow-off month is
   excluded from the signal and penalized, because last-month returns tend to revert.
-- **Path smoothness** (Da, Gurun & Warachka 2014, "frog in the pan") — steady climbs with many up
+- **Path smoothness** (Da, Gurun & Warachka 2014, "frog in the pan"): steady climbs with many up
   days carry more persistent momentum than jumpy spikes with the same total return.
-- **52-week-high proximity** (George & Hwang 2004) — nearness to the yearly high predicts returns
+- **52-week-high proximity** (George & Hwang 2004): nearness to the yearly high predicts returns
   better than raw momentum and does not revert long-term.
-- **Volatility scaling** (Barroso & Santa-Clara 2015) — the momentum term is divided by realized
+- **Volatility scaling** (Barroso & Santa-Clara 2015): the momentum term is divided by realized
   volatility, which is the crash-reducing construction from the momentum-timing literature.
 
 The selected Day trading, Short term, or Long term outlook changes the formation-window weights.
@@ -295,7 +295,7 @@ optional; without an LLM key, the app starts in mock mode.
 | `NIXTLA_API_KEY` | Not set | Nixtla TimeGPT 5-day forecast; falls back to the local trend model |
 | `MAX_TICKERS` | `5` | Maximum tickers accepted in one analysis |
 | `DEBATE_ROUNDS` | `2` | Bull/bear debate depth: `1` = single round, `2`+ adds one rebuttal exchange (capped at 3) |
-| `STREAM_REASONING` | `0` | Live reasoning stream: `1` streams agent tokens to the UI (off by default — the stream is mostly the final JSON and reads as noise) |
+| `STREAM_REASONING` | `0` | Live reasoning stream: `1` streams agent tokens to the UI (off by default: the stream is mostly the final JSON and reads as noise) |
 | `STARTING_CASH` | `100000` | Initial simulated portfolio balance |
 | `DEFAULT_POSITION_SIZE` | `10000` | Suggested position value |
 | `DB_PATH` | `portfolio.db` | SQLite app database path for portfolio positions and run history |
@@ -311,13 +311,13 @@ optional; without an LLM key, the app starts in mock mode.
 
 The portfolio page tracks two kinds of positions in one SQLite-backed book:
 
-- **Tracked holdings** — shares you already own, added on the portfolio page by entering the
+- **Tracked holdings**: shares you already own, added on the portfolio page by entering the
   ticker, quantity, and the price you paid (blank price records at the live price), or imported
   in bulk from a CSV (`ticker,quantity,entry_price`; a header row is detected automatically and
-  common aliases like `symbol` / `shares` / `avg cost` work too — download a sample from the
+  common aliases like `symbol` / `shares` / `avg cost` work too; download a sample from the
   page). Imports show a row-by-row preview before anything is saved. Tracked holdings are valued
   at live prices and roll into P&L, but they never touch the simulated cash balance.
-- **Demo trades** — after a **BUY** recommendation, add the stock to the simulated portfolio in
+- **Demo trades**: after a **BUY** recommendation, add the stock to the simulated portfolio in
   one click. Demo buys and closes move the simulated cash, and positions can be closed to
   realize gains or losses.
 
@@ -367,7 +367,7 @@ curl -X POST http://localhost:8000/api/analyze \
 Each result in `GET /api/runs/{run_id}` carries the decision (`BUY`/`HOLD`/`SELL`), confidence,
 the five-day forecast (`forecast_price_5d`, `forecast_change_5d_pct`, and `forecast_method`),
 plus its noise-band assessment (`forecast_band_pct`, the ±1σ five-day move implied by the
-stock's own volatility, and `forecast_z`, the forecast as a multiple of that band — the manager
+stock's own volatility, and `forecast_z`, the forecast as a multiple of that band; the manager
 prompt and the risk gate both consume it), per-agent reports (including both rebuttal rounds),
 and the risk gate's output: `suggested_size_usd` (the volatility-scaled position size) and
 `risk_flags` (why a BUY was downgraded or confidence capped, if it was).
@@ -413,7 +413,7 @@ scripts/         sanity checks
 
 ## Backtesting
 
-The walk-forward harness answers "is the pipeline better than buy-and-hold?" — it
+The walk-forward harness answers "is the pipeline better than buy-and-hold?" It
 replays the full analysis at each grid date using only data known at that date:
 
 ```bash
@@ -422,7 +422,7 @@ uv run python -m app.backtest --tickers NVDA,AMD,META --start 2026-03-01 --end 2
 
 - **Point-in-time data**: six months of OHLCV ending at each decision date, company
   news filtered to `published <= date` (anti-look-ahead, enforced in code), and
-  current-vintage fundamentals — a known bias the report states explicitly.
+  current-vintage fundamentals, a known bias the report states explicitly.
   Social posts have no point-in-time archive, so the Sentiment Analyst replays with
   an empty set (thin-volume neutral) instead of leaking present-day chatter.
   Portfolio context and decision memory are disabled during replay so nothing
@@ -431,7 +431,7 @@ uv run python -m app.backtest --tickers NVDA,AMD,META --start 2026-03-01 --end 2
   scores 0 by default (long-only; `--short` grades shorts), HOLD scores 0, each
   compared with SPY over the same window. Aggregates: hit rate, cumulative
   return, Sharpe, max drawdown, buy-and-hold baseline.
-- **Mock mode is the default** — free and deterministic. `--llm` runs the real
+- **Mock mode is the default**: free and deterministic. `--llm` runs the real
   agents after printing a cost estimate, and flags the result
   `memorization_risk: high` because the model's training data already contains
   historical outcomes.
