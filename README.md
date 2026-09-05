@@ -54,14 +54,30 @@ simulated portfolio.
 
 ```mermaid
 flowchart TD
-    T["📈 Your tickers"] --> D["📡 Market data<br/>yfinance · Finnhub · Olostep · TimeGPT"]
-    D --> R["🔬 Five researchers in parallel<br/>technical · fundamentals · news · sentiment · forecast"]
-    R --> B["⚔️ Bull vs bear debate<br/>each side answers the other"]
-    B --> M["👔 Portfolio manager<br/>weighs debate, holdings, track record"]
-    MEM["📜 Decision memory<br/>past calls graded vs SPY"] --> M
-    M --> G["🛡️ Risk gate<br/>vol-scaled size · exposure caps"]
-    G --> V["✅ BUY · HOLD · SELL<br/>confidence + size + reasoning trail"]
-    V --> C["💬 Chat with the manager<br/>ask anything, you decide"]
+    T["📈 Tickers<br/>up to five per run"] --> D["📡 Market data<br/>yfinance · Finnhub · Olostep · TimeGPT"]
+
+    subgraph RESEARCH["🔬 Research: five analysts in parallel"]
+        TA["Technical<br/>SMA · RSI · MACD · volume"]
+        FA["Fundamentals<br/>growth · margins · valuation"]
+        NA["News<br/>headlines · catalysts"]
+        SA["Sentiment<br/>Reddit · StockTwits chatter"]
+        FC["Forecast<br/>TimeGPT vs own noise band"]
+    end
+
+    subgraph DEBATE["⚔️ Debate: bull vs bear"]
+        BULL["🐂 Bull researcher<br/>strongest case to buy"]
+        RB["Rebuttal round<br/>each side answers the other"]
+        BEAR["🐻 Bear researcher<br/>risks and downsides"]
+        BULL --- RB --- BEAR
+    end
+
+    D --> RESEARCH
+    RESEARCH --> DEBATE
+    DEBATE --> PM["👔 Portfolio Manager<br/>weighs debate, holdings, track record"]
+    TRACK["📜 Track record<br/>decision memory + walk-forward backtests<br/>calls graded vs SPY after costs"] --> PM
+    PM --> RISK["🛡️ Risk gate<br/>vol-scaled size · exposure caps · forecast check"]
+    RISK --> RESULT["✅ BUY · HOLD · SELL<br/>confidence + size + reasoning trail"]
+    RESULT --> CHAT["💬 Chat with the manager<br/>grounded in this run, you decide"]
 ```
 
 The research, data-fetch, and debate stages run concurrently with `asyncio.gather`. Multiple tickers
