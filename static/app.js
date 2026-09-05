@@ -43,11 +43,11 @@ const DEPTH_PROFILES = {
   expert: { label: "Expert", research: ["technical", "fundamental", "news", "forecast", "sentiment"], rebuttals: true },
 };
 const EVIDENCE_META = {
-  technical: { title: "Technical", help: "Trend, momentum, volatility and volume" },
-  fundamental: { title: "Fundamentals", help: "Growth, margins and valuation" },
-  news: { title: "News", help: "Recent potentially market-moving headlines" },
-  sentiment: { title: "Sentiment", help: "Retail chatter on Reddit and StockTwits; thin volume reads neutral" },
-  forecast: { title: "Forecast", help: "5-day statistical projection vs volatility" },
+  technical: { title: "Technical" },
+  fundamental: { title: "Fundamentals" },
+  news: { title: "News" },
+  sentiment: { title: "Sentiment" },
+  forecast: { title: "Forecast" },
 };
 const $ = (id) => document.getElementById(id);
 const state = {
@@ -112,9 +112,8 @@ document.addEventListener("DOMContentLoaded", async () => {
     updateDepthLabels();
     const providers = health.providers || {};
     $("provider-line").textContent =
-      `data: ${providers.prices || "?"} prices, ${providers.fundamentals || "?"} fundamentals, ` +
-      `${providers.news_search || "?"} news search, ${providers.social === "olostep" ? "reddit/stocktwits sentiment" : "no social search"}, ` +
-      `${providers.forecast || "local"} forecast. model: ${health.llm_model || "mock"}`;
+      `data: ${[providers.prices, providers.fundamentals, providers.news_search, providers.forecast].filter((s) => s && s !== "disabled").join(" · ")}` +
+      ` · model: ${health.llm_model || "mock"}`;
   } catch (_) {
     // The analysis request will show a concrete error if the server is unavailable.
   }
@@ -215,9 +214,9 @@ function agentCount(profileKey) {
 // Agent counts on the buttons depend on the server's debate-rounds setting.
 function updateDepthLabels() {
   const labels = {
-    fast: `Tech + news · ${agentCount("fast")} agents`,
-    medium: `All research · ${agentCount("medium")} agents`,
-    expert: `Full debate · ${agentCount("expert")} agents`,
+    fast: `Fast · ${agentCount("fast")} agents`,
+    medium: `Medium · ${agentCount("medium")} agents`,
+    expert: `Expert · ${agentCount("expert")} agents`,
   };
   document.querySelectorAll("[data-depth]").forEach((button) => {
     const small = button.querySelector("small");
@@ -256,7 +255,7 @@ async function restoreSavedRun() {
     const response = await fetch(`/api/runs/${encodeURIComponent(runId)}`);
     if (response.status === 404) {
       clearSavedRun(runId);
-      if (urlRun) showRestoreNotice("That analysis is no longer available on this server. Start a new run when you are ready.");
+      if (urlRun) showRestoreNotice("That analysis is no longer on this server — start a new run when ready.");
       return;
     }
     if (!response.ok) throw new Error(`status ${response.status}`);
@@ -279,9 +278,9 @@ async function restoreSavedRun() {
     }
     hydrateResults(run.results || {}, true);
     finishRun({ duration: run.duration_s, focusResults: false, failed: run.status === "failed" });
-    showRestoreNotice(run.status === "failed" ? "Restored an interrupted analysis. You can retry any ticker below." : "Restored analysis from run history.");
+    showRestoreNotice(run.status === "failed" ? "Restored an interrupted run — retry any ticker below." : "Restored from run history.");
   } catch (_) {
-    if (urlRun) showRestoreNotice("We could not restore that analysis. You can start a new run.");
+    if (urlRun) showRestoreNotice("Could not restore that analysis — start a new run.");
   }
 }
 
@@ -307,7 +306,7 @@ async function feelingLucky() {
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(payload.detail || `screen failed (${response.status})`);
     setTickerTags(payload.tickers.join(","));
-    showToast(`Selected ${payload.tickers.join(", ")} from ${payload.universe_size} emerging growth stocks. Starting full analysis…`);
+    showToast(`Picked ${payload.tickers.join(", ")} from ${payload.universe_size} candidates — analyzing…`);
     state.discovering = false;
     await startAnalysis();
   } catch (error) {
@@ -505,7 +504,7 @@ function analyzeAnother(prefill = "") {
 
 function retryTicker(ticker) {
   analyzeAnother(ticker);
-  showToast(`${ticker} is ready to retry. Press Analyze Stocks when you are ready.`);
+  showToast(`${ticker} ready to retry.`);
 }
 
 /* ---------- SSE events -> progress UI ---------- */
@@ -632,7 +631,7 @@ function forecastBandNote(analysis) {
   if (analysis.forecast_band_pct == null) return "";
   const z = analysis.forecast_z;
   const beyond = z != null && Math.abs(z) >= 1;
-  return ` · noise band ±${Number(analysis.forecast_band_pct).toFixed(1)}%${z == null ? "" : ` (z ${z >= 0 ? "+" : ""}${Number(z).toFixed(2)})`}${beyond ? " · beyond band" : ""}`;
+  return ` · noise ±${Number(analysis.forecast_band_pct).toFixed(1)}%${z == null ? "" : ` (z ${z >= 0 ? "+" : ""}${Number(z).toFixed(2)})`}${beyond ? " · beyond band" : ""}`;
 }
 
 function decisionMeta(decision) {
@@ -667,7 +666,7 @@ function renderSummaryTable() {
       </tr>`;
     }).join("")}</tbody>`;
   $("summary-panel").appendChild(table);
-  $("summary-panel").insertAdjacentHTML("beforeend", '<p class="results-help"><strong>Confidence means evidence strength, not probability of profit.</strong> Suggested size is a simulated risk-layer output. Every call remains educational, not investment advice.</p>');
+  $("summary-panel").insertAdjacentHTML("beforeend", '<p class="results-help"><strong>Confidence = evidence strength, not profit odds.</strong> Educational simulation — not advice.</p>');
   $("summary-panel").querySelectorAll("[data-open-ticker]").forEach((button) => button.addEventListener("click", () => openResult(button.dataset.openTicker)));
 }
 
@@ -741,18 +740,9 @@ function setAgentStatus(ticker, agent, statusClass, text, duration) {
 
 function signalClass(signal) { return `sig-${String(signal || "unknown").toLowerCase()}`; }
 
-function plainEnglish(analysis) {
-  const strength = convictionLabel(analysis.confidence).toLowerCase();
-  if (analysis.error) return "Analysis failed, so there is no reliable call for this ticker yet.";
-  const downgraded = (analysis.risk_flags || []).some((flag) => flag.toLowerCase().includes("downgraded"));
-  if (analysis.decision === "BUY") return analysis.suggested_size_usd ? `The bull case won with ${strength}. For this simulation, the risk layer suggests ${fmtUsd(analysis.suggested_size_usd)}.` : `The bull case won with ${strength}, but the risk layer did not size a position.`;
-  if (analysis.decision === "SELL") return `The bear case won with ${strength}. The agents suggest exiting or staying away.`;
-  return downgraded ? "The evidence leaned positive, but a risk rule held the trade back. Review the flags before acting." : `The evidence is mixed with ${strength}. The agents suggest standing pat.`;
-}
-
-function evidenceCard(title, description, result, agent) {
+function evidenceCard(title, result, agent) {
   const signal = result?.signal || "unknown";
-  return `<article class="evidence-card"><div class="mc-title">${escapeHtml(title)}</div><p class="mc-help">${escapeHtml(description)}</p><div class="mc-sig ${signalClass(signal)}">${escapeHtml(labelFor(agent, signal, result?.confidence))}</div><p class="mc-sum">${escapeHtml(result?.summary || "No reliable evidence was returned for this section.")}</p></article>`;
+  return `<article class="evidence-card"><div class="mc-title">${escapeHtml(title)}</div><div class="mc-sig ${signalClass(signal)}">${escapeHtml(labelFor(agent, signal, result?.confidence))}</div><p class="mc-sum">${escapeHtml(result?.summary || "No evidence returned.")}</p></article>`;
 }
 
 function providerText(providers) {
@@ -762,7 +752,7 @@ function providerText(providers) {
 
 function renderSources(references) {
   const sources = (references || []).filter((source) => source && source.title);
-  if (!sources.length) return '<p class="empty-sources">No linked news sources were available for this run.</p>';
+  if (!sources.length) return '<p class="empty-sources">No linked sources for this run.</p>';
   return `<ul class="source-list">${sources.map((source) => {
     const url = safeUrl(source.url);
     const title = escapeHtml(source.title);
@@ -782,7 +772,7 @@ function renderTrackRecord(analysis, ticker) {
       : "outcome pending";
     return `<li><div class="memory-line"><span>${escapeHtml(d.date)} ${decisionBadge(d)} at $${Number(d.price_at_decision).toFixed(2)}</span><span class="memory-outcome">${outcome}</span></div><small>${escapeHtml(d.reflection || "")}</small></li>`;
   }).join("");
-  return `<section class="result-block" aria-labelledby="memory-title-${ticker}"><div class="block-heading"><div><span class="eyebrow">Track record</span><h3 id="memory-title-${ticker}">What happened after previous calls</h3></div><p>Completed decisions are graded against SPY once their window closes; the manager weighs the same lessons.</p></div><ul class="memory-list">${rows}</ul></section>`;
+  return `<section class="result-block" aria-labelledby="memory-title-${ticker}"><div class="block-heading"><h3 id="memory-title-${ticker}">Past calls</h3></div><ul class="memory-list">${rows}</ul></section>`;
 }
 
 function renderResultCard(analysis) {
@@ -815,24 +805,23 @@ function renderResultCard(analysis) {
   const skippedResearch = Object.keys(EVIDENCE_META).filter((key) => !profile.research.includes(key));
   const evidenceHtml = profile.research.map((key) => evidenceCard(
     EVIDENCE_META[key].title,
-    EVIDENCE_META[key].help,
-    key === "forecast" ? forecastResult : key === "sentiment" ? sentimentResult : analysis[key],
+    key === "forecast" ? forecastResult : analysis[key],
     key,
   )).join("");
 
   card.innerHTML = `
     <button class="result-summary" type="button" aria-expanded="false" aria-controls="${detailId}"><span class="result-identity"><span class="tk">${escapeHtml(ticker)}</span><span class="company">${escapeHtml(analysis.company_name || "Company name unavailable")}</span></span>${decisionBadge(analysis)}<span class="summary-action">Evidence &amp; sources <span class="caret" aria-hidden="true">▶</span></span></button>
     <div class="decision-brief">
-      <div class="decision-facts"><div><span>Current price</span><strong>${analysis.price != null ? `$${Number(analysis.price).toFixed(2)}` : "Unavailable"}</strong></div><div><span>5-day forecast</span><strong>${analysis.forecast_price_5d != null ? `$${Number(analysis.forecast_price_5d).toFixed(2)} (${Number(analysis.forecast_change_5d_pct) >= 0 ? "+" : ""}${Number(analysis.forecast_change_5d_pct).toFixed(2)}%)` : "Unavailable"}</strong><small>${analysis.forecast_method === "timegpt-1" ? "Nixtla TimeGPT" : analysis.forecast_trend_r2 != null ? `Local trend fit R² ${Number(analysis.forecast_trend_r2).toFixed(2)}` : "Local historical projection"}${forecastBandNote(analysis)}; not a price guarantee.</small></div><div><span>Data as of</span><strong>${escapeHtml(asOf)}</strong></div><div><span>Confidence</span><strong>${confidencePct}% · ${convictionLabel(analysis.confidence)}</strong><small>Evidence strength, not profit probability.</small></div><div><span>Suggested size</span><strong>${analysis.suggested_size_usd ? fmtUsd(analysis.suggested_size_usd) : "No position"}</strong><small>Simulated risk-layer output.</small></div>${tokenFact}</div>
-      <div class="manager-conclusion"><span class="eyebrow">Manager conclusion</span><p class="plain-english">${escapeHtml(plainEnglish(analysis))}</p><p class="thesis">${escapeHtml(analysis.summary || analysis.error || "No manager summary was returned.")}</p></div>
+      <div class="decision-facts"><div><span>Current price</span><strong>${analysis.price != null ? `$${Number(analysis.price).toFixed(2)}` : "Unavailable"}</strong></div><div><span>5-day forecast</span><strong>${analysis.forecast_price_5d != null ? `$${Number(analysis.forecast_price_5d).toFixed(2)} (${Number(analysis.forecast_change_5d_pct) >= 0 ? "+" : ""}${Number(analysis.forecast_change_5d_pct).toFixed(2)}%)` : "Unavailable"}</strong><small>${analysis.forecast_method === "timegpt-1" ? "TimeGPT" : analysis.forecast_trend_r2 != null ? `Local fit R² ${Number(analysis.forecast_trend_r2).toFixed(2)}` : "Local"}${forecastBandNote(analysis)}</small></div><div><span>Data as of</span><strong>${escapeHtml(asOf)}</strong></div><div><span>Confidence</span><strong>${confidencePct}% · ${convictionLabel(analysis.confidence)}</strong></div><div><span>Suggested size</span><strong>${analysis.suggested_size_usd ? fmtUsd(analysis.suggested_size_usd) : "No position"}</strong></div>${tokenFact}</div>
+      <div class="manager-conclusion"><span class="eyebrow">Manager conclusion</span><p class="thesis">${escapeHtml(analysis.summary || analysis.error || "No manager summary was returned.")}</p></div>
       ${analysis.error ? `<div class="risk-flags"><strong>Analysis unavailable</strong><span>⚠ ${escapeHtml(analysis.error)}</span></div>` : flags.length ? `<div class="risk-flags"><strong>Risk flags</strong>${flags.map((flag) => `<span>⚠ ${escapeHtml(flag)}</span>`).join("")}</div>` : '<div class="risk-clear"><span aria-hidden="true">✓</span> No risk rules were triggered.</div>'}
     </div>
     <div class="result-detail" id="${detailId}" hidden>
-      <section class="result-block" aria-labelledby="evidence-title-${ticker}"><div class="block-heading"><div><span class="eyebrow">Evidence</span><h3 id="evidence-title-${ticker}">What the researchers found</h3></div><p>Signals summarize the direction of available evidence; open each source below to verify the underlying news.</p></div><div class="grid-3">${evidenceHtml}</div>${skippedResearch.length ? `<p class="hint">${escapeHtml(profile.label)} depth: ${skippedResearch.map((key) => EVIDENCE_META[key].title).join(" and ")} research skipped for speed.</p>` : ""}</section>
-      <section class="result-block" aria-labelledby="debate-title-${ticker}"><div class="block-heading"><div><span class="eyebrow">Debate</span><h3 id="debate-title-${ticker}">Strongest cases on both sides</h3></div><p>Strength scores describe each argument, not expected return.</p></div><div class="debate"><article class="debate-side bull-side"><div class="mc-title">▲ Bull case</div><div class="mc-score">${Math.round((analysis.bull?.confidence ?? 0) * 100)}% argument strength</div><p class="mc-sum">${escapeHtml(analysis.bull?.summary || analysis.bull_case || "No bull case was returned.")}</p></article><article class="debate-side bear-side"><div class="mc-title">▼ Bear case</div><div class="mc-score">${Math.round((analysis.bear?.confidence ?? 0) * 100)}% risk strength</div><p class="mc-sum">${escapeHtml(analysis.bear?.summary || analysis.bear_case || "No bear case was returned.")}</p></article></div></section>
+      <section class="result-block" aria-labelledby="evidence-title-${ticker}"><div class="block-heading"><h3 id="evidence-title-${ticker}">Evidence</h3></div><div class="grid-3">${evidenceHtml}</div>${skippedResearch.length ? `<p class="hint">Skipped for speed: ${skippedResearch.map((key) => EVIDENCE_META[key].title).join(" · ")}</p>` : ""}</section>
+      <section class="result-block" aria-labelledby="debate-title-${ticker}"><div class="block-heading"><h3 id="debate-title-${ticker}">Debate</h3></div><div class="debate"><article class="debate-side bull-side"><div class="mc-title">▲ Bull case</div><div class="mc-score">${Math.round((analysis.bull?.confidence ?? 0) * 100)}% argument strength</div><p class="mc-sum">${escapeHtml(analysis.bull?.summary || analysis.bull_case || "No bull case was returned.")}</p></article><article class="debate-side bear-side"><div class="mc-title">▼ Bear case</div><div class="mc-score">${Math.round((analysis.bear?.confidence ?? 0) * 100)}% risk strength</div><p class="mc-sum">${escapeHtml(analysis.bear?.summary || analysis.bear_case || "No bear case was returned.")}</p></article></div></section>
       ${renderTrackRecord(analysis, ticker)}
-      <section class="result-block sources-block" aria-labelledby="sources-title-${ticker}"><div class="block-heading"><div><span class="eyebrow">Sources</span><h3 id="sources-title-${ticker}">Check the evidence yourself</h3></div><p>${escapeHtml(providerText(analysis.providers))}</p></div>${renderSources(analysis.source_references)}</section>
-      <div class="result-actions">${canAdd ? `<div class="add-row"><label for="qty-${ticker}">Shares</label><input id="qty-${ticker}" type="number" min="1" step="1" value="${defaultQty}"><button class="add-btn" id="add-${ticker}" type="button">Add to Demo Portfolio</button><span class="muted">Prefilled from the suggested size (${fmtUsd(positionSize)})</span><span class="added-note hidden" id="added-${ticker}" role="status"></span></div>` : '<span class="muted">Demo portfolio additions are offered for BUY recommendations.</span>'}<button class="secondary-btn retry-btn" type="button">Retry ${escapeHtml(ticker)}</button></div>
+      <section class="result-block sources-block" aria-labelledby="sources-title-${ticker}"><div class="block-heading"><h3 id="sources-title-${ticker}">Sources</h3><p>${escapeHtml(providerText(analysis.providers))}</p></div>${renderSources(analysis.source_references)}</section>
+      <div class="result-actions">${canAdd ? `<div class="add-row"><label for="qty-${ticker}">Shares</label><input id="qty-${ticker}" type="number" min="1" step="1" value="${defaultQty}"><button class="add-btn" id="add-${ticker}" type="button">Add to Demo Portfolio</button><span class="muted">suggests ${fmtUsd(positionSize)}</span><span class="added-note hidden" id="added-${ticker}" role="status"></span></div>` : '<span class="muted">Portfolio adds are offered on BUY calls.</span>'}<button class="secondary-btn retry-btn" type="button">Retry ${escapeHtml(ticker)}</button></div>
     </div>`;
 
   const existing = $(`result-${ticker}`);

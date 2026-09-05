@@ -10,7 +10,7 @@
   <link rel="icon" href="/static/favicon.ico?v=2" sizes="any">
   <link rel="icon" type="image/png" href="/static/favicon.png?v=2">
   <link rel="apple-touch-icon" href="/static/favicon.png?v=2">
-  <link rel="stylesheet" href="/static/style.css?v=14">
+  <link rel="stylesheet" href="/static/style.css?v=15">
 </head>
 <body>
   <div class="container">
@@ -53,7 +53,6 @@
       <details class="advanced-options" id="advanced-options">
         <summary><span class="adv-title">Advanced options</span><span class="adv-summary-values" id="adv-values">Short term · Medium</span><span class="adv-caret" aria-hidden="true"></span></summary>
         <div class="advanced-body">
-          <p class="hint">Your outlook tells every agent which horizon to weigh evidence for; depth picks how many agents run (fewer = faster).</p>
           <div class="option-row" role="radiogroup" aria-labelledby="outlook-label">
             <span class="chips-label" id="outlook-label">Your outlook:</span>
             <button class="seg-btn" type="button" role="radio" aria-checked="false" data-outlook="day_trade">Day trading<small>Intraday to ~2 days</small></button>
@@ -62,41 +61,44 @@
           </div>
           <div class="option-row" role="radiogroup" aria-labelledby="depth-label">
             <span class="chips-label" id="depth-label">Depth:</span>
-            <button class="seg-btn" type="button" role="radio" aria-checked="false" data-depth="fast">Fast<small>Tech + news · 5 agents</small></button>
-            <button class="seg-btn selected" type="button" role="radio" aria-checked="true" data-depth="medium">Medium<small>All research · 7 agents</small></button>
-            <button class="seg-btn" type="button" role="radio" aria-checked="false" data-depth="expert">Expert<small>Full debate · 9 agents</small></button>
+            <button class="seg-btn" type="button" role="radio" aria-checked="false" data-depth="fast">Fast<small>5 agents</small></button>
+            <button class="seg-btn selected" type="button" role="radio" aria-checked="true" data-depth="medium">Medium<small>8 agents</small></button>
+            <button class="seg-btn" type="button" role="radio" aria-checked="false" data-depth="expert">Expert<small>10 agents</small></button>
           </div>
         </div>
       </details>
-      <p class="hint" id="ticker-hint">Add up to 5 tickers, or let “I Am Feeling Lucky” find liquid, growing companies worth $1B to $50B with breakout potential and analyze its five highest-ranked candidates. Rankings use recent market data and cannot guarantee profit.</p>
+      <p class="hint" id="ticker-hint">Up to 5 tickers — or let “I Am Feeling Lucky” screen the market for candidates.</p>
       <p id="error-msg" class="error hidden" role="alert"></p>
       <p id="restore-notice" class="restore-notice hidden" role="status"></p>
     </section>
 
     <section id="how-section">
-      <div class="how-grid">
-        <div class="how-card">
-          <div class="how-num">1</div>
-          <div>
-            <div class="how-title">Research</div>
-            <div class="how-text">Technical, Fundamental, News and Forecast analysts work on your ticker at the same time. The depth profile picks how many run.</div>
+      <details class="how-details">
+        <summary>How it works<span class="adv-caret" aria-hidden="true"></span></summary>
+        <div class="how-grid">
+          <div class="how-card">
+            <div class="how-num">1</div>
+            <div>
+              <div class="how-title">Research</div>
+              <div class="how-text">Technical, fundamental, news, sentiment and forecast analysts run in parallel.</div>
+            </div>
+          </div>
+          <div class="how-card">
+            <div class="how-num">2</div>
+            <div>
+              <div class="how-title">Debate</div>
+              <div class="how-text">Bull and bear argue, then answer each other's strongest points.</div>
+            </div>
+          </div>
+          <div class="how-card">
+            <div class="how-num">3</div>
+            <div>
+              <div class="how-title">Decision</div>
+              <div class="how-text">The manager weighs debate + holdings; a risk layer sizes and gates the trade.</div>
+            </div>
           </div>
         </div>
-        <div class="how-card">
-          <div class="how-num">2</div>
-          <div>
-            <div class="how-title">Debate</div>
-            <div class="how-text">A bull and a bear researcher argue opposite sides, then answer each other's strongest points.</div>
-          </div>
-        </div>
-        <div class="how-card">
-          <div class="how-num">3</div>
-          <div>
-            <div class="how-title">Decision</div>
-            <div class="how-text">The Portfolio Manager weighs the debate and your portfolio; a risk layer sizes the trade, checks the 5-day forecast against the stock&#39;s own noise band, and applies exposure caps. This is an educational simulation, not investment advice.</div>
-          </div>
-        </div>
-      </div>
+      </details>
     </section>
 
     <section id="live-section" class="hidden">
@@ -126,6 +128,6 @@
   </div>
 
   <div id="toast" class="toast hidden" role="status" aria-live="polite" aria-atomic="true"></div>
-  <script src="/static/app.js?v=17"></script>
+  <script src="/static/app.js?v=18"></script>
 </body>
 </html>

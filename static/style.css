@@ -220,8 +220,18 @@ button:focus-visible, a:focus-visible, #ticker-input:focus-visible { outline: 2p
   color: #b7ecc9; border-color: rgba(16, 201, 115, 0.55); background: rgba(16, 201, 115, 0.1);
 }
 
-/* how it works */
-.how-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 14px; }
+/* how it works (collapsed by default) */
+.how-details { border-top: 1px solid rgba(255, 255, 255, 0.055); }
+.how-details summary {
+  display: flex; align-items: center; gap: 7px; padding: 13px 2px;
+  cursor: pointer; color: var(--muted); font-weight: 600; font-size: 13px;
+  letter-spacing: 0.02em; user-select: none; list-style: none;
+}
+.how-details summary::-webkit-details-marker { display: none; }
+.how-details summary:hover, .how-details[open] summary { color: var(--text); }
+.how-details .adv-caret { margin-left: 6px; }
+.how-details[open] .adv-caret { transform: rotate(180deg); }
+.how-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin: 6px 0 14px; }
 .how-card {
   display: flex; gap: 12px; align-items: flex-start;
   background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius);
@@ -399,7 +409,6 @@ h2 {
 .legend { font-size: 12px; line-height: 1.6; margin: 0 0 18px; }
 .flag-warn { color: #f5c66b; font-size: 12px; }
 .flag-ok { color: #6fe0a0; font-size: 12px; }
-.plain-english { margin: 8px 0 0; font-size: 14px; line-height: 1.6; }
 
 footer { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-top: 44px; }
 
@@ -613,7 +622,6 @@ td.num, th.num { text-align: right; }
 .decision-facts small { margin-top: 3px; }
 .manager-conclusion { max-width: 850px; padding-top: 18px; }
 .eyebrow { color: #6fda9e; font-size: 10px; font-weight: 750; letter-spacing: 0.1em; text-transform: uppercase; }
-.plain-english { margin: 5px 0 8px; color: #f0f4fa; font-size: 17px; font-weight: 600; line-height: 1.55; }
 .thesis { margin: 0; color: #b9c1d0; font-size: 15px; line-height: 1.75; }
 .risk-flags {
   display: flex; flex-direction: column; gap: 4px; margin: 15px 0 0;
@@ -628,8 +636,8 @@ td.num, th.num { text-align: right; }
 .result-card.open .result-detail { animation: card-in 0.2s ease; }
 .result-block { padding: 24px 0; border-top: 1px solid rgba(255, 255, 255, 0.075); }
 .block-heading {
-  display: grid; grid-template-columns: minmax(220px, 0.9fr) minmax(280px, 1.2fr);
-  gap: 28px; align-items: end; margin-bottom: 15px;
+  display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline;
+  gap: 8px 24px; margin-bottom: 13px;
 }
 .block-heading h3 { margin: 3px 0 0; font-size: 17px; line-height: 1.35; }
 .block-heading > p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.55; }
@@ -639,7 +647,6 @@ td.num, th.num { text-align: right; }
 }
 .evidence-card:last-child { border-right: 0; }
 .mc-title { color: #dce2ed; font-size: 12px; font-weight: 750; letter-spacing: 0.055em; text-transform: uppercase; }
-.mc-help { min-height: 35px; margin: 4px 0 8px; color: var(--muted); font-size: 11px; line-height: 1.45; }
 .evidence-card .mc-sig { margin-bottom: 7px; font-size: 13px; font-weight: 700; }
 .evidence-card .mc-sum, .debate-side .mc-sum { margin: 0; color: #b5bdcb; font-size: 14px; line-height: 1.7; overflow-wrap: break-word; }
 .debate { gap: 18px; margin: 0; }
@@ -758,10 +765,8 @@ td.num, th.num { text-align: right; }
   html { scroll-padding-top: 82px; }
   #live-section, #results-section, #results-heading, .result-card { scroll-margin-top: 82px; }
   .decision-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .block-heading { grid-template-columns: 1fr; gap: 5px; }
   .evidence-card { padding: 13px 0; border-right: 0; border-top: 1px solid rgba(255, 255, 255, 0.065); }
   .evidence-card:first-child { border-top: 0; padding-top: 2px; }
-  .mc-help { min-height: 0; }
 }
 
 @media (max-width: 620px) {
@@ -774,7 +779,6 @@ td.num, th.num { text-align: right; }
   .decision-brief { padding: 17px 14px 15px; }
   .decision-facts { gap: 15px 12px; }
   .decision-facts strong { font-size: 12px; }
-  .plain-english { font-size: 16px; }
   .thesis { font-size: 14px; }
   .result-detail { padding: 0 14px 16px; }
   .result-block { padding: 20px 0; }

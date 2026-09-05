@@ -10,7 +10,7 @@
   <link rel="icon" href="/static/favicon.ico?v=2" sizes="any">
   <link rel="icon" type="image/png" href="/static/favicon.png?v=2">
   <link rel="apple-touch-icon" href="/static/favicon.png?v=2">
-  <link rel="stylesheet" href="/static/style.css?v=14">
+  <link rel="stylesheet" href="/static/style.css?v=15">
 </head>
 <body>
   <div class="container">
@@ -21,7 +21,7 @@
         </a>
         <div>
           <h1>Portfolio</h1>
-          <p class="tagline">Your own holdings via CSV or manual entry · plus simulated paper trades</p>
+          <p class="tagline">Your holdings · paper trades</p>
         </div>
       </div>
       <nav>
@@ -50,7 +50,7 @@
             <input id="add-price" type="number" min="0" step="any" placeholder="Buy price" aria-label="Buy price (blank for live price)">
             <button class="add-btn" id="add-holding-btn" type="button">Add</button>
           </div>
-          <p class="hint">Record shares you already own and the price you paid. Blank price uses the live price. Tracked holdings don't touch demo cash.</p>
+          <p class="hint">Shares you already own. Blank price = live price; demo cash untouched.</p>
         </div>
         <div class="manage-col">
           <div class="manage-label">Import from CSV</div>
@@ -58,7 +58,7 @@
             <input type="file" id="csv-file" accept=".csv,text/csv" class="hidden">
             <button class="secondary-btn" id="csv-pick-btn" type="button">Choose CSV file…</button>
           </div>
-          <p class="hint">Columns: <code>ticker,quantity,entry_price</code> — a header row is detected automatically (symbol / shares / price and similar names work too). <a class="sample-link" href="/static/sample-portfolio.csv" download>Download a sample</a>.</p>
+          <p class="hint"><code>ticker, quantity, entry_price</code> · header auto-detected · <a class="sample-link" href="/static/sample-portfolio.csv" download>sample</a></p>
         </div>
       </div>
       <div class="csv-preview hidden" id="csv-preview"></div>
@@ -83,8 +83,8 @@
         <tbody id="positions-body"></tbody>
       </table>
       <p class="empty-note hidden" id="empty-note">
-        No positions yet. Add a holding or import a CSV above, or run an analysis and click
-        <strong>Add to Demo Portfolio</strong> on a BUY recommendation.
+        No positions yet — add a holding, import a CSV, or use
+        <strong>Add to Demo Portfolio</strong> on a BUY.
       </p>
     </div>
 
