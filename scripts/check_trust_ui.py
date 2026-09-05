@@ -118,7 +118,7 @@ assert "overflow-x: hidden" in css
 assert "scroll-padding-top" in css
 assert "background-repeat: repeat, no-repeat, no-repeat" in css
 assert "background: #090e19" in css
-assert "grid-template-columns: minmax(0, 1fr) minmax(150px, 46%)" in css
+assert "grid-template-columns: minmax(0, 1fr) auto minmax(150px, 46%)" in css
 
 
 # The existing status endpoint returns saved results and cleanly identifies stale IDs.

@@ -60,6 +60,17 @@ acceptance criteria. Last updated: 2026-09-05.
   4 analyst slots; backtest replays get an empty social set (no point-in-time
   archive) so the honest neutral applies; UI: 5th research row + evidence card,
   old runs show "Not recorded"
+- **3.2 Live reasoning stream**: LLMs are built with `stream=True`
+  (`STREAM_REASONING`, default on) so CrewAI emits `LLMStreamChunkEvent`s; a
+  scoped `add_stream_sink` per agent run (concurrent agents never see each
+  other's tokens) forwards content chunks as `agent_token` SSE events —
+  live-only (never persisted for reconnect replay), sliding ~2 KB window in
+  the UI pane, 16 KB per-agent forward guard, thinking deltas excluded;
+  provider stream rejection is classified, drops streaming for the role and
+  retries (JSON mode preserved), exactly like the `response_format` fallback;
+  mock mode streams the deterministic summary word-by-word, skipped in
+  backtest replays; UI: collapsible per-agent reasoning pane behind the agent
+  row (click / Enter), auto-scroll, truncation marker
 
 ---
 
@@ -161,16 +172,7 @@ Shipped — see the baseline above.
 
 ### 3.2 Stream agent reasoning live (README roadmap)
 
-**Why.** Users watch a spinner for ~30–60 s per agent; streaming tokens is the
-standard fix and the SSE plumbing already exists.
-
-**Design.** CrewAI supports token-level callbacks on the LLM. Wire a per-agent
-callback that pushes `agent_token` SSE events with a sliding buffer (cap ~2 KB per
-agent, truncate summaries server-side), render a collapsible live-reasoning pane
-per agent in `index.html`. Mock mode streams the deterministic text word-by-word so
-the UI path is always testable.
-
-**Effort:** M.
+Shipped — see the baseline above.
 
 ### 3.3 Researcher-configurable debate depth
 
@@ -202,14 +204,13 @@ unsized, un-gated decision to a broker.
 
 ## Suggested order
 
-Phases 1 and 2 are complete (see the baseline above), and 3.1 Sentiment analyst is
-shipped. Remaining work, in order:
+Phases 1 and 2 are complete (see the baseline above), and 3.1 Sentiment analyst
+and 3.2 Live reasoning stream are shipped. Remaining work, in order:
 
 | # | Item | Why this position |
 |---|------|-------------------|
-| 1 | 3.2 Live reasoning stream | UX win on existing SSE plumbing |
-| 2 | 3.3 Debate-depth tuning | Needs the 2.2 harness, which exists — run the grid |
-| 3 | 4.1 Alpaca | Only after risk + memory are proven |
+| 1 | 3.3 Debate-depth tuning | Needs the 2.2 harness, which exists — run the `DEBATE_ROUNDS` 1 vs 2 vs 3 grid and set the default from data |
+| 2 | 4.1 Alpaca | Only after risk + memory are proven |
 
 ## Bibliography
 

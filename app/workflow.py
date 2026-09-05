@@ -2,7 +2,9 @@
 
 Every agent run is one single-agent CrewAI crew. One agent failing never kills
 the run - its slot becomes None and downstream agents are told the input is
-missing.
+missing. With STREAM_REASONING on, each agent's tokens stream to the UI as
+agent_token events (ROADMAP 3.2); mock mode streams the deterministic text
+word-by-word so the UI path is always testable.
 """
 
 import asyncio
@@ -28,6 +30,13 @@ from app.tools.market_data import (
 logger = logging.getLogger("analysis")
 
 Emit = Callable[[str, dict], Awaitable[None]]
+
+# Live reasoning stream (ROADMAP 3.2). The UI pane keeps a sliding window per
+# agent; STREAM_MAX_CHARS guards the event volume of a runaway stream.
+STREAM_WINDOW_CHARS = 2048
+STREAM_MAX_CHARS = 16_384
+_MOCK_STREAM_WORDS = 5  # mock mode: words per streamed chunk
+_MOCK_STREAM_DELAY = 0.025  # seconds between chunks
 
 # Which role each agent runs as - per-role LLM overrides (ROADMAP 2.3) key
 # off this: cheap fast models for the researchers, a stronger one for the call.
@@ -74,12 +83,13 @@ def _route_model(model: str) -> str:
     return f"openai/{model}"
 
 
-def _build_llm(role: str, json_mode: bool = True) -> Any:
+def _build_llm(role: str, json_mode: bool = True, stream: bool | None = None) -> Any:
     """Construct the CrewAI LLM for one role from settings.llm_for(role).
 
     json_mode asks the provider for guaranteed JSON output; reasoning_effort
     is also sent verbatim in the request body because the crewai field alone
-    only reaches o1-style models on /chat/completions.
+    only reaches o1-style models on /chat/completions. stream=None follows
+    settings.stream_reasoning (ROADMAP 3.2 live token events).
     """
     from crewai import LLM
 
@@ -89,6 +99,8 @@ def _build_llm(role: str, json_mode: bool = True) -> Any:
         extra["reasoning_effort"] = settings.llm_reasoning_effort
     if json_mode:
         extra["response_format"] = {"type": "json_object"}
+    if stream is None:
+        stream = settings.stream_reasoning
     return LLM(
         model=_route_model(conf["model"]),
         base_url=conf["base_url"],
@@ -96,6 +108,7 @@ def _build_llm(role: str, json_mode: bool = True) -> Any:
         temperature=settings.llm_temperature,
         timeout=settings.llm_timeout_seconds,
         reasoning_effort=settings.llm_reasoning_effort or None,
+        stream=stream,
         additional_params=extra,
     )
 
@@ -134,9 +147,30 @@ def _drop_json_mode(role: str) -> Any:
         return None
 
 
+def _drop_stream_mode(role: str) -> Any:
+    """Rebuild a role's LLM without streaming after the provider rejected it
+    (feature-detect on first use, exactly like the JSON-mode fallback). The
+    JSON-mode setting of the current LLM is preserved."""
+    current = _llms.get(role)
+    json_mode = current is None or "response_format" in (
+        getattr(current, "additional_params", None) or {}
+    )
+    try:
+        _llms[role] = _build_llm(role, json_mode=json_mode, stream=False)
+        logger.warning("[llm] streaming disabled for role %s - provider rejected it", role)
+        return _llms[role]
+    except Exception as exc:  # noqa: BLE001
+        logger.error("[llm] could not rebuild LLM for role %s: %s", role, exc)
+        return None
+
+
 def _classify_failure(exc: Exception) -> str:
     """Bucket an LLM failure to pick the retry strategy (ROADMAP 2.3)."""
     text = f"{type(exc).__name__} {exc}".lower()
+    if "stream" in text:
+        # Checked before response_format: combined rejections ("stream is not
+        # supported with response_format") must drop streaming first.
+        return "stream"
     if "response_format" in text:
         return "response_format"
     if (
@@ -223,20 +257,76 @@ async def _kick_once(agent, task) -> tuple[dict, dict]:
     return extract_json(str(getattr(output, "raw", ""))), usage
 
 
+def _token_sink(ticker: str, agent_name: str, emit: Emit) -> Callable[[Any, Any], None]:
+    """CrewAI stream sink that forwards one agent's tokens as agent_token events.
+
+    Attached per agent run via crewai's scoped stream sinks, so concurrent
+    agents never receive each other's tokens. Only content chunks are
+    forwarded (thinking deltas stay private), a sliding window is kept for
+    debugging, and STREAM_MAX_CHARS caps the total so a runaway stream cannot
+    flood the event queues. Chunks can arrive on a worker thread (crewai runs
+    parts of kickoff in executors, with the sink context copied along), so
+    forwarding goes through the loop captured here + call_soon_threadsafe.
+    """
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:  # defensive: _run_agent always runs inside a loop
+        loop = None
+    state = {"sent": 0, "window": ""}
+
+    def _forward(payload: dict) -> None:
+        loop.create_task(emit("agent_token", payload))
+
+    def sink(source: Any, event: Any) -> None:  # noqa: ARG001 - crewai contract
+        if loop is None or getattr(event, "type", "") != "llm_stream_chunk":
+            return
+        chunk = str(getattr(event, "chunk", "") or "")
+        if not chunk:
+            return
+        state["window"] = (state["window"] + chunk)[-STREAM_WINDOW_CHARS:]
+        if state["sent"] >= STREAM_MAX_CHARS:
+            return
+        state["sent"] += len(chunk)
+        payload = {"ticker": ticker, "agent": agent_name, "text": chunk}
+        if state["sent"] >= STREAM_MAX_CHARS:
+            payload["truncated"] = True
+        try:
+            loop.call_soon_threadsafe(_forward, payload)
+        except RuntimeError:  # loop already closed - the run is over anyway
+            pass
+
+    return sink
+
+
+async def _stream_mock_text(ticker: str, agent_name: str, text: str, emit: Emit) -> None:
+    """Mock mode: stream the deterministic summary word-by-word so the live
+    reasoning UI path is always testable (ROADMAP 3.2)."""
+    words = str(text or "").split()
+    for i in range(0, len(words), _MOCK_STREAM_WORDS):
+        batch = " ".join(words[i : i + _MOCK_STREAM_WORDS]) + " "
+        await emit(
+            "agent_token", {"ticker": ticker, "agent": agent_name, "text": batch}
+        )
+        await asyncio.sleep(_MOCK_STREAM_DELAY)
+
+
 async def _run_agent(
     mod,
     ticker: str,
     emit: Emit,
     name: str | None = None,
     token_totals: dict | None = None,
+    live: bool = True,
     **task_payload,
 ) -> dict | None:
     """Run one agent (LLM or mock), emitting started/completed/failed events.
 
     LLM failures get one smart retry each (ROADMAP 2.3): 429/5xx waits and
     retries (1s, then 4s), a rejected response_format disables JSON mode for
-    the role, and a malformed output is retried once with the validation
-    error appended to the task. `token_totals` accumulates per-run usage.
+    the role, a rejected stream disables streaming for the role, and a
+    malformed output is retried once with the validation error appended to
+    the task. `token_totals` accumulates per-run usage; `live` gates the
+    cosmetic token stream (backtest replays skip it).
     """
     agent_name = name or mod.NAME
     role = ROLE_BY_AGENT.get(mod.NAME, "analysts")
@@ -248,6 +338,10 @@ async def _run_agent(
             await asyncio.sleep(0.4)  # mock mode: give the UI a moment
             data = mod.mock(ticker, **task_payload)
             usage: dict = {}
+            if live:
+                await _stream_mock_text(
+                    ticker, agent_name, str(data.get("summary", "")), emit
+                )
         else:
             data = None
             usage = {}
@@ -259,12 +353,40 @@ async def _run_agent(
                     task = mod.build_task(agent, ticker, **task_payload)
                     if correction is not None:
                         task.description = correction + task.description
-                    data, usage = await _kick_once(agent, task)
+                    if getattr(llm, "stream", False):
+                        # Scoped per agent run: concurrent agents of the same
+                        # role never see each other's tokens (ROADMAP 3.2).
+                        from crewai.events.stream_context import (
+                            add_stream_sink,
+                            reset_stream_sinks,
+                        )
+
+                        sink = _token_sink(ticker, agent_name, emit)
+                        sink_token = add_stream_sink(sink)
+                        try:
+                            data, usage = await _kick_once(agent, task)
+                        finally:
+                            reset_stream_sinks(sink_token)
+                    else:
+                        data, usage = await _kick_once(agent, task)
+                    # Let token-forward tasks scheduled by the sink reach the
+                    # queues before agent_completed closes the pane's stream.
+                    await asyncio.sleep(0)
                     break
                 except Exception as exc:  # noqa: BLE001 - classify, maybe retry
                     last_error = exc
                     kind = _classify_failure(exc)
                     detail = str(exc)[:120]
+                    if kind == "stream":
+                        replacement = _drop_stream_mode(role)
+                        if replacement is None:
+                            break
+                        logger.warning(
+                            "[%s] provider rejected streaming; retrying without it",
+                            agent_name,
+                        )
+                        llm = replacement
+                        continue
                     if kind == "response_format":
                         replacement = _drop_json_mode(role)
                         if replacement is None:
@@ -527,6 +649,7 @@ async def analyze_ticker(
                 ticker,
                 emit,
                 token_totals=token_totals,
+                live=live_context,
                 payload={**indicators, "user_context": user_ctx},
             )
         if key == "fundamental":
@@ -535,6 +658,7 @@ async def analyze_ticker(
                 ticker,
                 emit,
                 token_totals=token_totals,
+                live=live_context,
                 payload={**market.fundamentals, "user_context": user_ctx},
             )
         if key == "news":
@@ -543,6 +667,7 @@ async def analyze_ticker(
                 ticker,
                 emit,
                 token_totals=token_totals,
+                live=live_context,
                 payload={"items": market.news, "user_context": user_ctx},
             )
         if key == "sentiment":
@@ -551,10 +676,16 @@ async def analyze_ticker(
                 ticker,
                 emit,
                 token_totals=token_totals,
+                live=live_context,
                 payload={"items": market.social, "user_context": user_ctx},
             )
         return await _run_agent(
-            forecast, ticker, emit, token_totals=token_totals, payload=forecast_payload
+            forecast,
+            ticker,
+            emit,
+            token_totals=token_totals,
+            live=live_context,
+            payload=forecast_payload,
         )
 
     order = ("technical", "fundamental", "news", "forecast", "sentiment")
@@ -596,8 +727,14 @@ async def analyze_ticker(
 
     # Stage 2: bull and bear in parallel.
     bull_data, bear_data = await asyncio.gather(
-        _run_agent(bull, ticker, emit, token_totals=token_totals, payload=context),
-        _run_agent(bear, ticker, emit, token_totals=token_totals, payload=context),
+        _run_agent(
+            bull, ticker, emit, token_totals=token_totals, live=live_context,
+            payload=context,
+        ),
+        _run_agent(
+            bear, ticker, emit, token_totals=token_totals, live=live_context,
+            payload=context,
+        ),
     )
 
     # Stage 2b: rebuttal round - each side answers the other's argument.
@@ -613,6 +750,7 @@ async def analyze_ticker(
                     emit,
                     name="bull_rebuttal",
                     token_totals=token_totals,
+                    live=live_context,
                     payload={
                         "research": context,
                         "own_round_1": bull_data,
@@ -626,6 +764,7 @@ async def analyze_ticker(
                     emit,
                     name="bear_rebuttal",
                     token_totals=token_totals,
+                    live=live_context,
                     payload={
                         "research": context,
                         "own_round_1": bear_data,
@@ -715,7 +854,12 @@ async def analyze_ticker(
         "cross_ticker_lessons": cross_lessons_ctx,
     }
     mgr_data = await _run_agent(
-        manager, ticker, emit, token_totals=token_totals, payload=full_context
+        manager,
+        ticker,
+        emit,
+        token_totals=token_totals,
+        live=live_context,
+        payload=full_context,
     )
 
     if mgr_data:

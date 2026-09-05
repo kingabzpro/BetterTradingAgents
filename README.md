@@ -42,7 +42,7 @@ simulated portfolio.
 | ⚖️ | **Risk-gated decisions** | BUYs are volatility-scaled and capped by per-ticker, invested, and cash-buffer limits; a 5-day forecast beyond the stock's own noise band (±1σ) downgrades the trade and one past half the band halves its size. Downgrades are flagged, never silent. |
 | 📜 | **Learns from its calls** | Every completed decision is recorded and later graded on realized return and alpha vs SPY; the manager weighs those lessons on the next run and the results page shows the track record. |
 | 🧪 | **Walk-forward backtests** | Replay the pipeline at past dates with point-in-time data only, grade every call against SPY after costs, and compare with buy-and-hold — free mock mode by default. |
-| 📡 | **Live, honest progress** | Server-Sent Events stream every agent state, with per-ticker progress bars as it happens. |
+| 📡 | **Live, honest progress** | Server-Sent Events stream every agent state with per-ticker progress bars — and each agent's tokens stream into a collapsible live-reasoning pane while it thinks. |
 | 🕘 | **Durable run history** | Completed and interrupted analyses are saved in SQLite and can be reopened from the Runs page. |
 | 🛡️ | **Resilient runs** | If an agent fails, the Portfolio Manager receives the available inputs and still makes a call. |
 | 📊 | **Real market data** | Finnhub, Olostep, and yfinance provide fundamentals, news, and price history; Nixtla TimeGPT optionally provides a 5-day forecast. |
@@ -144,6 +144,15 @@ TradingAgents credits for much of its edge:
 
 Server-Sent Events update the interface as every agent moves from waiting to running, complete,
 or failed. Progress bars tick per ticker as each agent finishes.
+
+Each agent also streams its reasoning live: while it works, a **reasoning** hint appears on its
+row and clicking the row unfolds a pane that fills with the model's tokens as they arrive —
+so the 30–60 s of thinking per agent is something you can watch, not wait out. The pane keeps
+a ~2 KB sliding window per agent, stays readable after the agent finishes, and mock mode
+streams the deterministic text word-by-word so the path is always exercised. Token events are
+live-only: reconnects and the run history replay the results, never thousands of cosmetic
+chunks. Set `STREAM_REASONING=0` to turn it off (a provider that rejects streaming is
+auto-detected and dropped on first use, exactly like the JSON-mode fallback).
 
 ![Live agent progress](docs/screenshots/live-analysis.png)
 
@@ -287,6 +296,7 @@ optional; without an LLM key, the app starts in mock mode.
 | `NIXTLA_API_KEY` | Not set | Nixtla TimeGPT 5-day forecast; falls back to the local trend model |
 | `MAX_TICKERS` | `5` | Maximum tickers accepted in one analysis |
 | `DEBATE_ROUNDS` | `2` | Bull/bear debate depth: `1` = single round, `2`+ adds one rebuttal exchange (capped at 3) |
+| `STREAM_REASONING` | `1` | Live reasoning stream: stream agent tokens to the UI (`0` disables; providers that reject it are auto-detected) |
 | `STARTING_CASH` | `100000` | Initial simulated portfolio balance |
 | `DEFAULT_POSITION_SIZE` | `10000` | Suggested position value |
 | `DB_PATH` | `portfolio.db` | SQLite app database path for portfolio positions and run history |
@@ -375,6 +385,9 @@ PYTHONPATH=. uv run python scripts/check_portfolio_import.py
 
 # Offline checks for the sentiment analyst: thin-volume brake, provenance, hermetic e2e
 PYTHONPATH=. uv run python scripts/check_sentiment.py
+
+# Offline checks for the live reasoning stream: sink, caps, transient events, e2e
+PYTHONPATH=. uv run python scripts/check_streaming.py
 
 # One-shot check that the configured LLM endpoint answers
 PYTHONPATH=. uv run python scripts/smoke_llm.py

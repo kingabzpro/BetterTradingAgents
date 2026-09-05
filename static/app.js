@@ -29,6 +29,9 @@ const AGENTS = [
 const LAST_RUN_KEY = "bta:lastRunId";
 const CLIENT_ID_KEY = "bta:clientId";
 const TICKER_PATTERN = /^[A-Z0-9.\-]{1,10}$/;
+// Mirrors STREAM_WINDOW_CHARS in app/workflow.py: the reasoning pane keeps the
+// tail of each agent's token stream (the server caps the total it forwards).
+const STREAM_WINDOW_CHARS = 2048;
 const OUTLOOKS = ["day_trade", "short_term", "long_term"];
 const OUTLOOK_LABELS = { day_trade: "Day trading", short_term: "Short term", long_term: "Long term" };
 const ADVANCED_OPEN_KEY = "bta:advancedOpen";
@@ -515,6 +518,31 @@ function handleEvent(event) {
     case "ticker_data":
       setHeader(ticker, event.price, event.company_name, event.sources);
       break;
+    case "agent_token": {
+      // Live reasoning stream (server sends only while the agent runs).
+      const cell = $(`cell-${ticker}-${event.agent}`);
+      const pre = $(`stream-pre-${ticker}-${event.agent}`);
+      if (!cell || !pre) break;
+      pre.textContent = (pre.textContent + String(event.text || "")).slice(-STREAM_WINDOW_CHARS);
+      if (event.truncated && !cell.classList.contains("truncated")) {
+        pre.textContent += "\n…stream truncated (output continued; display window capped)";
+        cell.classList.add("truncated");
+      }
+      if (!cell.classList.contains("has-stream")) {
+        cell.classList.add("has-stream");
+        const row = cell.querySelector(".agent-row");
+        const label = AGENTS.find((a) => a.key === event.agent)?.label || event.agent;
+        row.tabIndex = 0;
+        row.setAttribute("role", "button");
+        row.setAttribute("aria-expanded", "false");
+        row.setAttribute("aria-label", `${label} live reasoning, press Enter to toggle`);
+        const hint = row.querySelector(".stream-hint");
+        if (hint) hint.hidden = false;
+      }
+      const pane = $(`stream-${ticker}-${event.agent}`);
+      if (pane && !pane.hidden) pane.scrollTop = pane.scrollHeight;
+      break;
+    }
     case "agent_started":
       setAgentStatus(ticker, event.agent, "running", "Running…");
       break;
@@ -652,8 +680,41 @@ function renderProgressCard(ticker) {
   card.innerHTML = `
     <div class="ticker-head"><span class="tk" id="live-title-${ticker}">${escapeHtml(ticker)} <span class="px" id="px-${ticker}">fetching data…</span></span><span class="src" id="src-${ticker}"></span><span class="muted prog-count" id="progc-${ticker}">0/${agents.length}</span></div>
     <div class="run-progress" id="progress-${ticker}" role="progressbar" aria-label="${escapeAttr(ticker)} analysis progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div class="run-progress-fill" id="prog-${ticker}"></div></div>
-    ${agents.map((agent) => `<div class="agent-row ${agent.stage !== "Research" ? "stage2" : ""}"><span class="agent-left"><span class="agent-icon">${ICONS[agent.key]}</span><span>${agent.label}<small>${agent.stage}</small></span></span><span class="status" id="status-${ticker}-${agent.key}" role="status" aria-live="polite"><span class="icon" aria-hidden="true"></span>Waiting</span></div>`).join("")}`;
+    ${agents.map((agent) => `
+      <div class="agent-cell" id="cell-${ticker}-${agent.key}">
+        <div class="agent-row ${agent.stage !== "Research" ? "stage2" : ""}" data-agent="${agent.key}">
+          <span class="agent-left"><span class="agent-icon">${ICONS[agent.key]}</span><span>${agent.label}<small>${agent.stage}</small></span></span>
+          <span class="stream-hint" hidden>reasoning ▾</span>
+          <span class="status" id="status-${ticker}-${agent.key}" role="status" aria-live="polite"><span class="icon" aria-hidden="true"></span>Waiting</span>
+        </div>
+        <div class="stream-pane" id="stream-${ticker}-${agent.key}" hidden><pre id="stream-pre-${ticker}-${agent.key}"></pre></div>
+      </div>`).join("")}`;
   $("live-grid").appendChild(card);
+  // Once an agent streams tokens, its row becomes a toggle for the pane.
+  card.querySelectorAll(".agent-row[data-agent]").forEach((row) => {
+    const toggle = () => toggleStreamPane(ticker, row.dataset.agent);
+    row.addEventListener("click", toggle);
+    row.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        toggle();
+      }
+    });
+  });
+}
+
+function toggleStreamPane(ticker, agentKey) {
+  const cell = $(`cell-${ticker}-${agentKey}`);
+  const pane = $(`stream-${ticker}-${agentKey}`);
+  if (!cell || !pane || !cell.classList.contains("has-stream")) return;
+  const open = pane.hidden;
+  pane.hidden = !open;
+  cell.classList.toggle("open", open);
+  const row = cell.querySelector(".agent-row");
+  row.setAttribute("aria-expanded", String(open));
+  const hint = row.querySelector(".stream-hint");
+  if (hint) hint.textContent = open ? "reasoning ▴" : "reasoning ▾";
+  if (open) pane.scrollTop = pane.scrollHeight;
 }
 
 function setHeader(ticker, price, name, sources) {

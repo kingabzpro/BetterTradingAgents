@@ -42,7 +42,11 @@ class Run:
 
     async def emit(self, event_type: str, payload: dict) -> None:
         event = {"type": event_type, **payload}
-        self.events.append(event)
+        # Token streams are live-only (ROADMAP 3.2): reconnect replays would
+        # re-send thousands of cosmetic chunks, and the final text already
+        # arrives with agent_completed. Everything else is replayable.
+        if event_type != "agent_token":
+            self.events.append(event)
         for queue in list(self.queues):
             queue.put_nowait(event)
 
