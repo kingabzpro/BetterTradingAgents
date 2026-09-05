@@ -65,6 +65,7 @@ const state = {
   maxTickers: 5,
   outlook: "short_term",
   depth: "medium",
+  chats: new Map(), // ticker -> { messages: [{role, content}], busy: false, open: false }
 };
 
 /* ---------- boot and recovery ---------- */
@@ -368,6 +369,7 @@ function beginRun(tickers, options = {}) {
     agents: {}, completedAgents: new Set(), done: 0, total: agents.length, failed: false,
   }]));
   state.runStartedAtMs = options.startedAtMs || Date.now();
+  state.chats = new Map();
   $("analyze-btn").disabled = true;
   $("feeling-lucky-btn").disabled = true;
   $("how-section").classList.add("hidden");
@@ -816,6 +818,22 @@ function renderResultCard(analysis) {
       <div class="manager-conclusion"><span class="eyebrow">Manager conclusion</span><p class="thesis">${escapeHtml(analysis.summary || analysis.error || "No manager summary was returned.")}</p></div>
       ${analysis.error ? `<div class="risk-flags"><strong>Analysis unavailable</strong><span>⚠ ${escapeHtml(analysis.error)}</span></div>` : flags.length ? `<div class="risk-flags"><strong>Risk flags</strong>${flags.map((flag) => `<span>⚠ ${escapeHtml(flag)}</span>`).join("")}</div>` : '<div class="risk-clear"><span aria-hidden="true">✓</span> No risk rules were triggered.</div>'}
     </div>
+    ${analysis.error ? "" : `
+    <div class="chat-block">
+      <button class="chat-toggle" id="chat-toggle-${ticker}" type="button" aria-expanded="false" aria-controls="chat-panel-${ticker}">
+        <span class="chat-toggle-icon" aria-hidden="true">${ICONS.manager}</span>Chat with Portfolio Manager
+      </button>
+      <div class="chat-panel" id="chat-panel-${ticker}" hidden>
+        <div class="chat-messages" id="chat-msgs-${ticker}" role="log" aria-label="Conversation with the portfolio manager about ${escapeAttr(ticker)}"></div>
+        <form class="chat-form" id="chat-form-${ticker}">
+          <input id="chat-input-${ticker}" type="text" maxlength="2000" autocomplete="off"
+                 placeholder="Ask anything, e.g. should I invest in this outside my portfolio?"
+                 aria-label="Question for the portfolio manager about ${escapeAttr(ticker)}">
+          <button class="chat-send" id="chat-send-${ticker}" type="submit">Send</button>
+        </form>
+        <p class="chat-hint">Grounded in this run's research · educational simulation, not advice</p>
+      </div>
+    </div>`}
     <div class="result-detail" id="${detailId}" hidden>
       <section class="result-block" aria-labelledby="evidence-title-${ticker}"><div class="block-heading"><h3 id="evidence-title-${ticker}">Evidence</h3></div><div class="grid-3">${evidenceHtml}</div>${skippedResearch.length ? `<p class="hint">Skipped for speed: ${skippedResearch.map((key) => EVIDENCE_META[key].title).join(" · ")}</p>` : ""}</section>
       <section class="result-block" aria-labelledby="debate-title-${ticker}"><div class="block-heading"><h3 id="debate-title-${ticker}">Debate</h3></div><div class="debate"><article class="debate-side bull-side"><div class="mc-title">▲ Bull case</div><div class="mc-score">${Math.round((analysis.bull?.confidence ?? 0) * 100)}% argument strength</div><p class="mc-sum">${escapeHtml(analysis.bull?.summary || analysis.bull_case || "No bull case was returned.")}</p></article><article class="debate-side bear-side"><div class="mc-title">▼ Bear case</div><div class="mc-score">${Math.round((analysis.bear?.confidence ?? 0) * 100)}% risk strength</div><p class="mc-sum">${escapeHtml(analysis.bear?.summary || analysis.bear_case || "No bear case was returned.")}</p></article></div></section>
@@ -829,6 +847,15 @@ function renderResultCard(analysis) {
   card.querySelector(".result-summary").addEventListener("click", () => toggleResult(card));
   card.querySelector(".retry-btn").addEventListener("click", () => retryTicker(ticker));
   if (canAdd) $(`add-${ticker}`).addEventListener("click", () => addToPortfolio(ticker, Number(analysis.price)));
+  if (!analysis.error) {
+    $(`chat-toggle-${ticker}`).addEventListener("click", () => toggleChat(ticker));
+    $(`chat-form-${ticker}`).addEventListener("submit", (event) => {
+      event.preventDefault();
+      sendChatMessage(ticker);
+    });
+    // A re-render (hydration, ticker_completed replay) must not lose the chat.
+    if (state.chats.get(ticker)?.open) setChatOpen(ticker, true);
+  }
   const entry = state.tickers.get(ticker);
   if (entry) entry.analysis = analysis;
 }
@@ -871,6 +898,89 @@ async function addToPortfolio(ticker, price) {
   } catch (error) {
     showToast(`Could not add position: ${error.message}`, true);
     button.disabled = false;
+  }
+}
+
+/* ---------- per-ticker manager chat ---------- */
+
+function chatState(ticker) {
+  if (!state.chats.has(ticker)) {
+    state.chats.set(ticker, { messages: [], busy: false, open: false });
+  }
+  return state.chats.get(ticker);
+}
+
+function toggleChat(ticker) {
+  const chat = chatState(ticker);
+  setChatOpen(ticker, !chat.open);
+}
+
+function setChatOpen(ticker, open) {
+  const chat = chatState(ticker);
+  chat.open = open;
+  const panel = $(`chat-panel-${ticker}`);
+  const toggle = $(`chat-toggle-${ticker}`);
+  if (!panel || !toggle) return;
+  panel.hidden = !open;
+  toggle.setAttribute("aria-expanded", String(open));
+  if (open) {
+    renderChatMessages(ticker);
+    const input = $(`chat-input-${ticker}`);
+    if (input && !chat.busy) input.focus();
+  }
+}
+
+function renderChatMessages(ticker) {
+  const chat = chatState(ticker);
+  const list = $(`chat-msgs-${ticker}`);
+  if (!list) return;
+  const bubble = (message) => `
+    <div class="chat-msg ${message.role === "user" ? "user" : "assistant"}">
+      <span class="chat-author">${message.role === "user" ? "You" : "Portfolio Manager"}</span>
+      <p>${escapeHtml(message.content)}</p>
+    </div>`;
+  const typing = chat.busy
+    ? '<div class="chat-msg assistant"><span class="chat-author">Portfolio Manager</span><p class="chat-typing" aria-label="Manager is answering"><span></span><span></span><span></span></p></div>'
+    : "";
+  const markup = chat.messages.map(bubble).join("") + typing;
+  list.innerHTML = markup
+    || '<p class="chat-empty">Ask about the decision, the evidence behind it, or how this ticker fits your own plans.</p>';
+  list.scrollTop = list.scrollHeight;
+}
+
+async function sendChatMessage(ticker) {
+  const chat = chatState(ticker);
+  const input = $(`chat-input-${ticker}`);
+  const send = $(`chat-send-${ticker}`);
+  if (chat.busy || !input || !state.runId) return;
+  const content = input.value.trim();
+  if (!content) return;
+  chat.messages.push({ role: "user", content });
+  input.value = "";
+  chat.busy = true;
+  input.disabled = true;
+  send.disabled = true;
+  renderChatMessages(ticker);
+  try {
+    const response = await fetch(`/api/runs/${encodeURIComponent(state.runId)}/chat`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ticker, messages: chat.messages.slice(-20) }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.detail || `failed (${response.status})`);
+    chat.messages.push({ role: "assistant", content: payload.answer });
+  } catch (error) {
+    // Put the question back so it can be edited and resent.
+    chat.messages.pop();
+    input.value = content;
+    showToast(`Could not get an answer: ${error.message}`, true);
+  } finally {
+    chat.busy = false;
+    input.disabled = false;
+    send.disabled = false;
+    renderChatMessages(ticker);
+    input.focus();
   }
 }
 

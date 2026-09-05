@@ -229,10 +229,15 @@ class RunStore:
             async def analyze_one(ticker: str) -> StockAnalysis:
                 async with semaphore:
                     try:
-                        return await self._analyze_one(run, ticker, portfolio_summary)
+                        result = await self._analyze_one(run, ticker, portfolio_summary)
                     except Exception as exc:  # noqa: BLE001 - last-resort guard
                         logger.error("[analysis] %s crashed: %s", ticker, exc)
-                        return StockAnalysis(ticker=ticker, error=str(exc)[:300])
+                        result = StockAnalysis(ticker=ticker, error=str(exc)[:300])
+                # Publish per ticker, not only at the end: the manager chat and
+                # run-status polls can serve a finished ticker while the rest
+                # of the run is still going.
+                run.results[result.ticker] = result
+                return result
 
             results = await asyncio.gather(*(analyze_one(t) for t in run.tickers))
             run.results = {result.ticker: result for result in results}

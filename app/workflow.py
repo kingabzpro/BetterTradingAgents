@@ -133,6 +133,23 @@ def get_llm(role: str = "analysts") -> Any:
     return _llms.get(role)
 
 
+def get_chat_llm() -> Any:
+    """LLM for the follow-up manager chat: the manager role's model, but plain
+    prose - no JSON mode, no streaming (the chat is request/response, not a
+    live token pane). Returns None when no LLM is configured (mock mode)."""
+    if "chat" not in _llm_roles_initialized:
+        _llm_roles_initialized.add("chat")
+        if settings.llm_configured:
+            try:
+                _llms["chat"] = _build_llm("manager", json_mode=False, stream=False)
+            except Exception as exc:  # noqa: BLE001 - degrade to mock, don't crash
+                logger.error("[llm] could not build chat LLM: %s", exc)
+                _llms["chat"] = None
+        else:
+            _llms["chat"] = None
+    return _llms.get("chat")
+
+
 def _drop_json_mode(role: str) -> Any:
     """Rebuild a role's LLM without response_format after the provider
     rejected it (feature-detect on first use, not with a probe call)."""

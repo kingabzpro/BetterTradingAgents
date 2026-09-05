@@ -10,13 +10,15 @@ from fastapi import FastAPI, Header, HTTPException, Query
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
-from app import memory, portfolio
+from app import chat, memory, portfolio
 from app.config import settings
 from app.discovery import discover_stocks
 from app.models import (
     AnalysisRequest,
     AnalysisResponse,
     ClearHistoryResponse,
+    ManagerChatRequest,
+    ManagerChatResponse,
     PortfolioAddRequest,
     PortfolioCloseRequest,
     PortfolioImportRequest,
@@ -196,6 +198,36 @@ async def run_events(run_id: str):
 
 def _sse(event: dict) -> str:
     return f"data: {json.dumps(event, default=str)}\n\n"
+
+
+@app.post("/api/runs/{run_id}/chat", response_model=ManagerChatResponse)
+async def manager_chat(run_id: str, request: ManagerChatRequest):
+    """Follow-up Q&A with the portfolio manager about one ticker of a run."""
+    ticker = request.ticker.strip().upper()
+    if not TICKER_RE.match(ticker):
+        raise HTTPException(status_code=400, detail="invalid ticker symbol")
+    status = await store.get_status(run_id)
+    if status is None:
+        raise HTTPException(status_code=404, detail="run not found")
+    analysis = status.results.get(ticker)
+    if analysis is None:
+        raise HTTPException(status_code=404, detail=f"ticker {ticker} not in this run")
+    if analysis.error:
+        raise HTTPException(
+            status_code=409,
+            detail=f"analysis for {ticker} failed; there is nothing to discuss",
+        )
+    if request.messages[-1].role != "user":
+        raise HTTPException(status_code=400, detail="last message must be from the user")
+    try:
+        answer = await chat.answer_question(
+            analysis, [message.model_dump() for message in request.messages]
+        )
+    except Exception as exc:  # noqa: BLE001 - surfaced as a retryable 503
+        raise HTTPException(status_code=503, detail=f"manager chat failed: {exc}") from exc
+    return ManagerChatResponse(
+        ticker=ticker, answer=answer, mock_mode=not settings.llm_configured
+    )
 
 
 @app.get("/api/portfolio")

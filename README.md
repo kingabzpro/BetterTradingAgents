@@ -41,6 +41,7 @@ simulated portfolio.
 | 🗣️ | **Social sentiment** | A fifth researcher reads Reddit and StockTwits chatter, and says so when the crowd is too thin to mean anything. |
 | ⚖️ | **Risk-gated decisions** | BUYs are volatility-scaled and capped by per-ticker, invested, and cash-buffer limits; a 5-day forecast beyond the stock's own noise band (±1σ) downgrades the trade and one past half the band halves its size. Downgrades are flagged, never silent. |
 | 📜 | **Learns from its calls** | Every completed decision is recorded and later graded on realized return and alpha vs SPY; the manager weighs those lessons on the next run and the results page shows the track record. |
+| 💬 | **Chat with the manager** | Every finished ticker gets a follow-up chat grounded in that run's research, so you can ask personalized questions and make the call yourself. |
 | 🧪 | **Walk-forward backtests** | Replay the pipeline at past dates with point-in-time data only, grade every call against SPY after costs, and compare with buy-and-hold; free mock mode by default. |
 | 📡 | **Live, honest progress** | Server-Sent Events stream every agent state with per-ticker progress bars, and each agent's tokens stream into a collapsible live-reasoning pane while it thinks. |
 | 🕘 | **Durable run history** | Completed and interrupted analyses are saved in SQLite and can be reopened from the Runs page. |
@@ -162,6 +163,17 @@ bull-versus-bear debate including rebuttals, the risk-sized position, any risk f
 the track record of previous calls graded against SPY.
 
 ![Analysis results](docs/screenshots/results.png)
+
+### Chat with the Portfolio Manager
+
+The BUY/HOLD/SELL call is the system's synthesized view; the decision stays with you. Once a
+ticker finishes, its result card gets a **Chat with Portfolio Manager** button that opens a
+per-ticker conversation grounded in that run's research, the debate, and your current
+holdings. Ask anything personalized, such as whether the stock fits goals beyond this
+portfolio, what would change the call, or which risk matters most. The manager answers in
+plain prose, quotes the numbers from the run, and says plainly when a question reaches
+beyond the research. In mock mode (no `LLM_API_KEY`) the chat mirrors the recorded call
+instead of conversing.
 
 ## Quick start
 
@@ -343,6 +355,7 @@ direct `?run=<id>` link can still reopen a specific result, including after a se
 | `DELETE` | `/api/runs` | Clear the current browser's finished run history |
 | `GET` | `/api/runs/{run_id}` | Read run status and complete results |
 | `GET` | `/api/runs/{run_id}/events` | Stream live progress over SSE |
+| `POST` | `/api/runs/{run_id}/chat` | Ask the portfolio manager follow-up questions about one ticker of a run (grounded in that run's results) |
 | `GET` | `/api/portfolio` | List positions with live prices and profit/loss |
 | `POST` | `/api/portfolio/add` | Add a simulated position |
 | `POST` | `/api/portfolio/import` | Record tracked holdings (manual entry / CSV import, up to 200 per call) |
@@ -388,6 +401,9 @@ PYTHONPATH=. uv run python scripts/check_sentiment.py
 # Offline checks for the live reasoning stream: sink, caps, transient events, e2e
 PYTHONPATH=. uv run python scripts/check_streaming.py
 
+# Offline checks for the manager chat: dossier, validation, mock + history fallback
+PYTHONPATH=. uv run python scripts/check_chat.py
+
 # One-shot check that the configured LLM endpoint answers
 PYTHONPATH=. uv run python scripts/smoke_llm.py
 ```
@@ -399,6 +415,7 @@ market data. The layout is intentionally small:
 app/
   main.py        FastAPI routes, SSE stream
   workflow.py    3-stage pipeline (research -> debate -> manager) + risk gate
+  chat.py        follow-up Q&A with the manager persona, grounded in a finished run
   risk.py        deterministic sizing + exposure caps
   backtest/      walk-forward harness (point-in-time data, grading, reports)
   agents/        one module per agent (prompt, schema, mock fallback)

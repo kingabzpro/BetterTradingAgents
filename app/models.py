@@ -169,6 +169,26 @@ class ClearHistoryResponse(BaseModel):
     deleted: int
 
 
+class ChatMessage(BaseModel):
+    """One turn of the follow-up chat with the portfolio manager."""
+
+    role: Literal["user", "assistant"]
+    content: str = Field(min_length=1, max_length=2000)
+
+
+class ManagerChatRequest(BaseModel):
+    """A follow-up question about one ticker of a finished run."""
+
+    ticker: str
+    messages: list[ChatMessage] = Field(min_length=1, max_length=20)
+
+
+class ManagerChatResponse(BaseModel):
+    ticker: str
+    answer: str
+    mock_mode: bool = False
+
+
 class PortfolioPosition(BaseModel):
     id: int
     ticker: str
