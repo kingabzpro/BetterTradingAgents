@@ -71,9 +71,11 @@ class Settings:
     )
 
     # Live reasoning stream (docs/ROADMAP.md 3.2): stream agent tokens to the
-    # UI as agent_token SSE events. A provider that rejects streaming makes the
-    # role's LLM fall back to non-streaming on first use (like the JSON-mode drop).
-    stream_reasoning: bool = _env("STREAM_REASONING", "1").lower() in ("1", "true", "yes")
+    # UI as agent_token SSE events. OFF by default - in live use the stream is
+    # mostly the final JSON blob, which reads as noise next to the result card.
+    # Set STREAM_REASONING=1 to enable; a provider that rejects streaming makes
+    # the role's LLM fall back to non-streaming on first use.
+    stream_reasoning: bool = _env("STREAM_REASONING", "0").lower() in ("1", "true", "yes")
 
     @property
     def llm_configured(self) -> bool:

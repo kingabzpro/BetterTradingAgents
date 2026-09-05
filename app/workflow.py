@@ -338,7 +338,7 @@ async def _run_agent(
             await asyncio.sleep(0.4)  # mock mode: give the UI a moment
             data = mod.mock(ticker, **task_payload)
             usage: dict = {}
-            if live:
+            if live and settings.stream_reasoning:
                 await _stream_mock_text(
                     ticker, agent_name, str(data.get("summary", "")), emit
                 )

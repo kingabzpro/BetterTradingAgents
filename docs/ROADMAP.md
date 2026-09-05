@@ -60,17 +60,19 @@ acceptance criteria. Last updated: 2026-09-05.
   4 analyst slots; backtest replays get an empty social set (no point-in-time
   archive) so the honest neutral applies; UI: 5th research row + evidence card,
   old runs show "Not recorded"
-- **3.2 Live reasoning stream**: LLMs are built with `stream=True`
-  (`STREAM_REASONING`, default on) so CrewAI emits `LLMStreamChunkEvent`s; a
-  scoped `add_stream_sink` per agent run (concurrent agents never see each
-  other's tokens) forwards content chunks as `agent_token` SSE events —
-  live-only (never persisted for reconnect replay), sliding ~2 KB window in
-  the UI pane, 16 KB per-agent forward guard, thinking deltas excluded;
-  provider stream rejection is classified, drops streaming for the role and
-  retries (JSON mode preserved), exactly like the `response_format` fallback;
-  mock mode streams the deterministic summary word-by-word, skipped in
-  backtest replays; UI: collapsible per-agent reasoning pane behind the agent
-  row (click / Enter), auto-scroll, truncation marker
+- **3.2 Live reasoning stream**: LLMs can be built with `stream=True`
+  (`STREAM_REASONING`) so CrewAI emits `LLMStreamChunkEvent`s; a scoped
+  `add_stream_sink` per agent run (concurrent agents never see each other's
+  tokens) forwards content chunks as `agent_token` SSE events — live-only
+  (never persisted for reconnect replay), sliding ~2 KB window in the UI pane,
+  16 KB per-agent forward guard, thinking deltas excluded; provider stream
+  rejection is classified, drops streaming for the role and retries (JSON
+  mode preserved), exactly like the `response_format` fallback; mock mode
+  streams the deterministic summary word-by-word, skipped in backtest
+  replays; UI: collapsible per-agent reasoning pane behind the agent row.
+  **Shipped off by default after live evaluation**: what streams is mostly
+  the final JSON blob, which reads as noise next to the result card — enable
+  with `STREAM_REASONING=1` if wanted
 
 ---
 

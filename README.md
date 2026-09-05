@@ -145,14 +145,13 @@ TradingAgents credits for much of its edge:
 Server-Sent Events update the interface as every agent moves from waiting to running, complete,
 or failed. Progress bars tick per ticker as each agent finishes.
 
-Each agent also streams its reasoning live: while it works, a **reasoning** hint appears on its
-row and clicking the row unfolds a pane that fills with the model's tokens as they arrive —
-so the 30–60 s of thinking per agent is something you can watch, not wait out. The pane keeps
-a ~2 KB sliding window per agent, stays readable after the agent finishes, and mock mode
-streams the deterministic text word-by-word so the path is always exercised. Token events are
-live-only: reconnects and the run history replay the results, never thousands of cosmetic
-chunks. Set `STREAM_REASONING=0` to turn it off (a provider that rejects streaming is
-auto-detected and dropped on first use, exactly like the JSON-mode fallback).
+An opt-in live reasoning stream exists (`STREAM_REASONING=1`): each agent's tokens fill a
+collapsible pane under its row while it works. It is **off by default** — in practice the
+stream is mostly the model's final JSON blob, which reads as noise next to the result card
+rather than as insight. Token events are live-only (reconnects and run history replay
+results, never thousands of cosmetic chunks), a provider that rejects streaming is
+auto-detected and dropped, and mock mode streams deterministic text so the path stays
+testable.
 
 ![Live agent progress](docs/screenshots/live-analysis.png)
 
@@ -296,7 +295,7 @@ optional; without an LLM key, the app starts in mock mode.
 | `NIXTLA_API_KEY` | Not set | Nixtla TimeGPT 5-day forecast; falls back to the local trend model |
 | `MAX_TICKERS` | `5` | Maximum tickers accepted in one analysis |
 | `DEBATE_ROUNDS` | `2` | Bull/bear debate depth: `1` = single round, `2`+ adds one rebuttal exchange (capped at 3) |
-| `STREAM_REASONING` | `1` | Live reasoning stream: stream agent tokens to the UI (`0` disables; providers that reject it are auto-detected) |
+| `STREAM_REASONING` | `0` | Live reasoning stream: `1` streams agent tokens to the UI (off by default — the stream is mostly the final JSON and reads as noise) |
 | `STARTING_CASH` | `100000` | Initial simulated portfolio balance |
 | `DEFAULT_POSITION_SIZE` | `10000` | Suggested position value |
 | `DB_PATH` | `portfolio.db` | SQLite app database path for portfolio positions and run history |

@@ -3,13 +3,15 @@
 Run: PYTHONPATH=. uv run python scripts/check_streaming.py
 No network: LLM objects are built (never called), the sink is driven with
 synthetic events, and the e2e injects an in-memory MarketData snapshot in mock
-mode (with a live context, so the mock word-by-word stream exercises the same
-path the UI reads).
+mode. The feature is opt-in (STREAM_REASONING=1, default off), so this script
+forces it on first and asserts the default separately in a subprocess.
 """
 
 import asyncio
 import os
 import random
+import subprocess
+import sys
 import tempfile
 from pathlib import Path
 from types import SimpleNamespace
@@ -19,6 +21,7 @@ os.environ["LLM_API_KEY"] = ""
 os.environ["OLOSTEP_API_KEY"] = ""
 os.environ["FINNHUB_API_KEY"] = ""
 os.environ["NIXTLA_API_KEY"] = ""
+os.environ["STREAM_REASONING"] = "1"
 
 from app import workflow  # noqa: E402
 from app.config import settings  # noqa: E402
@@ -26,8 +29,15 @@ from app.runs import Run  # noqa: E402
 from app.tools.market_data import MarketData  # noqa: E402
 
 # ---- config flag ---------------------------------------------------------------
-assert settings.stream_reasoning is True
-print("STREAM_REASONING default on OK")
+assert settings.stream_reasoning is True  # forced on above for the checks below
+default_probe = subprocess.run(
+    [sys.executable, "-c",
+     "from app.config import settings; assert settings.stream_reasoning is False"],
+    capture_output=True, text=True, env={k: v for k, v in os.environ.items()
+                                         if k != "STREAM_REASONING"},
+)
+assert default_probe.returncode == 0, default_probe.stderr
+print("STREAM_REASONING default off, opt-in parses on OK")
 
 # ---- failure classification: stream rejections are their own bucket -------------
 assert workflow._classify_failure(
@@ -62,7 +72,7 @@ async def llm_flag_checks():
 
 
 asyncio.run(llm_flag_checks())
-print("LLM stream flag OK: on by default, dropped on rejection, JSON mode preserved")
+print("LLM stream flag OK: follows STREAM_REASONING, dropped on rejection, JSON mode preserved")
 
 
 # ---- token sink: forwards content chunks only, caps runaway volume ---------------
