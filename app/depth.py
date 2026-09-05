@@ -1,9 +1,9 @@
 """Analysis depth profiles: pick which agents run to trade thoroughness for speed.
 
 Agent counts per profile (bull, bear and the manager always run):
-  fast   = technical + news        + bull/bear + manager = 5 agents
-  medium = all four researchers    + bull/bear + manager = 7 agents
-  expert = all four researchers    + bull/bear + rebuttals + manager = 9 agents
+  fast   = technical + news             + bull/bear + manager = 5 agents
+  medium = all five researchers         + bull/bear + manager = 8 agents
+  expert = all five researchers + rebuttals                = 10 agents
 """
 
 from typing import Any, Literal
@@ -11,7 +11,7 @@ from typing import Any, Literal
 Depth = Literal["fast", "medium", "expert"]
 DEFAULT_DEPTH: Depth = "medium"
 
-_ALL_RESEARCH = ("technical", "fundamental", "news", "forecast")
+_ALL_RESEARCH = ("technical", "fundamental", "news", "forecast", "sentiment")
 
 DEPTH_PROFILES: dict[str, dict[str, Any]] = {
     "fast": {
@@ -24,13 +24,13 @@ DEPTH_PROFILES: dict[str, dict[str, Any]] = {
         "label": "Medium",
         "research": _ALL_RESEARCH,
         "rebuttals": False,
-        "note": "All four researchers, single debate round.",
+        "note": "All five researchers, single debate round.",
     },
     "expert": {
         "label": "Expert",
         "research": _ALL_RESEARCH,
         "rebuttals": True,
-        "note": "All four researchers plus the bull/bear rebuttal round.",
+        "note": "All five researchers plus the bull/bear rebuttal round.",
     },
 }
 

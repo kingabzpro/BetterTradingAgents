@@ -20,10 +20,10 @@ BetterTradingAgents is an improved and streamlined version of the TradingAgents 
 faster parallel workflow, live progress, explainable decisions, risk controls, and paper trading.
 
 Enter up to five stock tickers. Specialized agents analyze technicals, fundamentals,
-news, and the 5-day price forecast in parallel, bull and bear researchers debate across
-a rebuttal round, and a risk-gated **BUY / HOLD / SELL** decision comes back with a
-suggested position size and the full reasoning trail. Every completed call is also
-remembered and graded against what the market actually did, so the Portfolio Manager
+news, social sentiment, and the 5-day price forecast in parallel, bull and bear
+researchers debate across a rebuttal round, and a risk-gated **BUY / HOLD / SELL** decision
+comes back with a suggested position size and the full reasoning trail. Every completed call
+is also remembered and graded against what the market actually did, so the Portfolio Manager
 brings a track record to the next decision, not just fresh data.
 
 ![BetterTradingAgents home screen](docs/screenshots/home.png)
@@ -38,6 +38,7 @@ simulated portfolio.
 |:---:|---|---|
 | ⚡ | **Parallel by design** | Researchers, data fetches, and debate rounds run concurrently, and multiple tickers run side by side. |
 | ⚔️ | **Real debate** | Bull and bear each get a rebuttal round to answer the other's strongest points before the call. |
+| 🗣️ | **Social sentiment** | A fifth researcher reads Reddit and StockTwits chatter — and says so when the crowd is too thin to mean anything. |
 | ⚖️ | **Risk-gated decisions** | BUYs are volatility-scaled and capped by per-ticker, invested, and cash-buffer limits; a 5-day forecast beyond the stock's own noise band (±1σ) downgrades the trade and one past half the band halves its size. Downgrades are flagged, never silent. |
 | 📜 | **Learns from its calls** | Every completed decision is recorded and later graded on realized return and alpha vs SPY; the manager weighs those lessons on the next run and the results page shows the track record. |
 | 🧪 | **Walk-forward backtests** | Replay the pipeline at past dates with point-in-time data only, grade every call against SPY after costs, and compare with buy-and-hold — free mock mode by default. |
@@ -59,21 +60,25 @@ flowchart TD
         TA["Technical Analyst<br/>SMA · RSI · MACD · volume"]
         FA["Fundamental Analyst<br/>Growth · margins · valuation"]
         NA["News Analyst<br/>Headlines · sentiment · catalysts"]
+        SA["Sentiment Analyst<br/>Reddit · StockTwits chatter"]
         FC["Forecast Analyst<br/>TimeGPT + trend vs volatility"]
     end
 
     D --> TA
     D --> FA
     D --> NA
+    D --> SA
     D --> FC
 
     TA --> BULL["🐂 Bull Researcher<br/>Strongest case to buy"]
     FA --> BULL
     NA --> BULL
+    SA --> BULL
     FC --> BULL
     TA --> BEAR["🐻 Bear Researcher<br/>Risks and downsides"]
     FA --> BEAR
     NA --> BEAR
+    SA --> BEAR
     FC --> BEAR
 
     BULL --> RB["⚔️ Rebuttal round<br/>Each side answers the other"]
@@ -104,6 +109,18 @@ TimeGPT is optional and resilient by design:
   output fields so an analysis can still finish.
 - The live-analysis card and completed summary identify Nixtla TimeGPT when it produced the
   forecast; otherwise they identify the local model. Forecasts remain clearly labeled as estimates.
+
+### Social sentiment
+
+A Sentiment Analyst joins the research stage at Medium and Expert depth. Olostep runs a
+site-restricted search (`{ticker} stock (site:reddit.com OR site:stocktwits.com)`) and the
+agent reads the crowd's mood for the bull/bear debate — weighing hype skeptically rather
+than mistaking bravado for conviction. Honesty about thin data is built in: fewer than three
+posts reads as **neutral with low confidence** ("social volume too thin to mean anything"),
+never as a signal, and the results card shows the reading with links to the underlying
+threads. Without an `OLOSTEP_API_KEY` the same thin-volume neutral applies. Backtest
+replays have no point-in-time social archive, so they run with an empty set and the honest
+neutral reading rather than leaking present-day chatter into past dates.
 
 ### Decision memory
 
@@ -210,8 +227,8 @@ uv run uvicorn app.main:app --reload
 Open [http://localhost:8000](http://localhost:8000), add tickers such as `NVDA, AMD, META`
 (one at a time, paste several at once, or use the quick-add chips, up to 5), pick your
 outlook (**Day trading**, **Short term**, or **Long term**) and depth (**Fast** = technical +
-news + single debate round, 5 agents · **Medium** = all researchers, 7 agents ·
-**Expert** = adds the bull/bear rebuttal round, 9 agents), then select **Analyze Stocks**.
+news + single debate round, 5 agents · **Medium** = all researchers, 8 agents ·
+**Expert** = adds the bull/bear rebuttal round, 10 agents), then select **Analyze Stocks**.
 The outlook is sent to every agent, so they all weigh evidence for the horizon you actually
 trade; the depth picks how many agents run, trading thoroughness for speed.
 
@@ -263,10 +280,10 @@ optional; without an LLM key, the app starts in mock mode.
 | `LLM_REASONING_EFFORT` | Not set | Optional provider-specific reasoning effort (e.g. `none`/`low` for GLM) |
 | `LLM_MODEL_MANAGER` | `LLM_MODEL` | Per-role model for the final BUY/HOLD/SELL call |
 | `LLM_BASE_URL_MANAGER` / `LLM_API_KEY_MANAGER` | global values | Optional endpoint/key just for the manager |
-| `LLM_MODEL_ANALYSTS` (+ `_BASE_URL_` / `_API_KEY_`) | global values | Per-role overrides for the 4 researchers |
+| `LLM_MODEL_ANALYSTS` (+ `_BASE_URL_` / `_API_KEY_`) | global values | Per-role overrides for the 5 researchers |
 | `LLM_MODEL_DEBATE` (+ `_BASE_URL_` / `_API_KEY_`) | global values | Per-role overrides for the bull/bear debaters |
 | `FINNHUB_API_KEY` | Not set | Company profiles, fundamentals, and news; falls back to yfinance |
-| `OLOSTEP_API_KEY` | Not set | News search and article scraping fallback |
+| `OLOSTEP_API_KEY` | Not set | News search/scraping fallback and Reddit/StockTwits sentiment search |
 | `NIXTLA_API_KEY` | Not set | Nixtla TimeGPT 5-day forecast; falls back to the local trend model |
 | `MAX_TICKERS` | `5` | Maximum tickers accepted in one analysis |
 | `DEBATE_ROUNDS` | `2` | Bull/bear debate depth: `1` = single round, `2`+ adds one rebuttal exchange (capped at 3) |
@@ -356,6 +373,9 @@ PYTHONPATH=. uv run python scripts/check_risk.py
 # Offline checks for tracked holdings: CSV-style import, cash isolation, API surface
 PYTHONPATH=. uv run python scripts/check_portfolio_import.py
 
+# Offline checks for the sentiment analyst: thin-volume brake, provenance, hermetic e2e
+PYTHONPATH=. uv run python scripts/check_sentiment.py
+
 # One-shot check that the configured LLM endpoint answers
 PYTHONPATH=. uv run python scripts/smoke_llm.py
 ```
@@ -391,6 +411,8 @@ uv run python -m app.backtest --tickers NVDA,AMD,META --start 2026-03-01 --end 2
 - **Point-in-time data**: six months of OHLCV ending at each decision date, company
   news filtered to `published <= date` (anti-look-ahead, enforced in code), and
   current-vintage fundamentals — a known bias the report states explicitly.
+  Social posts have no point-in-time archive, so the Sentiment Analyst replays with
+  an empty set (thin-volume neutral) instead of leaking present-day chatter.
   Portfolio context and decision memory are disabled during replay so nothing
   leaks from after the date.
 - **Grading**: BUY earns the window's return minus a 2×5bp round-trip cost, SELL

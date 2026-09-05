@@ -55,7 +55,7 @@ Respond with ONLY a JSON object, no markdown fences, no text outside the JSON:
 Research results from the analysts (a value of null or "FAILED" means that input is unavailable - do not use it):
 {json.dumps(payload, indent=2, default=str)}
 
-Identify the most serious risks: valuation, negative technical signals, business risk, negative news, an unfavorable 5-day projection, uncertainty. Keep it short and concrete.
+Identify the most serious risks: valuation, negative technical signals, business risk, negative news, souring social sentiment, an unfavorable 5-day projection, uncertainty. Keep it short and concrete.
 
 Respond with ONLY a JSON object, no markdown fences, no text outside the JSON:
 {{"score": <number 0.0-1.0 = how serious the risks are>, "summary": "<at most 3 sentences>"}}""",
@@ -87,7 +87,7 @@ def mock(ticker: str, payload: dict, rebuttal: bool = False) -> dict:
             ),
         }
     score = 0.45
-    for key in ("technical", "fundamental", "news", "forecast"):
+    for key in ("technical", "fundamental", "news", "sentiment", "forecast"):
         entry = payload.get(key)
         if isinstance(entry, dict):
             if entry.get("signal") in ("bearish", "negative"):

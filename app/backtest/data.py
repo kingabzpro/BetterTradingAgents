@@ -51,6 +51,7 @@ def market_from_payload(ticker: str, as_of: str, payload: dict) -> MarketData:
         volumes=history.get("volumes", []),
         fundamentals=payload.get("fundamentals", {}),
         news=payload.get("news", []),
+        social=payload.get("social", []),
         sources=payload.get("sources", {}),
         as_of=as_of,
     )
@@ -117,11 +118,16 @@ async def build_snapshot(
     payload = {
         "history": history,
         "news": news,
+        # Social posts are a current-vintage web search with no point-in-time
+        # equivalent; replays see an empty set and the sentiment analyst
+        # reports a thin-volume neutral instead of leaking future chatter.
+        "social": [],
         "fundamentals": fundamentals.get("fundamentals", {}),
         "company_name": fundamentals.get("company_name", ticker),
         "sources": {
             "prices": "yfinance",
             "news": "finnhub" if news else "none",
+            "social": "none",
             "fundamentals": fundamentals.get("source", "none"),
         },
     }

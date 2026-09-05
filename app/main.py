@@ -73,6 +73,7 @@ async def health():
             "prices": "yfinance",
             "fundamentals": "finnhub" if settings.finnhub_api_key else "yfinance",
             "news_search": "olostep" if settings.olostep_api_key else "disabled",
+            "social": "olostep" if settings.olostep_api_key else "disabled",
             "forecast": "timegpt" if settings.nixtla_api_key else "local",
         },
         "max_tickers": settings.max_tickers,

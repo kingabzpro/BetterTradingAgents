@@ -13,7 +13,7 @@ Signal = Literal["bullish", "bearish", "neutral", "positive", "negative", "unkno
 
 
 class AgentResult(BaseModel):
-    """Result of a single agent (technical / fundamental / news / forecast / bull / bear)."""
+    """Result of a single agent (technical / fundamental / news / sentiment / forecast / bull / bear)."""
 
     agent: str
     signal: str = "unknown"
@@ -22,7 +22,7 @@ class AgentResult(BaseModel):
 
 
 class AnalystResult(BaseModel):
-    """Output schema the three research analysts must return."""
+    """Output schema every research analyst must return."""
 
     ticker: str
     signal: str = "neutral"
@@ -51,7 +51,7 @@ class ManagerResult(BaseModel):
 class SourceReference(BaseModel):
     """A safe, display-ready reference to evidence used by the analysis."""
 
-    kind: Literal["price", "fundamentals", "news"]
+    kind: Literal["price", "fundamentals", "news", "social"]
     title: str
     provider: str
     url: str = ""
@@ -95,6 +95,7 @@ class StockAnalysis(BaseModel):
     technical: AgentResult | None = None
     fundamental: AgentResult | None = None
     news: AgentResult | None = None
+    sentiment: AgentResult | None = None
     forecast: AgentResult | None = None
     bull: AgentResult | None = None
     bear: AgentResult | None = None

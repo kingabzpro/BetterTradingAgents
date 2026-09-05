@@ -2,7 +2,7 @@
 
 Research-backed implementation plans for everything after the current quick wins.
 Each item lists the evidence behind it, the concrete design in this codebase, and
-acceptance criteria. Last updated: 2026-09-04.
+acceptance criteria. Last updated: 2026-09-05.
 
 **Already shipped** (this is the baseline the plans build on):
 
@@ -49,6 +49,17 @@ acceptance criteria. Last updated: 2026-09-04.
   estimate; JSON+markdown reports in `docs/backtests/` with the
   memorization-risk flag; `scripts/backtest_smoke.py` regenerates the
   3-ticker × 6-date baseline
+
+- **3.1 Sentiment / social analyst**: `app/agents/sentiment.py` — a 5th researcher
+  in the stage-1 gather (Medium/Expert depth) reading Reddit/StockTwits posts from
+  an Olostep site-restricted search (`{ticker} stock (site:reddit.com OR
+  site:stocktwits.com)`, `MarketData.social`), same `AnalystResult` schema; fewer
+  than 3 posts reads as neutral with low confidence ("social volume too thin to
+  mean anything") in both LLM and mock modes; social threads surface as
+  `kind="social"` source references; the risk gate's missing-input brake now counts
+  4 analyst slots; backtest replays get an empty social set (no point-in-time
+  archive) so the honest neutral applies; UI: 5th research row + evidence card,
+  old runs show "Not recorded"
 
 ---
 
@@ -146,18 +157,7 @@ Shipped — see the baseline above.
 
 ### 3.1 Sentiment / social analyst (4th researcher)
 
-**Why.** TradingAgents' analyst team includes a sentiment analyst reading social
-media; StockTwits/Reddit sentiment demonstrably predicts short-horizon returns for
-retail-driven names ([FinBERT + StockTwits study](https://pmc.ncbi.nlm.nih.gov/articles/PMC10280432)).
-
-**Design.** Clone the `news.py` pattern: `app/agents/sentiment.py`, data from an
-Olostep query `"{ticker} (site:reddit.com OR site:stocktwits.com)"`, keyword/LLM
-sentiment scoring in the same `AnalystResult` schema, runs in the stage-1
-`asyncio.gather`. Mock mode: the existing positive/negative word lists. Show as a
-4th column in the results UI. Flag when social volume is too thin to mean anything
-(< N results → neutral with low confidence).
-
-**Effort:** S–M.
+Shipped — see the baseline above.
 
 ### 3.2 Stream agent reasoning live (README roadmap)
 
@@ -202,14 +202,14 @@ unsized, un-gated decision to a broker.
 
 ## Suggested order
 
-Phase 2 is complete: 2.1 Rebuttal round, 2.3 Reliability + per-role models and
-2.2 Backtest harness are shipped (see the baseline above), alongside 1.1
-Decision memory and 1.2 Risk layer from Phase 1. Remaining work, in order:
+Phases 1 and 2 are complete (see the baseline above), and 3.1 Sentiment analyst is
+shipped. Remaining work, in order:
 
 | # | Item | Why this position |
 |---|------|-------------------|
-| 1 | 3.1–3.3 | Breadth, measured with the new harness |
-| 2 | 4.1 Alpaca | Only after risk + memory are proven |
+| 1 | 3.2 Live reasoning stream | UX win on existing SSE plumbing |
+| 2 | 3.3 Debate-depth tuning | Needs the 2.2 harness, which exists — run the grid |
+| 3 | 4.1 Alpaca | Only after risk + memory are proven |
 
 ## Bibliography
 

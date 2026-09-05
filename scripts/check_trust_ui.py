@@ -45,7 +45,8 @@ assert [item["url"] for item in yf_items] == [
 
 # Only display metadata leaves the market-data layer; scraped article content does not.
 market = SimpleNamespace(
-    sources={"prices": "yfinance", "fundamentals": "finnhub", "news": "olostep"},
+    sources={"prices": "yfinance", "fundamentals": "finnhub", "news": "olostep",
+             "social": "olostep"},
     news=[
         {
             "title": "Evidence headline",
@@ -56,9 +57,20 @@ market = SimpleNamespace(
         },
         {"title": "Evidence headline", "url": "https://news.example/evidence"},
     ],
+    social=[
+        {
+            "title": "Reddit chatter",
+            "source": "reddit.com",
+            "summary": "crowd mood",
+            "url": "https://reddit.com/r/stocks/x",
+        },
+    ],
 )
 references = _source_references(market)
-assert len(references) == 1
+assert len(references) == 2
+assert [r.kind for r in references] == ["news", "social"]
+assert references[1].provider == "reddit.com"
+assert references[1].published_at is None  # social search carries no dates
 dumped_reference = references[0].model_dump()
 assert dumped_reference["provider"] == "Example News"
 assert "content" not in dumped_reference

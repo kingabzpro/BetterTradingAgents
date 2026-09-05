@@ -1,7 +1,9 @@
 """Market data for one ticker, merged from three providers:
 
 - Finnhub  -> company profile, fundamental metrics and company news ("info")
-- Olostep  -> web news search + article scraping (fallback when Finnhub is thin)
+- Olostep  -> web news search + article scraping (fallback when Finnhub is thin),
+              and the Reddit / StockTwits social search behind the Sentiment
+              Analyst (ROADMAP 3.1)
 - yfinance -> historical daily closes (all technical indicators are computed
               from these) and as a general fallback for fundamentals/news
 
@@ -63,7 +65,8 @@ class MarketData:
     volumes: list[float] = field(default_factory=list)
     fundamentals: dict = field(default_factory=dict)
     news: list[dict] = field(default_factory=list)
-    sources: dict = field(default_factory=dict)  # prices / fundamentals / news
+    social: list[dict] = field(default_factory=list)  # Reddit / StockTwits posts
+    sources: dict = field(default_factory=dict)  # prices / fundamentals / news / social
     as_of: str = ""
 
 
@@ -72,9 +75,10 @@ async def get_stock_data(ticker: str) -> MarketData:
     yf_task = asyncio.create_task(_yf_all(ticker))
     fundamentals_task = asyncio.create_task(_finnhub_fundamentals(ticker))
     news_task = asyncio.create_task(_finnhub_news(ticker))
+    social_task = asyncio.create_task(_olostep_social(ticker))
 
-    yf_data, finnhub_fund, finnhub_news = await asyncio.gather(
-        yf_task, fundamentals_task, news_task
+    yf_data, finnhub_fund, finnhub_news, social = await asyncio.gather(
+        yf_task, fundamentals_task, news_task, social_task
     )
 
     data = MarketData(ticker=ticker)
@@ -106,15 +110,19 @@ async def get_stock_data(ticker: str) -> MarketData:
             data.news, data.sources["news"] = olostep_news, "olostep"
         else:
             data.news, data.sources["news"] = yf_data["news"], "yfinance"
+    # Social sentiment posts (ROADMAP 3.1): Olostep site-restricted search.
+    data.social, data.sources["social"] = social, ("olostep" if social else "none")
     data.sources["prices"] = "yfinance"
     data.as_of = datetime.now(timezone.utc).isoformat()
 
     logger.info(
-        "[%s] data ready: fundamentals=%s news=%s (%d items)",
+        "[%s] data ready: fundamentals=%s news=%s (%d items), social=%s (%d posts)",
         ticker,
         data.sources["fundamentals"],
         data.sources["news"],
         len(data.news),
+        data.sources["social"],
+        len(data.social),
     )
     return data
 
@@ -510,6 +518,42 @@ def _olostep_links(payload: dict) -> list[dict]:
         except ValueError:
             return []
     return []
+
+
+async def _olostep_social(ticker: str) -> list[dict]:
+    """Reddit / StockTwits posts about the ticker (ROADMAP 3.1).
+
+    A site-restricted web search, not a dated API: posts are current-vintage,
+    so backtest snapshots never call this - they replay with an empty set and
+    the sentiment analyst reports a thin-volume neutral.
+    """
+    if not settings.olostep_api_key:
+        return []
+    query = f"{ticker} stock (site:reddit.com OR site:stocktwits.com)"
+    try:
+        async with httpx.AsyncClient(timeout=45) as client:
+            response = await client.post(
+                OLOSTEP_SEARCH,
+                headers={"Authorization": f"Bearer {settings.olostep_api_key}"},
+                json={"query": query, "num_results": 8},
+            )
+            response.raise_for_status()
+            items = []
+            for link in _olostep_links(response.json())[:8]:
+                url = _safe_http_url(link.get("url", ""))
+                items.append(
+                    {
+                        "title": link.get("title", ""),
+                        "source": urlparse(url).netloc.replace("www.", ""),
+                        "published": "",
+                        "summary": (link.get("description") or "")[:300],
+                        "url": url,
+                    }
+                )
+            return [n for n in items if n["title"]]
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("[%s] olostep social search failed: %s", ticker, exc)
+        return []
 
 
 def _safe_http_url(value: object) -> str:

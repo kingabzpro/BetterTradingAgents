@@ -4,6 +4,7 @@ const ICONS = {
   technical: '<svg aria-hidden="true" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 12.5 6 8l2.5 2.5L13.5 4"/></svg>',
   fundamental: '<svg aria-hidden="true" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M3 3.5h10M3 7h10M3 10.5h6"/><circle cx="12.4" cy="10.7" r="1.6"/></svg>',
   news: '<svg aria-hidden="true" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="8" cy="8" r="5.7"/><path d="M2.3 8h11.4M8 2.3c-1.8 1.6-2.7 3.5-2.7 5.7s.9 4.1 2.7 5.7c1.8-1.6 2.7-3.5 2.7-5.7S9.8 3.9 8 2.3z"/></svg>',
+  sentiment: '<svg aria-hidden="true" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M13.5 8a5.5 5.5 0 0 1-8.1 4.8L2.5 13.5l.7-2.9A5.5 5.5 0 1 1 13.5 8z"/><path d="M5.8 7.2h.01M8 7.2h.01M10.2 7.2h.01" stroke-width="2"/></svg>',
   forecast: '<svg aria-hidden="true" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 12.5 6 9l2.5 2.5L12 8"/><path d="M12 8l2.3-2.3" stroke-dasharray="1.5 1.3"/><path d="M12.2 5.7h2.1v2.1"/></svg>',
   bull: '<svg aria-hidden="true" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 12.5 12.5 3.5M6.5 3.5h6v6"/></svg>',
   bear: '<svg aria-hidden="true" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 3.5l9 9M12.5 6.5v6h-6"/></svg>',
@@ -16,6 +17,7 @@ const AGENTS = [
   { key: "technical", label: "Technical", stage: "Research" },
   { key: "fundamental", label: "Fundamentals", stage: "Research" },
   { key: "news", label: "News", stage: "Research" },
+  { key: "sentiment", label: "Sentiment", stage: "Research" },
   { key: "forecast", label: "Forecast", stage: "Research" },
   { key: "bull", label: "Bull", stage: "Debate" },
   { key: "bear", label: "Bear", stage: "Debate" },
@@ -34,13 +36,14 @@ const OUTLOOK_KEY = "bta:outlook";
 const DEPTH_KEY = "bta:depth";
 const DEPTH_PROFILES = {
   fast: { label: "Fast", research: ["technical", "news"], rebuttals: false },
-  medium: { label: "Medium", research: ["technical", "fundamental", "news", "forecast"], rebuttals: false },
-  expert: { label: "Expert", research: ["technical", "fundamental", "news", "forecast"], rebuttals: true },
+  medium: { label: "Medium", research: ["technical", "fundamental", "news", "forecast", "sentiment"], rebuttals: false },
+  expert: { label: "Expert", research: ["technical", "fundamental", "news", "forecast", "sentiment"], rebuttals: true },
 };
 const EVIDENCE_META = {
   technical: { title: "Technical", help: "Trend, momentum, volatility and volume" },
   fundamental: { title: "Fundamentals", help: "Growth, margins and valuation" },
   news: { title: "News", help: "Recent potentially market-moving headlines" },
+  sentiment: { title: "Sentiment", help: "Retail chatter on Reddit and StockTwits; thin volume reads neutral" },
   forecast: { title: "Forecast", help: "5-day statistical projection vs volatility" },
 };
 const $ = (id) => document.getElementById(id);
@@ -107,7 +110,8 @@ document.addEventListener("DOMContentLoaded", async () => {
     const providers = health.providers || {};
     $("provider-line").textContent =
       `data: ${providers.prices || "?"} prices, ${providers.fundamentals || "?"} fundamentals, ` +
-      `${providers.news_search || "?"} news search, ${providers.forecast || "local"} forecast. model: ${health.llm_model || "mock"}`;
+      `${providers.news_search || "?"} news search, ${providers.social === "olostep" ? "reddit/stocktwits sentiment" : "no social search"}, ` +
+      `${providers.forecast || "local"} forecast. model: ${health.llm_model || "mock"}`;
   } catch (_) {
     // The analysis request will show a concrete error if the server is unavailable.
   }
@@ -448,7 +452,8 @@ function hydrateResults(results, restored) {
       // run that has forecast_method genuinely failed.
       const legacyMissing = agent.rebuttal
         ? !(agent.key in analysis)
-        : agent.key === "forecast" && !result && !analysis.forecast_method;
+        : (agent.key === "forecast" && !result && !analysis.forecast_method)
+          || (agent.key === "sentiment" && !result && analysis.providers && !("social" in analysis.providers));
       if (agent.rebuttal && legacyMissing && !restored) return;
       const available = agent.key === "manager" ? !analysis.error : Boolean(result);
       const statusClass = legacyMissing ? "neutral" : available ? "done" : "failed";
@@ -539,7 +544,7 @@ function handleEvent(event) {
       entry.done = entry.total;
       entry.agents = {
         technical: event.analysis.technical, fundamental: event.analysis.fundamental,
-        news: event.analysis.news, forecast: event.analysis.forecast,
+        news: event.analysis.news, sentiment: event.analysis.sentiment, forecast: event.analysis.forecast,
         bull: event.analysis.bull, bear: event.analysis.bear,
         bull_rebuttal: event.analysis.bull_rebuttal, bear_rebuttal: event.analysis.bear_rebuttal,
         manager: { signal: event.decision, confidence: event.confidence, summary: event.analysis.summary },
@@ -658,7 +663,8 @@ function setHeader(ticker, price, name, sources) {
   else if (priceElement && name) priceElement.textContent = name;
   if (sourceElement && sources) {
     const forecastSource = sources.forecast === "timegpt" ? "Nixtla TimeGPT" : sources.forecast === "local" ? "local forecast" : null;
-    const unique = [...new Set([sources.prices, sources.fundamentals, sources.news, forecastSource].filter((source) => source && source !== "none"))];
+    const socialSource = sources.social === "olostep" ? "reddit/stocktwits" : null;
+    const unique = [...new Set([sources.prices, sources.fundamentals, sources.news, socialSource, forecastSource].filter((source) => source && source !== "none"))];
     sourceElement.textContent = unique.length ? `via ${unique.join(" + ")}` : "";
   }
 }
@@ -731,6 +737,11 @@ function renderResultCard(analysis) {
     || (analysis.forecast_method
       ? null
       : { signal: "unknown", confidence: 0, summary: "This run predates the Forecast analyst, so no projection was recorded." });
+  // Runs saved before the Sentiment analyst shipped have no "social" provider key.
+  const sentimentResult = analysis.sentiment
+    || (analysis.providers && !("social" in analysis.providers)
+      ? { signal: "unknown", confidence: 0, summary: "This run predates the Sentiment analyst, so no social reading was recorded." }
+      : null);
   const canAdd = analysis.decision === "BUY" && analysis.price && !analysis.error;
   const positionSize = analysis.suggested_size_usd || 10000;
   const defaultQty = analysis.price ? Math.max(1, Math.floor(positionSize / analysis.price)) : 0;
@@ -744,7 +755,7 @@ function renderResultCard(analysis) {
   const evidenceHtml = profile.research.map((key) => evidenceCard(
     EVIDENCE_META[key].title,
     EVIDENCE_META[key].help,
-    key === "forecast" ? forecastResult : analysis[key],
+    key === "forecast" ? forecastResult : key === "sentiment" ? sentimentResult : analysis[key],
     key,
   )).join("");
 

@@ -91,7 +91,9 @@ def evaluate(
     if failed >= 2:
         if confidence > 0.5:
             confidence = 0.5
-        flags.append(f"confidence capped at 50%: {failed}/3 analyst inputs failed")
+        flags.append(
+            f"confidence capped at 50%: {failed}/{len(analysts)} analyst inputs failed"
+        )
 
     z = forecast_z(forecast_change_pct, vol_ann_pct)
     band = forecast_noise_pct(vol_ann_pct)

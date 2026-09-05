@@ -1,4 +1,4 @@
-"""Analysis workflow: 4 parallel research agents -> bull+bear in parallel -> manager.
+"""Analysis workflow: 5 parallel research agents -> bull+bear in parallel -> manager.
 
 Every agent run is one single-agent CrewAI crew. One agent failing never kills
 the run - its slot becomes None and downstream agents are told the input is
@@ -13,7 +13,7 @@ import time
 from typing import Any, Awaitable, Callable
 
 from app import risk
-from app.agents import bear, bull, forecast, fundamental, manager, news, technical
+from app.agents import bear, bull, forecast, fundamental, manager, news, sentiment, technical
 from app.config import settings
 from app.depth import DEFAULT_DEPTH, depth_profile
 from app.models import AgentResult, PortfolioSummary, SourceReference, StockAnalysis
@@ -35,6 +35,7 @@ ROLE_BY_AGENT = {
     "technical": "analysts",
     "fundamental": "analysts",
     "news": "analysts",
+    "sentiment": "analysts",
     "forecast": "analysts",
     "bull": "debate",
     "bear": "debate",
@@ -402,6 +403,25 @@ def _source_references(market: Any) -> list[SourceReference]:
                 published_at=str(item.get("published") or "").strip() or None,
             )
         )
+    # A few social posts so the sentiment reading can be checked by hand.
+    social_provider = market.sources.get("social", "unknown")
+    for item in market.social[:3]:
+        title = str(item.get("title") or "").strip()
+        if not title:
+            continue
+        url = str(item.get("url") or "").strip()
+        key = (title.casefold(), url)
+        if key in seen:
+            continue
+        seen.add(key)
+        references.append(
+            SourceReference(
+                kind="social",
+                title=title[:240],
+                provider=(str(item.get("source") or social_provider).strip() or "social")[:100],
+                url=url,
+            )
+        )
     return references
 
 
@@ -525,11 +545,20 @@ async def analyze_ticker(
                 token_totals=token_totals,
                 payload={"items": market.news, "user_context": user_ctx},
             )
+        if key == "sentiment":
+            return await _run_agent(
+                sentiment,
+                ticker,
+                emit,
+                token_totals=token_totals,
+                payload={"items": market.social, "user_context": user_ctx},
+            )
         return await _run_agent(
             forecast, ticker, emit, token_totals=token_totals, payload=forecast_payload
         )
 
-    research_keys = [key for key in ("technical", "fundamental", "news", "forecast") if key in research]
+    order = ("technical", "fundamental", "news", "forecast", "sentiment")
+    research_keys = [key for key in order if key in research]
     research_data = dict(
         zip(
             research_keys,
@@ -539,10 +568,12 @@ async def analyze_ticker(
     tech_data = research_data.get("technical")
     fund_data = research_data.get("fundamental")
     news_data = research_data.get("news")
+    sentiment_data = research_data.get("sentiment")
     forecast_data = research_data.get("forecast")
     tech = technical.to_result(tech_data, ticker) if tech_data else None
     fund = fundamental.to_result(fund_data, ticker) if fund_data else None
     news_r = news.to_result(news_data, ticker) if news_data else None
+    sentiment_r = sentiment.to_result(sentiment_data, ticker) if sentiment_data else None
     forecast_r = forecast.to_result(forecast_data, ticker) if forecast_data else None
 
     def slot(key: str, result: AgentResult | None) -> dict | str:
@@ -559,6 +590,7 @@ async def analyze_ticker(
         "technical": slot("technical", tech),
         "fundamental": slot("fundamental", fund),
         "news": slot("news", news_r),
+        "sentiment": slot("sentiment", sentiment_r),
         "forecast": slot("forecast", forecast_r),
     }
 
@@ -708,7 +740,7 @@ async def analyze_ticker(
             decision,
             confidence,
             ticker,
-            analysts=(tech, fund, news_r),
+            analysts=(tech, fund, news_r, sentiment_r),
             vol_ann_pct=vol_ann_pct,
             portfolio=portfolio_summ,
             forecast_change_pct=forecast_change_pct,
@@ -734,6 +766,7 @@ async def analyze_ticker(
         technical=tech,
         fundamental=fund,
         news=news_r,
+        sentiment=sentiment_r,
         forecast=forecast_r,
         bull=bull_r,
         bear=bear_r,
