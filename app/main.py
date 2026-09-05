@@ -38,6 +38,23 @@ app = FastAPI(title="BetterTradingAgents")
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
+@app.middleware("http")
+async def revalidate_assets(request, call_next):
+    """Never let the browser serve a stale UI mix (old CSS + new markup).
+
+    Static files only carry ETag/Last-Modified, so browsers heuristic-cache
+    them and may skip revalidation entirely; since the files change in place,
+    that can pair a stale stylesheet with fresh HTML - visibly broken layout.
+    "no-cache" means revalidate before use (unchanged files still 304), and
+    the ?v= bumps on asset URLs then always resolve to a consistent set.
+    """
+    response = await call_next(request)
+    path = request.url.path
+    if path.startswith(("/static/", "/api/")) or path in ("/", "/portfolio", "/history"):
+        response.headers["Cache-Control"] = "no-cache"
+    return response
+
+
 @app.on_event("startup")
 async def startup() -> None:
     await portfolio.init()

@@ -143,6 +143,11 @@ async def endpoint_checks() -> None:
         assert response.json()["results"]["MSFT"]["as_of"]
         stale = await client.get("/api/runs/does-not-exist")
         assert stale.status_code == 404
+        # UI assets must always revalidate: a heuristically cached stale
+        # stylesheet paired with fresh markup produces broken layout.
+        for path in ("/static/style.css?v=15", "/static/app.js?v=18", "/"):
+            asset = await client.get(path)
+            assert asset.headers.get("cache-control") == "no-cache", path
     store.runs.pop(run.run_id, None)
     settings.db_path = original_db
 
