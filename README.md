@@ -54,45 +54,20 @@ simulated portfolio.
 
 ```mermaid
 flowchart TD
-    T["📈 Tickers<br/>NVDA · AMD · META"] --> D["Market data collection (parallel)<br/>Finnhub · Olostep · yfinance · TimeGPT"]
-
-    subgraph Research[Parallel research]
-        direction LR
-        TA["Technical Analyst<br/>SMA · RSI · MACD · volume"]
-        FA["Fundamental Analyst<br/>Growth · margins · valuation"]
-        NA["News Analyst<br/>Headlines · sentiment · catalysts"]
-        SA["Sentiment Analyst<br/>Reddit · StockTwits chatter"]
-        FC["Forecast Analyst<br/>TimeGPT + trend vs volatility"]
-    end
-
-    D --> TA
-    D --> FA
-    D --> NA
-    D --> SA
-    D --> FC
-
-    TA --> BULL["🐂 Bull Researcher<br/>Strongest case to buy"]
-    FA --> BULL
-    NA --> BULL
-    SA --> BULL
-    FC --> BULL
-    TA --> BEAR["🐻 Bear Researcher<br/>Risks and downsides"]
-    FA --> BEAR
-    NA --> BEAR
-    SA --> BEAR
-    FC --> BEAR
-
-    BULL --> RB["⚔️ Rebuttal round<br/>Each side answers the other"]
-    BEAR --> RB
-
-    RB --> PM["Portfolio Manager<br/>Weighs debate + holdings + track record"]
-    MEM["📜 Decision memory<br/>Past calls graded vs SPY"] --> PM
-    PM --> RISK["Risk gate<br/>Vol-scaled size · forecast check · exposure caps"]
-    RISK --> RESULT["BUY · HOLD · SELL<br/>Confidence + size + reasoning trail"]
+    T["📈 Your tickers"] --> D["📡 Market data<br/>yfinance · Finnhub · Olostep · TimeGPT"]
+    D --> R["🔬 Five researchers in parallel<br/>technical · fundamentals · news · sentiment · forecast"]
+    R --> B["⚔️ Bull vs bear debate<br/>each side answers the other"]
+    B --> M["👔 Portfolio manager<br/>weighs debate, holdings, track record"]
+    MEM["📜 Decision memory<br/>past calls graded vs SPY"] --> M
+    M --> G["🛡️ Risk gate<br/>vol-scaled size · exposure caps"]
+    G --> V["✅ BUY · HOLD · SELL<br/>confidence + size + reasoning trail"]
+    V --> C["💬 Chat with the manager<br/>ask anything, you decide"]
 ```
 
 The research, data-fetch, and debate stages run concurrently with `asyncio.gather`. Multiple tickers
 also run side by side, with up to five by default and one portfolio snapshot shared across the run.
+The pipeline ends in a conversation: the manager's call is a starting view, and the per-ticker chat
+helps you reach your own decision.
 
 ### TimeGPT forecasting
 
