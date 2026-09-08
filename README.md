@@ -152,9 +152,15 @@ testable.
 
 ### Explainable results
 
-Expand any ticker to inspect the plain-English decision summary, analyst reports, the full
-bull-versus-bear debate including rebuttals, the risk-sized position, any risk flags, and
-the track record of previous calls graded against SPY.
+The summary row shows the final call with its evidence-strength label, current price, your
+horizon, data age (stale and cached states included), analyst coverage with a compact signal
+split such as `3 bullish / 1 neutral / 1 bearish`, and the risk summary. When the deterministic
+risk gate overrides the manager, the call renders as `Manager: BUY -> Final: HOLD` with the
+exact flag that caused it. Expand any ticker to read the decision brief in one order: manager
+conclusion, the conditions that would change the call (`would_upgrade_if` /
+`would_downgrade_if`, labeled as conditions, not alerts), risk changes, the bull-versus-bear
+debate including rebuttals, analyst evidence, sources, and the track record of previous calls
+graded against SPY.
 
 ![Analysis results](docs/screenshots/results.png)
 
@@ -371,13 +377,18 @@ curl -X POST http://localhost:8000/api/analyze \
 
 </details>
 
-Each result in `GET /api/runs/{run_id}` carries the decision (`BUY`/`HOLD`/`SELL`), confidence,
-the five-day forecast (`forecast_price_5d`, `forecast_change_5d_pct`, and `forecast_method`),
-plus its noise-band assessment (`forecast_band_pct`, the ±1σ five-day move implied by the
-stock's own volatility, and `forecast_z`, the forecast as a multiple of that band; the manager
-prompt and the risk gate both consume it), per-agent reports (including both rebuttal rounds),
-and the risk gate's output: `suggested_size_usd` (the volatility-scaled position size) and
-`risk_flags` (why a BUY was downgraded or confidence capped, if it was).
+Each result in `GET /api/runs/{run_id}` carries the final decision (`BUY`/`HOLD`/`SELL`) and
+confidence, plus the manager's own pre-gate call (`manager_decision`,
+`manager_confidence`), the two change conditions (`would_upgrade_if`,
+`would_downgrade_if`), and a server-computed `data_quality` object (data timestamp,
+expected/available/failed/skipped analysts, an outlook-specific staleness flag, and provider
+fallbacks). It also carries the five-day forecast (`forecast_price_5d`,
+`forecast_change_5d_pct`, and `forecast_method`), plus its noise-band assessment
+(`forecast_band_pct`, the ±1σ five-day move implied by the stock's own volatility, and
+`forecast_z`, the forecast as a multiple of that band; the manager prompt and the risk gate
+both consume it), per-agent reports (including both rebuttal rounds), and the risk gate's
+output: `suggested_size_usd` (the volatility-scaled position size) and `risk_flags` (why a
+BUY was downgraded or confidence capped, if it was).
 
 ## Development
 
@@ -398,6 +409,9 @@ PYTHONPATH=. uv run python scripts/check_streaming.py
 # Offline checks for the manager chat: dossier, validation, mock + history fallback
 PYTHONPATH=. uv run python scripts/check_chat.py
 
+# Offline checks for the decision brief: staleness by outlook, coverage, gate change
+PYTHONPATH=. uv run python scripts/check_decision_brief.py
+
 # One-shot check that the configured LLM endpoint answers
 PYTHONPATH=. uv run python scripts/smoke_llm.py
 ```
@@ -411,6 +425,7 @@ app/
   workflow.py    3-stage pipeline (research -> debate -> manager) + risk gate
   chat.py        follow-up Q&A with the manager persona, grounded in a finished run
   risk.py        deterministic sizing + exposure caps
+  quality.py     data-quality metadata: freshness, coverage, provider fallbacks
   backtest/      walk-forward harness (point-in-time data, grading, reports)
   agents/        one module per agent (prompt, schema, mock fallback)
   tools/         market data (Finnhub/Olostep/yfinance), indicators

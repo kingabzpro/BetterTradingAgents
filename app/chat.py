@@ -109,14 +109,23 @@ def _dossier(analysis: StockAnalysis, portfolio: PortfolioSummary | None) -> dic
         "price": analysis.price,
         "as_of": analysis.as_of,
         "system_view": {
-            "decision": analysis.decision,
+            "manager_decision": analysis.manager_decision,
+            "manager_confidence": analysis.manager_confidence,
+            "final_decision": analysis.decision,
             "confidence": analysis.confidence,
             "summary": analysis.summary,
             "bull_case": analysis.bull_case,
             "bear_case": analysis.bear_case,
+            "would_upgrade_if": analysis.would_upgrade_if or None,
+            "would_downgrade_if": analysis.would_downgrade_if or None,
             "suggested_size_usd": analysis.suggested_size_usd,
             "risk_flags": analysis.risk_flags,
+            "note": (
+                "manager_decision is the manager's call before the deterministic "
+                "risk gate; final_decision is what the risk gate returned."
+            ),
         },
+        "data_quality": analysis.data_quality.model_dump(),
         "analysts": {
             key: _agent_view(getattr(analysis, key))
             for key in ("technical", "fundamental", "news", "sentiment", "forecast")

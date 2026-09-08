@@ -44,11 +44,14 @@ Decision rules:
 - "current_portfolio" lists positions already held. Account for existing exposure: a BUY that adds to an already-large position, or a SELL when nothing is held, needs somewhat stronger justification.
 - "past_decisions" is this system's own track record on this ticker (earlier calls with realized returns, alpha vs SPY and a one-line lesson); "cross_ticker_lessons" carries lessons from other tickers. Use them to repeat what worked and correct what did not - but one or two outcomes are weak evidence, never a substitute for the current research above.
 
+"would_upgrade_if" and "would_downgrade_if" state what evidence would change this call. Ground each one in the dossier above (a reading, a level, a reported metric), keep each to one sentence, and never promise a price target or an alert - they are conditions, not predictions.
+
 Respond with ONLY a JSON object, no markdown fences, no text outside the JSON:
-{{"ticker": "{ticker}", "decision": "BUY" | "HOLD" | "SELL", "confidence": <number 0.0-1.0>, "summary": "<at most 3 sentences explaining the decision>", "bull_case": "<at most 2 sentences>", "bear_case": "<at most 2 sentences>"}}""",
+{{"ticker": "{ticker}", "decision": "BUY" | "HOLD" | "SELL", "confidence": <number 0.0-1.0>, "summary": "<at most 3 sentences explaining the decision>", "bull_case": "<at most 2 sentences>", "bear_case": "<at most 2 sentences>", "would_upgrade_if": "<one condition from the dossier that would justify a stronger call>", "would_downgrade_if": "<one condition from the dossier that would justify a weaker call>"}}""",
         expected_output=(
             "A JSON object with keys: ticker, decision (BUY|HOLD|SELL), confidence "
-            "(0.0-1.0), summary, bull_case, bear_case."
+            "(0.0-1.0), summary, bull_case, bear_case, would_upgrade_if, "
+            "would_downgrade_if."
         ),
         agent=agent,
         output_pydantic=ManagerResult,
@@ -80,6 +83,8 @@ def to_manager_result(data: dict, ticker: str) -> ManagerResult:
         summary=clip(data.get("summary", ""), 600),
         bull_case=clip(data.get("bull_case", ""), 400),
         bear_case=clip(data.get("bear_case", ""), 400),
+        would_upgrade_if=clip(data.get("would_upgrade_if", ""), 300),
+        would_downgrade_if=clip(data.get("would_downgrade_if", ""), 300),
     )
 
 
@@ -98,4 +103,12 @@ def mock(ticker: str, payload: dict) -> dict:
         "summary": f"[mock] Bull {bull_score:.2f} vs bear {bear_score:.2f} -> {decision}.",
         "bull_case": "[mock] See bull researcher summary.",
         "bear_case": "[mock] See bear researcher summary.",
+        "would_upgrade_if": (
+            "[mock] The bear case weakens below "
+            f"{max(0.0, bear_score - 0.2):.2f} or fresh research flips the net score."
+        ),
+        "would_downgrade_if": (
+            "[mock] The bull case weakens below "
+            f"{max(0.0, bull_score - 0.2):.2f} or fresh research flips the net score."
+        ),
     }

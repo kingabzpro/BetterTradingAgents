@@ -49,9 +49,14 @@ print("chat LLM OK: manager model, no JSON mode, no streaming")
 analysis = StockAnalysis(
     ticker="NVDA", company_name="Nvidia Corp", price=120.5, decision="BUY",
     confidence=0.72, summary="Bull case outweighs bear case.",
+    manager_decision="BUY", manager_confidence=0.72,
+    would_upgrade_if="bear case weakens", would_downgrade_if="forecast sours",
 )
 dossier = chat._dossier(analysis, None)
-assert dossier["system_view"]["decision"] == "BUY"
+assert dossier["system_view"]["final_decision"] == "BUY"
+assert dossier["system_view"]["manager_decision"] == "BUY"
+assert dossier["system_view"]["would_downgrade_if"] == "forecast sours"
+assert "data_quality" in dossier
 assert dossier["current_portfolio"] == "UNAVAILABLE - portfolio lookup failed"
 assert dossier["analysts"]["technical"] is None and dossier["forecast_5d"]["z"] is None
 answer = chat.mock_answer(analysis)

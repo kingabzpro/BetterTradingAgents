@@ -632,6 +632,34 @@ td.num, th.num { text-align: right; }
 .risk-flags strong { color: #f5d18a; font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; }
 .risk-clear { margin-top: 13px; color: #76ce9a; font-size: 12px; }
 
+/* Trust chips: risk-gate changes, staleness, cached results (P0.1). */
+.gate-chip {
+  display: inline-block; margin-left: 8px; padding: 2px 7px; border-radius: 999px;
+  font-size: 10px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase;
+  color: #f5c66b; background: rgba(245, 198, 107, 0.12); border: 1px solid rgba(245, 198, 107, 0.35);
+  vertical-align: middle; white-space: nowrap;
+}
+.result-summary .gate-chip { margin-left: 10px; }
+.gate-banner {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 10px;
+  margin-bottom: 16px; padding: 10px 12px; border-left: 3px solid rgba(245, 198, 107, 0.65);
+  border-radius: 6px; background: rgba(245, 198, 107, 0.06); font-size: 13px;
+}
+.gate-banner .gate-chip { margin-left: 0; }
+.gate-line { color: #f5d18a; font-weight: 700; }
+.gate-banner small { flex-basis: 100%; color: var(--muted); font-size: 12px; line-height: 1.5; }
+.manager-conditions { max-width: 850px; margin-top: 14px; display: grid; gap: 6px; }
+.manager-conditions p { margin: 0; color: #b9c1d0; font-size: 13.5px; line-height: 1.65; }
+.manager-conditions strong { color: #dce2ed; }
+.eyebrow-flat { color: #9fa9bd; }
+#summary-table td[data-label="Call"] small { white-space: normal; }
+#summary-table td[data-label="Risk"] { max-width: 260px; }
+#summary-table td[data-label="Risk"] .flag-warn {
+  display: inline-block; max-width: 100%; overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap; vertical-align: bottom;
+}
+#summary-table td[data-label="Data age"] small { white-space: normal; }
+
 .result-detail { display: block; padding: 0 20px 20px; border-top: 0; }
 .result-detail[hidden] { display: none; }
 .result-card.open .result-detail { animation: card-in 0.2s ease; }

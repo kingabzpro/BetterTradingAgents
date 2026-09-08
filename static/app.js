@@ -570,6 +570,7 @@ function handleEvent(event) {
       break;
     case "ticker_completed":
       entry.analysis = event.analysis;
+      entry.cached = Boolean(event.cached);
       entry.done = entry.total;
       entry.agents = {
         technical: event.analysis.technical, fundamental: event.analysis.fundamental,
@@ -627,6 +628,78 @@ function convictionLabel(confidence) {
   return "Low evidence";
 }
 
+/* ---------- trust metadata (P0.1) ---------- */
+
+const RESEARCH_KEYS = ["technical", "fundamental", "news", "sentiment", "forecast"];
+
+// Compact signal split from the analyst results themselves - no extra LLM call.
+function signalSplit(analysis) {
+  const counts = { bullish: 0, neutral: 0, bearish: 0 };
+  let available = 0;
+  for (const key of RESEARCH_KEYS) {
+    const signal = analysis?.[key]?.signal;
+    if (!signal) continue;
+    available += 1;
+    if (signal === "bullish" || signal === "positive") counts.bullish += 1;
+    else if (signal === "bearish" || signal === "negative") counts.bearish += 1;
+    else counts.neutral += 1;
+  }
+  return { counts, available };
+}
+
+function splitLabel(split) {
+  return `${split.counts.bullish} bullish / ${split.counts.neutral} neutral / ${split.counts.bearish} bearish`;
+}
+
+// Data age is recomputed at view time from as_of, so a restored or cached run
+// never looks fresher than it is. Staleness reuses the outlook-specific
+// threshold the server recorded in data_quality.
+function dataAgeHours(analysis) {
+  if (!analysis.as_of) return null;
+  const stamp = new Date(analysis.as_of);
+  if (Number.isNaN(stamp.getTime())) return null;
+  return Math.max(0, (Date.now() - stamp.getTime()) / 3600000);
+}
+
+function ageLabel(hours) {
+  if (hours == null) return "Unknown";
+  if (hours < 1) return `${Math.max(1, Math.round(hours * 60))}m old`;
+  if (hours < 48) return `${hours.toFixed(1)}h old`;
+  return `${Math.round(hours / 24)}d old`;
+}
+
+function staleInfo(analysis) {
+  const threshold = analysis.data_quality?.stale_after_hours;
+  const hours = dataAgeHours(analysis);
+  return { hours, stale: threshold != null && hours != null && hours > threshold };
+}
+
+// Falls back to the live depth profile for runs persisted before data_quality.
+function coverageInfo(analysis) {
+  const dq = analysis.data_quality;
+  const split = signalSplit(analysis);
+  const serverRecorded = Array.isArray(dq?.expected_analysts) && dq.expected_analysts.length > 0;
+  return {
+    expected: serverRecorded ? dq.expected_analysts.length : depthProfile().research.length,
+    available: serverRecorded ? (dq.available_analysts || []).length : split.available,
+    split,
+  };
+}
+
+// The deterministic risk gate can override the manager; show both calls.
+function gateChanged(analysis) {
+  return Boolean(analysis.manager_decision && analysis.manager_decision !== analysis.decision);
+}
+
+function gateLine(analysis) {
+  if (!gateChanged(analysis)) return "";
+  return `Manager: ${analysis.manager_decision} -> Final: ${analysis.decision}`;
+}
+
+function downgradeFlag(analysis) {
+  return (analysis.risk_flags || []).find((flag) => String(flag).startsWith("downgraded")) || "";
+}
+
 function forecastBandNote(analysis) {
   // Noise-band context so a red -2% forecast next to a BUY stops looking
   // contradictory: inside +/-1 sigma it is statistical noise, not a signal.
@@ -654,16 +727,29 @@ function renderSummaryTable() {
   table.id = "summary-table";
   table.innerHTML = `
     <caption class="sr-only">Decision summary for analyzed tickers</caption>
-    <thead><tr><th scope="col">Ticker</th><th scope="col">Decision</th><th scope="col" class="num">5-day forecast</th><th scope="col" class="num">Evidence</th><th scope="col" class="num">Suggested size</th><th scope="col">Risk</th><th scope="col"><span class="sr-only">Action</span></th></tr></thead>
+    <thead><tr><th scope="col">Ticker</th><th scope="col">Call</th><th scope="col" class="num">Price</th><th scope="col">Horizon</th><th scope="col">Data age</th><th scope="col">Coverage</th><th scope="col">Risk</th><th scope="col"><span class="sr-only">Action</span></th></tr></thead>
     <tbody>${analyses.map((analysis) => {
       const flags = analysis.risk_flags || [];
+      const entry = state.tickers.get(analysis.ticker);
+      const age = staleInfo(analysis);
+      const cov = coverageInfo(analysis);
+      const gated = gateChanged(analysis);
+      const gateFlag = downgradeFlag(analysis);
+      const riskCell = analysis.error
+        ? '<span class="flag-warn">⚠ Unavailable</span>'
+        : gated
+          ? `<span class="flag-warn" title="${escapeAttr(gateFlag)}">⚠ ${escapeHtml(gateFlag)}</span>`
+          : flags.length
+            ? `<span class="flag-warn">⚠ ${flags.length} flag${flags.length > 1 ? "s" : ""}</span>`
+            : '<span class="flag-ok">✓ Clear</span>';
       return `<tr>
         <td data-label="Ticker"><strong>${escapeHtml(analysis.ticker)}</strong></td>
-        <td data-label="Decision">${decisionBadge(analysis)}</td>
-        <td data-label="5-day forecast" class="num">${analysis.forecast_price_5d != null ? `$${Number(analysis.forecast_price_5d).toFixed(2)} (${Number(analysis.forecast_change_5d_pct) >= 0 ? "+" : ""}${Number(analysis.forecast_change_5d_pct).toFixed(2)}%)` : "Not available"}<small>${analysis.forecast_method === "timegpt-1" ? "Nixtla TimeGPT" : "Local model"}${forecastBandNote(analysis)}</small></td>
-        <td data-label="Evidence" class="num">${Math.round((analysis.confidence || 0) * 100)}% · ${convictionLabel(analysis.confidence)}</td>
-        <td data-label="Suggested size" class="num">${analysis.suggested_size_usd ? fmtUsd(analysis.suggested_size_usd) : "Not available"}</td>
-        <td data-label="Risk">${analysis.error ? '<span class="flag-warn">⚠ Unavailable</span>' : flags.length ? `<span class="flag-warn">⚠ ${flags.length} flag${flags.length > 1 ? "s" : ""}</span>` : '<span class="flag-ok">✓ Clear</span>'}</td>
+        <td data-label="Call">${decisionBadge(analysis)}${gated ? `<span class="gate-chip">risk-adjusted</span>` : ""}<small>${Math.round((analysis.confidence || 0) * 100)}% · ${convictionLabel(analysis.confidence)}</small></td>
+        <td data-label="Price" class="num">${analysis.price != null ? `$${Number(analysis.price).toFixed(2)}` : "Not available"}</td>
+        <td data-label="Horizon">${OUTLOOK_LABELS[state.outlook] || state.outlook}<small>${depthProfile().label} depth</small></td>
+        <td data-label="Data age">${age.stale ? '<span class="flag-warn">' : ""}${ageLabel(age.hours)}${age.stale ? " · stale</span>" : ""}<small>${analysis.as_of ? escapeHtml(formatDateTime(analysis.as_of)) : "no timestamp"}${entry?.cached ? " · cached" : ""}</small></td>
+        <td data-label="Coverage" class="cov">${analysis.error ? "n/a" : `${cov.available}/${cov.expected} analysts`}${!analysis.error && cov.split.available ? `<small>${splitLabel(cov.split)}</small>` : ""}</td>
+        <td data-label="Risk">${riskCell}</td>
         <td data-label="Action"><button class="table-open-btn" type="button" data-open-ticker="${escapeAttr(analysis.ticker)}">View evidence</button></td>
       </tr>`;
     }).join("")}</tbody>`;
@@ -799,6 +885,11 @@ function renderResultCard(analysis) {
   const positionSize = analysis.suggested_size_usd || 10000;
   const defaultQty = analysis.price ? Math.max(1, Math.floor(positionSize / analysis.price)) : 0;
   const asOf = analysis.as_of ? formatDateTime(analysis.as_of) : "Timestamp unavailable";
+  const age = staleInfo(analysis);
+  const cov = coverageInfo(analysis);
+  const gated = gateChanged(analysis);
+  const cachedRun = Boolean(state.tickers.get(ticker)?.cached);
+  const fallbacks = analysis.data_quality?.provider_fallbacks || [];
   const tokens = analysis.token_usage || {};
   const tokenFact = tokens.total_tokens
     ? `<div><span>LLM tokens</span><strong>${Number(tokens.total_tokens).toLocaleString()}</strong><small>${Number(tokens.prompt_tokens || 0).toLocaleString()} prompt + ${Number(tokens.completion_tokens || 0).toLocaleString()} completion${tokens.reasoning_tokens ? ` · ${Number(tokens.reasoning_tokens).toLocaleString()} reasoning` : ""}</small></div>`
@@ -810,12 +901,17 @@ function renderResultCard(analysis) {
     key === "forecast" ? forecastResult : analysis[key],
     key,
   )).join("");
+  const conditions = analysis.would_upgrade_if || analysis.would_downgrade_if
+    ? `<div class="manager-conditions"><span class="eyebrow eyebrow-flat">Conditions for a different call - not alerts or price targets</span>${analysis.would_upgrade_if ? `<p><strong>Stronger call if:</strong> ${escapeHtml(analysis.would_upgrade_if)}</p>` : ""}${analysis.would_downgrade_if ? `<p><strong>Weaker call if:</strong> ${escapeHtml(analysis.would_downgrade_if)}</p>` : ""}</div>`
+    : "";
 
   card.innerHTML = `
-    <button class="result-summary" type="button" aria-expanded="false" aria-controls="${detailId}"><span class="result-identity"><span class="tk">${escapeHtml(ticker)}</span><span class="company">${escapeHtml(analysis.company_name || "Company name unavailable")}</span></span>${decisionBadge(analysis)}<span class="summary-action">Evidence &amp; sources <span class="caret" aria-hidden="true">▶</span></span></button>
+    <button class="result-summary" type="button" aria-expanded="false" aria-controls="${detailId}"><span class="result-identity"><span class="tk">${escapeHtml(ticker)}</span><span class="company">${escapeHtml(analysis.company_name || "Company name unavailable")}</span></span>${decisionBadge(analysis)}${gated ? '<span class="gate-chip">risk-adjusted</span>' : ""}<span class="summary-action">Evidence &amp; sources <span class="caret" aria-hidden="true">▶</span></span></button>
     <div class="decision-brief">
-      <div class="decision-facts"><div><span>Current price</span><strong>${analysis.price != null ? `$${Number(analysis.price).toFixed(2)}` : "Unavailable"}</strong></div><div><span>5-day forecast</span><strong>${analysis.forecast_price_5d != null ? `$${Number(analysis.forecast_price_5d).toFixed(2)} (${Number(analysis.forecast_change_5d_pct) >= 0 ? "+" : ""}${Number(analysis.forecast_change_5d_pct).toFixed(2)}%)` : "Unavailable"}</strong><small>${analysis.forecast_method === "timegpt-1" ? "TimeGPT" : analysis.forecast_trend_r2 != null ? `Local fit R² ${Number(analysis.forecast_trend_r2).toFixed(2)}` : "Local"}${forecastBandNote(analysis)}</small></div><div><span>Data as of</span><strong>${escapeHtml(asOf)}</strong></div><div><span>Confidence</span><strong>${confidencePct}% · ${convictionLabel(analysis.confidence)}</strong></div><div><span>Suggested size</span><strong>${analysis.suggested_size_usd ? fmtUsd(analysis.suggested_size_usd) : "No position"}</strong></div>${tokenFact}</div>
+      ${gated ? `<div class="gate-banner"><span class="gate-chip">risk-adjusted</span><span class="gate-line">${escapeHtml(gateLine(analysis))}</span>${downgradeFlag(analysis) ? `<small>⚠ ${escapeHtml(downgradeFlag(analysis))}</small>` : ""}</div>` : ""}
+      <div class="decision-facts"><div><span>Current price</span><strong>${analysis.price != null ? `$${Number(analysis.price).toFixed(2)}` : "Unavailable"}</strong></div><div><span>5-day forecast</span><strong>${analysis.forecast_price_5d != null ? `$${Number(analysis.forecast_price_5d).toFixed(2)} (${Number(analysis.forecast_change_5d_pct) >= 0 ? "+" : ""}${Number(analysis.forecast_change_5d_pct).toFixed(2)}%)` : "Unavailable"}</strong><small>${analysis.forecast_method === "timegpt-1" ? "TimeGPT" : analysis.forecast_trend_r2 != null ? `Local fit R² ${Number(analysis.forecast_trend_r2).toFixed(2)}` : "Local"}${forecastBandNote(analysis)}</small></div><div><span>Data age</span><strong>${age.stale ? '<span class="flag-warn">' : ""}${ageLabel(age.hours)}${cachedRun ? " · cached" : ""}${age.stale ? " · stale</span>" : ""}</strong><small>${escapeHtml(asOf)}</small></div><div><span>Evidence strength</span><strong>${confidencePct}% · ${convictionLabel(analysis.confidence)}</strong></div><div><span>Horizon</span><strong>${OUTLOOK_LABELS[state.outlook] || state.outlook}</strong><small>${profile.label} depth</small></div><div><span>Analyst coverage</span><strong>${analysis.error ? "n/a" : `${cov.available}/${cov.expected} analysts`}</strong>${!analysis.error && cov.split.available ? `<small>${splitLabel(cov.split)}</small>` : ""}${fallbacks.length ? `<small class="flag-warn">${fallbacks.map(escapeHtml).join(" · ")}</small>` : ""}</div><div><span>Suggested size</span><strong>${analysis.suggested_size_usd ? fmtUsd(analysis.suggested_size_usd) : "No position"}</strong></div>${tokenFact}</div>
       <div class="manager-conclusion"><span class="eyebrow">Manager conclusion</span><p class="thesis">${escapeHtml(analysis.summary || analysis.error || "No manager summary was returned.")}</p></div>
+      ${conditions}
       ${analysis.error ? `<div class="risk-flags"><strong>Analysis unavailable</strong><span>⚠ ${escapeHtml(analysis.error)}</span></div>` : flags.length ? `<div class="risk-flags"><strong>Risk flags</strong>${flags.map((flag) => `<span>⚠ ${escapeHtml(flag)}</span>`).join("")}</div>` : '<div class="risk-clear"><span aria-hidden="true">✓</span> No risk rules were triggered.</div>'}
     </div>
     ${analysis.error ? "" : `
@@ -835,16 +931,15 @@ function renderResultCard(analysis) {
       </div>
     </div>`}
     <div class="result-detail" id="${detailId}" hidden>
-      <section class="result-block" aria-labelledby="evidence-title-${ticker}"><div class="block-heading"><h3 id="evidence-title-${ticker}">Evidence</h3></div><div class="grid-3">${evidenceHtml}</div>${skippedResearch.length ? `<p class="hint">Skipped for speed: ${skippedResearch.map((key) => EVIDENCE_META[key].title).join(" · ")}</p>` : ""}</section>
-      <section class="result-block" aria-labelledby="debate-title-${ticker}"><div class="block-heading"><h3 id="debate-title-${ticker}">Debate</h3></div><div class="debate"><article class="debate-side bull-side"><div class="mc-title">▲ Bull case</div><div class="mc-score">${Math.round((analysis.bull?.confidence ?? 0) * 100)}% argument strength</div><p class="mc-sum">${escapeHtml(analysis.bull?.summary || analysis.bull_case || "No bull case was returned.")}</p></article><article class="debate-side bear-side"><div class="mc-title">▼ Bear case</div><div class="mc-score">${Math.round((analysis.bear?.confidence ?? 0) * 100)}% risk strength</div><p class="mc-sum">${escapeHtml(analysis.bear?.summary || analysis.bear_case || "No bear case was returned.")}</p></article></div></section>
-      ${renderTrackRecord(analysis, ticker)}
+      <section class="result-block" aria-labelledby="debate-title-${ticker}"><div class="block-heading"><h3 id="debate-title-${ticker}">Bull vs bear</h3></div><div class="debate"><article class="debate-side bull-side"><div class="mc-title">▲ Bull case</div><div class="mc-score">${Math.round((analysis.bull?.confidence ?? 0) * 100)}% argument strength</div><p class="mc-sum">${escapeHtml(analysis.bull?.summary || analysis.bull_case || "No bull case was returned.")}</p></article><article class="debate-side bear-side"><div class="mc-title">▼ Bear case</div><div class="mc-score">${Math.round((analysis.bear?.confidence ?? 0) * 100)}% risk strength</div><p class="mc-sum">${escapeHtml(analysis.bear?.summary || analysis.bear_case || "No bear case was returned.")}</p></article></div></section>
+      <section class="result-block" aria-labelledby="evidence-title-${ticker}"><div class="block-heading"><h3 id="evidence-title-${ticker}">Analyst evidence</h3></div><div class="grid-3">${evidenceHtml}</div>${skippedResearch.length ? `<p class="hint">Skipped for speed: ${skippedResearch.map((key) => EVIDENCE_META[key].title).join(" · ")}</p>` : ""}</section>
       <section class="result-block sources-block" aria-labelledby="sources-title-${ticker}"><div class="block-heading"><h3 id="sources-title-${ticker}">Sources</h3><p>${escapeHtml(providerText(analysis.providers))}</p></div>${renderSources(analysis.source_references)}</section>
+      ${renderTrackRecord(analysis, ticker)}
       <div class="result-actions">${canAdd ? `<div class="add-row"><label for="qty-${ticker}">Shares</label><input id="qty-${ticker}" type="number" min="1" step="1" value="${defaultQty}"><button class="add-btn" id="add-${ticker}" type="button">Add to Demo Portfolio</button><span class="muted">suggests ${fmtUsd(positionSize)}</span><span class="added-note hidden" id="added-${ticker}" role="status"></span></div>` : '<span class="muted">Portfolio adds are offered on BUY calls.</span>'}<button class="secondary-btn retry-btn" type="button">Retry ${escapeHtml(ticker)}</button></div>
     </div>`;
 
   const existing = $(`result-${ticker}`);
-  if (existing) existing.replaceWith(card); else $("results-list").appendChild(card);
-  card.querySelector(".result-summary").addEventListener("click", () => toggleResult(card));
+  if (existing) existing.replaceWith(card); else $("results-list").appendChild(card);  card.querySelector(".result-summary").addEventListener("click", () => toggleResult(card));
   card.querySelector(".retry-btn").addEventListener("click", () => retryTicker(ticker));
   if (canAdd) $(`add-${ticker}`).addEventListener("click", () => addToPortfolio(ticker, Number(analysis.price)));
   if (!analysis.error) {

@@ -14,7 +14,7 @@ import re
 import time
 from typing import Any, Awaitable, Callable
 
-from app import risk
+from app import quality, risk
 from app.agents import bear, bull, forecast, fundamental, manager, news, sentiment, technical
 from app.config import settings
 from app.depth import DEFAULT_DEPTH, depth_profile
@@ -887,12 +887,22 @@ async def analyze_ticker(
             final.bull_case,
             final.bear_case,
         )
+        would_upgrade_if, would_downgrade_if = (
+            final.would_upgrade_if,
+            final.would_downgrade_if,
+        )
         logger.info("[manager] %s %s %.0f%%", ticker, decision, confidence * 100)
     else:
         decision, confidence = "HOLD", 0.0
         summary = "Portfolio manager failed - defaulting to HOLD with no conviction."
         bull_case = bull_r.summary if bull_r else ""
         bear_case = bear_r.summary if bear_r else ""
+        would_upgrade_if, would_downgrade_if = "", ""
+    # Preserve the manager's own call before the deterministic risk gate
+    # overwrites `decision`/`confidence` (ROADMAP P0.1) so the UI can show
+    # `Manager: BUY -> Final: HOLD` with the exact flag that caused it.
+    manager_decision = final.decision if mgr_data else None
+    manager_confidence = final.confidence if mgr_data else None
 
     # Risk gate: deterministic sizing, forecast check, and exposure caps.
     size_usd, risk_flags = None, []
@@ -921,9 +931,13 @@ async def analyze_ticker(
         forecast_z=None if forecast_z_value is None else round(forecast_z_value, 2),
         decision=decision,
         confidence=confidence,
+        manager_decision=manager_decision,
+        manager_confidence=manager_confidence,
         summary=summary,
         bull_case=bull_case,
         bear_case=bear_case,
+        would_upgrade_if=would_upgrade_if,
+        would_downgrade_if=would_downgrade_if,
         technical=tech,
         fundamental=fund,
         news=news_r,
@@ -941,6 +955,19 @@ async def analyze_ticker(
         as_of=market.as_of,
         providers={str(key): str(value) for key, value in market.sources.items()},
         source_references=_source_references(market),
+        data_quality=quality.build(
+            market.as_of,
+            outlook,
+            research,
+            {
+                "technical": tech,
+                "fundamental": fund,
+                "news": news_r,
+                "sentiment": sentiment_r,
+                "forecast": forecast_r,
+            },
+            {str(key): str(value) for key, value in market.sources.items()},
+        ),
     )
     logger.info(
         "[analysis] %s completed in %.1fs (%s)", ticker, analysis.duration_s, decision

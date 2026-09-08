@@ -46,6 +46,8 @@ class ManagerResult(BaseModel):
     summary: str = ""
     bull_case: str = ""
     bear_case: str = ""
+    would_upgrade_if: str = ""
+    would_downgrade_if: str = ""
 
 
 class SourceReference(BaseModel):
@@ -75,6 +77,25 @@ class SourceReference(BaseModel):
         )
 
 
+class DataQuality(BaseModel):
+    """Server-computed trust metadata for one analysis (ROADMAP P0.1).
+
+    Every field defaults so results persisted before this object existed still
+    parse; the UI treats empty lists and a missing as_of as "not recorded".
+    """
+
+    as_of: str = ""
+    age_hours: float | None = None  # age of the data at analysis time
+    stale_after_hours: float | None = None  # outlook-specific staleness threshold
+    stale: bool = False
+    stale_reason: str = ""
+    expected_analysts: list[str] = Field(default_factory=list)  # depth profile requested
+    available_analysts: list[str] = Field(default_factory=list)  # returned usable output
+    failed_analysts: list[str] = Field(default_factory=list)  # ran, produced nothing
+    skipped_analysts: list[str] = Field(default_factory=list)  # excluded at this depth
+    provider_fallbacks: list[str] = Field(default_factory=list)  # degraded inputs, plain text
+
+
 class StockAnalysis(BaseModel):
     """Everything we know about one ticker after a full run."""
 
@@ -89,9 +110,15 @@ class StockAnalysis(BaseModel):
     forecast_z: float | None = None  # forecast change / noise band
     decision: Decision = "HOLD"
     confidence: float = 0.0
+    manager_decision: Decision | None = None  # the manager's call before the risk gate
+    manager_confidence: float | None = Field(
+        default=None, ge=0.0, le=1.0
+    )  # evidence strength before the risk gate; None = not recorded (old runs)
     summary: str = ""
     bull_case: str = ""
     bear_case: str = ""
+    would_upgrade_if: str = ""
+    would_downgrade_if: str = ""
     technical: AgentResult | None = None
     fundamental: AgentResult | None = None
     news: AgentResult | None = None
@@ -110,6 +137,7 @@ class StockAnalysis(BaseModel):
     as_of: str = ""
     providers: dict[str, str] = Field(default_factory=dict)
     source_references: list[SourceReference] = Field(default_factory=list)
+    data_quality: DataQuality = Field(default_factory=DataQuality)
 
 
 class AnalysisRequest(BaseModel):

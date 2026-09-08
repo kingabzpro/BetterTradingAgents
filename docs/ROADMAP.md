@@ -1,7 +1,7 @@
 # BetterTradingAgents development roadmap
 
 Practical next steps for turning the current research demo into a trustworthy
-decision workspace. Last updated: 2026-09-05.
+decision workspace. Last updated: 2026-09-08.
 
 This roadmap is ordered by user value and risk reduction, not novelty. The app
 already has enough agents. The next releases should make existing analysis easier
@@ -32,6 +32,12 @@ Already shipped:
 - per-role models, classified retries, and optional token streaming
 - durable run history, reconnect recovery, per-ticker retry, and a one-hour
   analysis cache
+- decision brief with trust state (ROADMAP P0.1): the manager's pre-gate call is
+  preserved and shown beside the final risk-adjusted call, `would_upgrade_if` /
+  `would_downgrade_if` conditions ship with every decision, a server-computed
+  `data_quality` object reports data age, outlook-aware staleness, analyst
+  coverage, and provider fallbacks, and the summary row shows a compact analyst
+  signal split; cached results keep their original `as_of`
 - source links, data timestamps, provider labels, responsive result cards, and
   keyboard-visible focus styles
 
@@ -39,7 +45,7 @@ Already shipped:
 
 | Priority | Outcome | Area | Effort | Gate |
 |---|---|---|---|---|
-| P0.1 | Decision brief users can audit in seconds | UI/UX + API | M | Next release |
+| P0.1 | Decision brief users can audit in seconds | UI/UX + API | M | Done (2026-09-08) |
 | P0.2 | Cancel, rerun, and recover without guessing | UX + run logic | S | Next release |
 | P0.3 | Accessible, mobile-safe core journey | UI quality | S-M | Next release |
 | P1.1 | Historical confidence calibration | Logic + evaluation | M | Before execution |
@@ -52,6 +58,13 @@ Already shipped:
 ## P0 - Make today's analysis useful
 
 ### P0.1 Decision brief and trust state
+
+**Status: complete (2026-09-08).** Shipped as `manager_decision` /
+`manager_confidence` preserved beside the final risk-adjusted values, the
+`DataQuality` object from `app/quality.py`, `would_upgrade_if` /
+`would_downgrade_if` on the manager schema, the reworked summary row with
+signal split and `Manager: BUY -> Final: HOLD` rendering, cached-result
+badging, and `scripts/check_decision_brief.py`. Kept below for the record.
 
 **Problem.** The summary table is compact, but users must open each result to learn
 when the data was fetched, which inputs were missing, why analysts disagreed, and
