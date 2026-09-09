@@ -74,6 +74,8 @@ document.addEventListener("DOMContentLoaded", async () => {
   $("analyze-btn").addEventListener("click", () => startAnalysis());
   $("feeling-lucky-btn").addEventListener("click", () => feelingLucky());
   $("analyze-another-btn").addEventListener("click", () => analyzeAnother());
+  $("run-again-btn").addEventListener("click", () => { if (!state.running && !state.discovering) startAnalysis(); });
+  $("cancel-btn").addEventListener("click", () => cancelRun());
   $("add-ticker-btn").addEventListener("click", () => addTickerTags($("ticker-input").value));
   $("ticker-input").addEventListener("keydown", (event) => {
     if (event.key === "Enter") {
@@ -118,8 +120,29 @@ document.addEventListener("DOMContentLoaded", async () => {
   } catch (_) {
     // The analysis request will show a concrete error if the server is unavailable.
   }
+  if (await applyRerunParams()) return;
   await restoreSavedRun();
 });
+
+/* ---------- rerun with the same settings (ROADMAP P0.2) ---------- */
+
+// The Runs page links here as /?rerun=1&tickers=...&outlook=...&depth=... to
+// repeat a completed, failed, or cancelled run with its original settings.
+async function applyRerunParams() {
+  const params = new URL(window.location.href).searchParams;
+  if (!params.get("rerun")) return false;
+  setOutlook(params.get("outlook"));
+  setDepth(params.get("depth"));
+  setTickerTags(params.get("tickers") || "");
+  // Drop the params so a refresh starts clean instead of auto-running again.
+  window.history.replaceState({}, "", "/");
+  if (!state.tickerTags.length) {
+    showRestoreNotice("That run could not be rerun; add tickers and analyze.");
+    return true;
+  }
+  await startAnalysis();
+  return true;
+}
 
 /* ---------- ticker tag input ---------- */
 
@@ -271,6 +294,7 @@ async function restoreSavedRun() {
     persistRun(run.run_id);
     setOutlook(run.outlook);
     setDepth(run.depth);
+    setTickerTags(run.tickers.join(","));
     beginRun(run.tickers, { startedAtMs: Number(run.started_at) * 1000, restoring: true });
     if (run.status === "running") {
       $("overall-status").textContent = "Restored active run · reconnecting";
@@ -278,8 +302,19 @@ async function restoreSavedRun() {
       return;
     }
     hydrateResults(run.results || {}, true);
-    finishRun({ duration: run.duration_s, focusResults: false, failed: run.status === "failed" });
-    showRestoreNotice(run.status === "failed" ? "Restored an interrupted run; retry any ticker below." : "Restored from run history.");
+    finishRun({
+      duration: run.duration_s,
+      focusResults: false,
+      failed: run.status === "failed",
+      cancelled: run.status === "cancelled",
+    });
+    showRestoreNotice(
+      run.status === "failed"
+        ? "Restored an interrupted run; retry any ticker below."
+        : run.status === "cancelled"
+          ? "Restored a cancelled run; finished tickers are kept below. Run again reanalyzes everything."
+          : "Restored from run history.",
+    );
   } catch (_) {
     if (urlRun) showRestoreNotice("Could not restore that analysis; start a new run.");
   }
@@ -375,6 +410,11 @@ function beginRun(tickers, options = {}) {
   $("how-section").classList.add("hidden");
   $("results-section").classList.add("hidden");
   $("analyze-another-btn").classList.add("hidden");
+  $("run-again-btn").classList.add("hidden");
+  $("cancel-note").classList.add("hidden");
+  const cancelBtn = $("cancel-btn");
+  cancelBtn.classList.remove("hidden");
+  cancelBtn.disabled = false;
   $("results-list").innerHTML = "";
   $("summary-panel").innerHTML = "";
   $("live-section").classList.remove("hidden");
@@ -417,8 +457,10 @@ function openStream(runId) {
       state.es = null;
       await syncRunResults(runId);
       const failed = event.status === "failed";
-      finishRun({ duration: event.duration_s, focusResults: true, failed });
+      const cancelled = event.status === "cancelled";
+      finishRun({ duration: event.duration_s, focusResults: true, failed, cancelled });
       if (failed) showToast(event.error || "The run stopped before it could complete.", true);
+      else if (cancelled) showToast("Run cancelled · finished tickers are preserved below.");
     }
   };
   source.onerror = () => {
@@ -479,21 +521,71 @@ function hydrateResults(results, restored) {
   if (restored && Object.keys(results).length) $("results-section").classList.remove("hidden");
 }
 
-function finishRun({ duration = null, focusResults = true, failed = false } = {}) {
+function finishRun({ duration = null, focusResults = true, failed = false, cancelled = false } = {}) {
   state.running = false;
   state.finishing = false;
   $("analyze-btn").disabled = state.tickerTags.length === 0;
   $("feeling-lucky-btn").disabled = false;
+  $("cancel-btn").classList.add("hidden");
   window.clearInterval(state.timer);
   state.timer = null;
   const elapsed = duration == null ? Math.max(0, (Date.now() - state.runStartedAtMs) / 1000) : Number(duration);
-  $("run-timer").textContent = `· ${failed ? "stopped" : "done"} in ${elapsed.toFixed(1)}s`;
-  $("overall-status").textContent = failed ? "Run stopped · partial results preserved" : "Analysis complete";
+  const endWord = failed ? "stopped" : cancelled ? "cancelled" : "done";
+  $("run-timer").textContent = `· ${endWord} in ${elapsed.toFixed(1)}s`;
+  $("overall-status").textContent = failed || cancelled
+    ? "Partial results preserved"
+    : "Analysis complete";
+  if (cancelled) {
+    $("cancel-note").classList.remove("hidden");
+    markInterruptedTickers();
+  }
   updateOverallProgress(true);
   if ($("results-list").children.length) {
     $("results-section").classList.remove("hidden");
     $("analyze-another-btn").classList.remove("hidden");
+    $("run-again-btn").classList.remove("hidden");
     if (focusResults) $("results-heading").focus({ preventScroll: false });
+  }
+}
+
+/* ---------- run cancellation (ROADMAP P0.2) ---------- */
+
+async function cancelRun() {
+  if (!state.running || !state.runId) return;
+  const button = $("cancel-btn");
+  button.disabled = true;
+  try {
+    const response = await fetch(`/api/runs/${encodeURIComponent(state.runId)}/cancel`, { method: "POST" });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.detail || `failed (${response.status})`);
+    // The terminal SSE event may have landed while the request was in flight;
+    // settle only if the stream did not already finish the run.
+    if (payload.status === "cancelled") settleCancelled();
+    else finishRun({ failed: payload.status === "failed", cancelled: false, focusResults: true });
+  } catch (error) {
+    button.disabled = false;
+    showError(`Could not cancel the run: ${error.message}`);
+  }
+}
+
+function settleCancelled() {
+  if (state.finishing || !state.running) return;
+  state.finishing = true;
+  if (state.es) { state.es.close(); state.es = null; }
+  syncRunResults(state.runId).finally(() => finishRun({ focusResults: true, cancelled: true }));
+}
+
+// Tickers still mid-analysis when a run ends by cancellation have no result;
+// label their rows so the progress grid never shows eternal "Running…" cells.
+function markInterruptedTickers() {
+  for (const [ticker, entry] of state.tickers) {
+    if (entry.analysis) continue;
+    const count = $(`progc-${ticker}`);
+    if (count) count.textContent = "Cancelled";
+    for (const agent of activeAgents()) {
+      if (entry.completedAgents.has(agent.key)) continue;
+      setAgentStatus(ticker, agent.key, "neutral", "Cancelled");
+    }
   }
 }
 

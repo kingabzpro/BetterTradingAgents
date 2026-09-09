@@ -344,6 +344,8 @@ real orders are placed.
 Every analysis is saved to SQLite and listed newest-first on the **Runs** page. History is scoped
 to an anonymous ID stored in the browser, so one device does not list another device's runs. A
 direct `?run=<id>` link can still reopen a specific result, including after a server restart.
+A running analysis can be cancelled from the live view; tickers that already finished are kept,
+and the Runs page can rerun any finished run with its original tickers, outlook, and depth.
 
 ## API
 
@@ -355,6 +357,7 @@ direct `?run=<id>` link can still reopen a specific result, including after a se
 | `DELETE` | `/api/runs` | Clear the current browser's finished run history |
 | `GET` | `/api/runs/{run_id}` | Read run status and complete results |
 | `GET` | `/api/runs/{run_id}/events` | Stream live progress over SSE |
+| `POST` | `/api/runs/{run_id}/cancel` | Cancel a running analysis, keeping finished ticker results (repeated requests are harmless) |
 | `POST` | `/api/runs/{run_id}/chat` | Ask the portfolio manager follow-up questions about one ticker of a run (grounded in that run's results) |
 | `GET` | `/api/portfolio` | List positions with live prices and profit/loss |
 | `POST` | `/api/portfolio/add` | Add a simulated position |
@@ -473,8 +476,8 @@ The detailed, research-backed plan lives in [docs/ROADMAP.md](docs/ROADMAP.md).
 The next work focuses on trust and measurable decision quality before broker
 integration:
 
-- [ ] Decision brief: surface freshness, analyst coverage, disagreement, and risk changes at a glance
-- [ ] Run controls: cancel, rerun with the same settings, and preserve partial results
+- [x] Decision brief: surface freshness, analyst coverage, disagreement, and risk changes at a glance
+- [x] Run controls: cancel, rerun with the same settings, and preserve partial results
 - [ ] Accessibility and small-screen completion pass
 - [ ] Calibrate confidence against mature outcomes and show sample sizes
 - [ ] Reproducible holdout experiments with simple baselines and no default fundamentals leakage

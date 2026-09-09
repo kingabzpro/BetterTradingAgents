@@ -168,7 +168,7 @@ class RunStatus(BaseModel):
     tickers: list[str]
     outlook: Outlook = DEFAULT_OUTLOOK
     depth: Depth = DEFAULT_DEPTH
-    status: Literal["running", "completed", "failed"] = "running"
+    status: Literal["running", "completed", "failed", "cancelled"] = "running"
     mock_mode: bool = False
     started_at: float = 0.0
     duration_s: float = 0.0
@@ -183,7 +183,7 @@ class RunHistoryItem(BaseModel):
     tickers: list[str]
     outlook: Outlook = DEFAULT_OUTLOOK
     depth: Depth = DEFAULT_DEPTH
-    status: Literal["running", "completed", "failed"]
+    status: Literal["running", "completed", "failed", "cancelled"]
     mock_mode: bool = False
     started_at: float
     duration_s: float = 0.0
@@ -195,6 +195,13 @@ class RunHistoryItem(BaseModel):
 
 class ClearHistoryResponse(BaseModel):
     deleted: int
+
+
+class CancelRunResponse(BaseModel):
+    """Result of POST /api/runs/{run_id}/cancel (ROADMAP P0.2)."""
+
+    run_id: str
+    status: Literal["running", "completed", "failed", "cancelled"]
 
 
 class ChatMessage(BaseModel):

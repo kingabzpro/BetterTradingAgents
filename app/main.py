@@ -16,6 +16,7 @@ from app.discovery import discover_stocks
 from app.models import (
     AnalysisRequest,
     AnalysisResponse,
+    CancelRunResponse,
     ClearHistoryResponse,
     ManagerChatRequest,
     ManagerChatResponse,
@@ -163,6 +164,21 @@ async def run_status(run_id: str):
     if status is None:
         raise HTTPException(status_code=404, detail="run not found")
     return status
+
+
+@app.post("/api/runs/{run_id}/cancel", response_model=CancelRunResponse)
+async def cancel_run(run_id: str):
+    """Cancel a running analysis, preserving finished ticker results.
+
+    Repeated requests are harmless and return the run's current status; a
+    cancelled run never flips back to completed. Cancelling stops this
+    pipeline from advancing but cannot revoke an LLM request an external
+    provider has already accepted.
+    """
+    status = await store.cancel(run_id)
+    if status is None:
+        raise HTTPException(status_code=404, detail="run not found")
+    return CancelRunResponse(run_id=status.run_id, status=status.status)
 
 
 @app.get("/api/runs/{run_id}/events")

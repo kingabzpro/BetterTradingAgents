@@ -1,7 +1,7 @@
 # BetterTradingAgents development roadmap
 
 Practical next steps for turning the current research demo into a trustworthy
-decision workspace. Last updated: 2026-09-08.
+decision workspace. Last updated: 2026-09-09.
 
 This roadmap is ordered by user value and risk reduction, not novelty. The app
 already has enough agents. The next releases should make existing analysis easier
@@ -38,6 +38,12 @@ Already shipped:
   `data_quality` object reports data age, outlook-aware staleness, analyst
   coverage, and provider fallbacks, and the summary row shows a compact analyst
   signal split; cached results keep their original `as_of`
+- run controls (ROADMAP P0.2): `POST /api/runs/{run_id}/cancel` stops a running
+  analysis, keeps finished ticker results, persists a `cancelled` status that can
+  never flip back to completed, and always emits one terminal
+  `analysis_completed` event; the live view gets a Cancel button that becomes
+  Run again / Analyze another after the run ends, and the Runs page offers
+  one-click Rerun with the original tickers, outlook, and depth
 - source links, data timestamps, provider labels, responsive result cards, and
   keyboard-visible focus styles
 
@@ -46,7 +52,7 @@ Already shipped:
 | Priority | Outcome | Area | Effort | Gate |
 |---|---|---|---|---|
 | P0.1 | Decision brief users can audit in seconds | UI/UX + API | M | Done (2026-09-08) |
-| P0.2 | Cancel, rerun, and recover without guessing | UX + run logic | S | Next release |
+| P0.2 | Cancel, rerun, and recover without guessing | UX + run logic | S | Done (2026-09-09) |
 | P0.3 | Accessible, mobile-safe core journey | UI quality | S-M | Next release |
 | P1.1 | Historical confidence calibration | Logic + evaluation | M | Before execution |
 | P1.2 | Honest experiment and backtest workflow | Evaluation | M | Before tuning prompts or depth |
@@ -106,6 +112,15 @@ system intervention part of the primary result, not secondary detail
 ([FINRA 2026 GenAI guidance](https://www.finra.org/rules-guidance/guidance/reports/2026-finra-annual-regulatory-oversight-report/gen-ai)).
 
 ### P0.2 Run controls: cancel, rerun, and clear status
+
+**Status: complete (2026-09-09).** Shipped as the `cancelled` run status in
+`app/models.py`, `RunStore.cancel()` in `app/runs.py` (cancels the run's child
+ticker tasks and any in-flight analysis it is the sole consumer of, then leaves
+`_execute` to persist partial results and emit exactly one terminal
+`analysis_completed`), `POST /api/runs/{run_id}/cancel`, the live view's Cancel
+button with its Run again / Analyze another follow-ups, Runs-page Rerun links
+that carry the original tickers, outlook, and depth, and
+`scripts/check_run_controls.py`. Kept below for the record.
 
 **Problem.** Runs survive navigation and individual failures can be retried, but a
 user cannot cancel a slow or mistaken run. The backend also has no `cancelled`

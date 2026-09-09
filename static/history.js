@@ -69,6 +69,11 @@ function runCard(run) {
   card.className = "history-run";
   const state = runState(run);
   const decisions = run.decisions || {};
+  const incomplete = (run.status === "failed" || run.status === "cancelled")
+    && run.result_count < run.tickers.length;
+  const rerunHref = `/?rerun=1&tickers=${encodeURIComponent(run.tickers.join(","))}`
+    + `&outlook=${encodeURIComponent(run.outlook || "")}`
+    + `&depth=${encodeURIComponent(run.depth || "")}`;
   card.innerHTML = `
     <div class="history-run-main">
       <div class="history-run-heading">
@@ -83,14 +88,19 @@ function runCard(run) {
         return `<span class="history-ticker"><strong>${escapeHtml(ticker)}</strong>${decision ? decisionBadge(decision) : '<span class="muted">No decision</span>'}</span>`;
       }).join("")}</div>
       <div class="history-meta"><span>${Number(run.duration_s || 0).toFixed(1)}s</span><span>${run.result_count}/${run.tickers.length} result${run.tickers.length === 1 ? "" : "s"}</span>${run.outlook ? `<span>${escapeHtml(OUTLOOK_LABELS[run.outlook] || run.outlook)} outlook</span>` : ""}${run.depth ? `<span>${escapeHtml(DEPTH_LABELS[run.depth] || run.depth)} depth</span>` : ""}${run.mock_mode ? "<span>Mock mode</span>" : ""}</div>
+      ${incomplete ? `<p class="history-partial">${run.result_count} of ${run.tickers.length} ticker${run.tickers.length === 1 ? "" : "s"} finished before the run was ${run.status === "cancelled" ? "cancelled" : "interrupted"}; the rest have no result.</p>` : ""}
       ${run.error ? `<p class="history-error">${escapeHtml(run.error)}</p>` : ""}
     </div>
-    <a class="history-open" href="/?run=${encodeURIComponent(run.run_id)}">View run <span aria-hidden="true">→</span></a>`;
+    <div class="history-run-actions">
+      ${run.status === "running" ? "" : `<a class="history-rerun" href="${escapeAttr(rerunHref)}">Rerun <span aria-hidden="true">↻</span></a>`}
+      <a class="history-open" href="/?run=${encodeURIComponent(run.run_id)}">View run <span aria-hidden="true">→</span></a>
+    </div>`;
   return card;
 }
 
 function runState(run) {
   if (run.status === "running") return { className: "running", icon: "●", label: "Running" };
+  if (run.status === "cancelled") return { className: "cancelled", icon: "○", label: "Cancelled" };
   if (run.status === "failed") return { className: "failed", icon: "⚠", label: "Interrupted" };
   if (run.has_errors) return { className: "warning", icon: "⚠", label: "Completed with issues" };
   return { className: "complete", icon: "✓", label: "Completed" };

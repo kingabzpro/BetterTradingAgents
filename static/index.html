@@ -10,7 +10,7 @@
   <link rel="icon" href="/static/favicon.ico?v=2" sizes="any">
   <link rel="icon" type="image/png" href="/static/favicon.png?v=2">
   <link rel="apple-touch-icon" href="/static/favicon.png?v=2">
-  <link rel="stylesheet" href="/static/style.css?v=18">
+  <link rel="stylesheet" href="/static/style.css?v=19">
 </head>
 <body>
   <div class="container">
@@ -105,16 +105,19 @@
       <div class="section-heading-row">
         <h2>Live analysis <span id="run-timer" class="muted"></span></h2>
         <span id="overall-status" class="muted" role="status" aria-live="polite">Preparing analysis</span>
+        <button id="cancel-btn" class="secondary-btn cancel-btn hidden" type="button">Cancel run</button>
       </div>
       <div id="overall-progress" class="overall-progress" role="progressbar" aria-label="Overall analysis progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
         <span id="overall-progress-fill"></span>
       </div>
+      <p id="cancel-note" class="hint hidden">Cancelling stops this analysis from advancing. It cannot revoke a request an external provider has already accepted, and finished tickers are kept below.</p>
       <div id="live-grid"></div>
     </section>
 
     <section id="results-section" class="hidden">
       <div class="section-heading-row">
         <h2 id="results-heading" tabindex="-1">Results</h2>
+        <button id="run-again-btn" class="secondary-btn hidden" type="button">Run again</button>
         <button id="analyze-another-btn" class="secondary-btn hidden" type="button">Analyze another</button>
       </div>
       <div id="summary-panel"></div>
@@ -128,6 +131,6 @@
   </div>
 
   <div id="toast" class="toast hidden" role="status" aria-live="polite" aria-atomic="true"></div>
-  <script src="/static/app.js?v=21"></script>
+  <script src="/static/app.js?v=22"></script>
 </body>
 </html>

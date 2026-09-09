@@ -39,6 +39,9 @@ class Run:
         self.events: list[dict] = []
         self.queues: list[asyncio.Queue] = []
         self.results: dict[str, StockAnalysis] = {}
+        self.cancel_requested = False  # set once by RunStore.cancel; terminal
+        self.ticker_tasks: dict[str, asyncio.Task[StockAnalysis]] = {}
+        self.execution_task: asyncio.Task | None = None  # retained by create()
 
     async def emit(self, event_type: str, payload: dict) -> None:
         event = {"type": event_type, **payload}
@@ -77,6 +80,9 @@ class RunStore:
         self.analysis_inflight: dict[
             AnalysisCacheKey, asyncio.Task[StockAnalysis]
         ] = {}
+        # Which runs are currently awaiting each in-flight analysis, so cancel
+        # only stops a shared analysis when this run is its last consumer.
+        self.analysis_waiters: dict[AnalysisCacheKey, set[str]] = {}
 
     async def init(self) -> None:
         await run_history.init()
@@ -91,8 +97,38 @@ class RunStore:
         run = Run(tickers, client_id, outlook, depth)
         self.runs[run.run_id] = run
         await self._persist(run)
-        asyncio.create_task(self._execute(run))
+        run.execution_task = asyncio.create_task(
+            self._execute(run), name=f"execute:{run.run_id}"
+        )
         return run
+
+    async def cancel(self, run_id: str) -> RunStatus | None:
+        """Stop a running run, keeping whatever ticker results already finished.
+
+        Repeated cancels and cancels of finished runs are harmless no-ops that
+        report the current status. Cancelling never revokes work an external
+        provider already accepted; it stops this pipeline from advancing.
+        """
+        run = self.get(run_id)
+        if run is None:
+            return await run_history.get(run_id)
+        if run.status != "running":
+            return run.to_status()  # already terminal; a cancel cannot flip it
+        run.cancel_requested = True
+        run.status = "cancelled"
+        run.completed_at = time.time()
+        # Cancel the per-ticker tasks, then any in-flight shared analysis this
+        # run is the sole waiter of (a joined analysis keeps serving others).
+        for task in list(run.ticker_tasks.values()):
+            task.cancel()
+        for key, waiters in self.analysis_waiters.items():
+            if run_id not in waiters or len(waiters) != 1:
+                continue
+            task = self.analysis_inflight.get(key)
+            if task is not None and not task.done():
+                task.cancel()
+                self.analysis_inflight.pop(key, None)
+        return run.to_status()
 
     def get(self, run_id: str) -> Run | None:
         return self.runs.get(run_id)
@@ -165,6 +201,25 @@ class RunStore:
             },
         )
 
+    async def _await_inflight(
+        self, run: Run, key: AnalysisCacheKey, task: asyncio.Task
+    ) -> StockAnalysis:
+        """Await a shared in-flight analysis, registering this run as a waiter.
+
+        The waiter set is what RunStore.cancel consults: an in-flight analysis
+        is only cancelled when the cancelling run is its last consumer.
+        """
+        waiters = self.analysis_waiters.setdefault(key, set())
+        waiters.add(run.run_id)
+        try:
+            return await asyncio.shield(task)
+        finally:
+            waiters.discard(run.run_id)
+            if not waiters:
+                self.analysis_waiters.pop(key, None)
+            if self.analysis_inflight.get(key) is task and task.done():
+                self.analysis_inflight.pop(key, None)
+
     async def _analyze_one(
         self,
         run: Run,
@@ -181,11 +236,7 @@ class RunStore:
 
         task = self.analysis_inflight.get(key)
         if task is not None:
-            try:
-                result = await asyncio.shield(task)
-            finally:
-                if self.analysis_inflight.get(key) is task and task.done():
-                    self.analysis_inflight.pop(key, None)
+            result = await self._await_inflight(run, key, task)
             if not result.error:
                 self.analysis_cache[key] = (
                     time.monotonic(),
@@ -207,11 +258,7 @@ class RunStore:
             )
         )
         self.analysis_inflight[key] = task
-        try:
-            result = await asyncio.shield(task)
-        finally:
-            if self.analysis_inflight.get(key) is task and task.done():
-                self.analysis_inflight.pop(key, None)
+        result = await self._await_inflight(run, key, task)
         if not result.error:
             self.analysis_cache[key] = (
                 time.monotonic(),
@@ -226,26 +273,46 @@ class RunStore:
             # prompt and risk gate (instead of one fetch per ticker).
             portfolio_summary = await fetch_portfolio_summary()
 
-            async def analyze_one(ticker: str) -> StockAnalysis:
-                async with semaphore:
-                    try:
-                        result = await self._analyze_one(run, ticker, portfolio_summary)
-                    except Exception as exc:  # noqa: BLE001 - last-resort guard
-                        logger.error("[analysis] %s crashed: %s", ticker, exc)
-                        result = StockAnalysis(ticker=ticker, error=str(exc)[:300])
-                # Publish per ticker, not only at the end: the manager chat and
-                # run-status polls can serve a finished ticker while the rest
-                # of the run is still going.
-                run.results[result.ticker] = result
-                return result
+            if not run.cancel_requested:
+                async def analyze_one(ticker: str) -> StockAnalysis:
+                    async with semaphore:
+                        try:
+                            result = await self._analyze_one(run, ticker, portfolio_summary)
+                        except Exception as exc:  # noqa: BLE001 - last-resort guard
+                            logger.error("[analysis] %s crashed: %s", ticker, exc)
+                            result = StockAnalysis(ticker=ticker, error=str(exc)[:300])
+                    # Publish per ticker, not only at the end: the manager chat and
+                    # run-status polls can serve a finished ticker while the rest
+                    # of the run is still going.
+                    run.results[result.ticker] = result
+                    return result
 
-            results = await asyncio.gather(*(analyze_one(t) for t in run.tickers))
-            run.results = {result.ticker: result for result in results}
-            run.status = "completed"
+                run.ticker_tasks = {
+                    ticker: asyncio.create_task(
+                        analyze_one(ticker), name=f"run:{run.run_id}:{ticker}"
+                    )
+                    for ticker in run.tickers
+                }
+                results = await asyncio.gather(*run.ticker_tasks.values())
+                run.results = {result.ticker: result for result in results}
+                run.status = "completed"
+        except asyncio.CancelledError:
+            # RunStore.cancel stopped the child tasks, not this coroutine:
+            # settle them so the partial results are final, then terminate.
+            run.status = "cancelled"
+            if run.ticker_tasks:
+                await asyncio.gather(
+                    *run.ticker_tasks.values(), return_exceptions=True
+                )
         except Exception as exc:  # noqa: BLE001 - preserve an interrupted run
             run.status = "failed"
             run.error = str(exc)[:300]
             logger.error("[analysis] run %s failed: %s", run.run_id, exc)
+        if run.cancel_requested:
+            # A cancel accepted at any point wins, even a hair after the
+            # gather returned: a cancelled run can never flip to completed.
+            run.status = "cancelled"
+            run.error = None
         run.completed_at = time.time()
         await self._persist(run)
         await run.emit(
