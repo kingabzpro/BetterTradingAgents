@@ -49,6 +49,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                         help="run two backtests differing only in DIM "
                              "(depth, rebuttals, forecast, sentiment, model), "
                              "e.g. --paired depth=fast:expert")
+    parser.add_argument("--name", default=None,
+                        help="report file name (default: the mode); the smoke "
+                             "report uses 'mock'")
     return parser.parse_args(argv)
 
 
@@ -102,6 +105,7 @@ def main(argv: list[str] | None = None) -> None:
         fundamentals=fundamentals,
         holdout=args.holdout,
         seed=args.seed,
+        name=args.name,
     )
 
     if args.paired:

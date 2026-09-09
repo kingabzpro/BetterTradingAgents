@@ -284,7 +284,10 @@ positioned sample sizes, 95% bootstrap intervals for mean alpha, and plain
 promotion verdicts, the one-change `--paired` mode (depth, rebuttals,
 forecast, sentiment, model; shared cache/dates/costs/seed; paired difference
 CI) in `app/backtest/experiments.py`, and the extended
-`scripts/check_backtest.py`. Kept below for the record.
+`scripts/check_backtest.py`. `docs/backtests/report-holdout.md` is the
+committed holdout report (generated offline from the warm cache) and its
+verdict honestly reports the sample as too small to promote. Kept below for
+the record.
 
 **Problem.** The harness can replay decisions, but current-vintage fundamentals
 leak later information into historical runs. It also lacks a fixed comparison

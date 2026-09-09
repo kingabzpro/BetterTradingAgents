@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "generated_at": "2026-09-09T18:22:18+00:00",
+  "generated_at": "2026-09-09T18:22:11+00:00",
   "code": {
     "revision": "7294ea8",
     "dirty": true
@@ -8,7 +8,7 @@
   "decision_policy_version": "2026-09-a",
   "config": {
     "mode": "mock",
-    "name": "mock",
+    "name": "holdout",
     "model": "rule-based mock",
     "tickers": [
       "NVDA",
@@ -24,7 +24,7 @@
     "cost_pct": 0.1,
     "short": false,
     "fundamentals": "excluded",
-    "holdout": null,
+    "holdout": "2026-05-18",
     "seed": 7,
     "excluded_analysts": [],
     "policy_version": "2026-09-a",

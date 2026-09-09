@@ -1,8 +1,8 @@
 {
-  "generated_at": "2026-09-09T18:22:18.862677+00:00",
+  "generated_at": "2026-09-09T18:22:11.812821+00:00",
   "config": {
     "mode": "mock",
-    "name": "mock",
+    "name": "holdout",
     "model": "rule-based mock",
     "tickers": [
       "NVDA",
@@ -18,7 +18,7 @@
     "cost_pct": 0.1,
     "short": false,
     "fundamentals": "excluded",
-    "holdout": null,
+    "holdout": "2026-05-18",
     "seed": 7,
     "excluded_analysts": [],
     "policy_version": "2026-09-a",
@@ -74,7 +74,50 @@
         "verdict": "insufficient sample (n=9 < 30): do not promote"
       }
     },
-    "periods": null
+    "periods": {
+      "tune": {
+        "decisions": 9,
+        "counts": {
+          "BUY": 3,
+          "SELL": 0,
+          "HOLD": 6
+        },
+        "hit_rate_pct": 33.3,
+        "avg_net_pct": 1.1,
+        "avg_alpha_pct": 1.29,
+        "cumulative_pct": 7.65,
+        "sharpe": 0.59,
+        "max_drawdown_pct": 11.64,
+        "periods_per_year": 17.4,
+        "positioned_n": 3,
+        "alpha_ci_pct": [
+          -7.53,
+          13.3
+        ],
+        "verdict": "insufficient sample (n=3 < 30): do not promote"
+      },
+      "test": {
+        "decisions": 9,
+        "counts": {
+          "BUY": 7,
+          "SELL": 0,
+          "HOLD": 2
+        },
+        "hit_rate_pct": 28.6,
+        "avg_net_pct": -0.16,
+        "avg_alpha_pct": -0.48,
+        "cumulative_pct": -3.91,
+        "sharpe": -0.09,
+        "max_drawdown_pct": 17.42,
+        "periods_per_year": 17.4,
+        "positioned_n": 7,
+        "alpha_ci_pct": [
+          -6.03,
+          6.2
+        ],
+        "verdict": "insufficient sample (n=7 < 30): do not promote"
+      }
+    }
   },
   "tickers": {
     "NVDA": {

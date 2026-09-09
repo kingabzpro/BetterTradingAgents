@@ -1,6 +1,6 @@
 # Backtest report - mock mode
 
-Generated 2026-09-09T18:22:18Z
+Generated 2026-09-09T18:22:11Z
 
 | Setting | Value |
 |---|---|
@@ -14,7 +14,7 @@ Generated 2026-09-09T18:22:18Z
 | Round-trip cost | 0.10% |
 | Short selling | disabled (SELL scores 0) |
 | Decision policy | `2026-09-a` · debate rounds 2 |
-| Manifest | `manifest-mock.json` (revision, data hashes, seeds) |
+| Manifest | `manifest-holdout.json` (revision, data hashes, seeds) |
 
 ## Flags
 
@@ -38,6 +38,18 @@ Generated 2026-09-09T18:22:18Z
 | all HOLD | 18 | - | - | 0.00% | every decision HOLD scores 0 net after costs |
 | deterministic momentum | 18 | 9 | +0.48% | +17.72% | 63-day skip-month momentum, volatility-scaled (same costs) |
 | buy & hold | per-ticker column above | - | - | per-ticker column | hold each ticker across the graded span |
+
+## Tune / test split
+
+Holdout 2026-05-18: dates before it tuned anything, dates on/after it were untouched.
+
+| Period | Decisions | Positioned (alpha) | Mean alpha | 95% bootstrap CI |
+|---|---|---|---|---|
+| tune | 9 | 3 | +1.29% | [-7.53%, +13.30%] |
+| test (holdout) | 9 | 7 | -0.48% | [-6.03%, +6.20%] |
+
+- tune verdict: insufficient sample (n=3 < 30): do not promote.
+- test verdict: insufficient sample (n=7 < 30): do not promote.
 
 ## Decisions
 
