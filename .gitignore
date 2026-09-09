@@ -3,7 +3,7 @@ __pycache__/
 *.pyc
 .env
 portfolio.db
-
+.ruff_cache
 # backtest snapshot cache (regenerated on demand; reports are committed)
 docs/backtests/*.db
 

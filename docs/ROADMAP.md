@@ -46,6 +46,8 @@ Already shipped:
   one-click Rerun with the original tickers, outlook, and depth
 - source links, data timestamps, provider labels, responsive result cards, and
   keyboard-visible focus styles
+- responsive portfolio cards, skip navigation, semantic page landmarks,
+  mobile-sized touch targets, and higher-contrast primary actions
 
 ## Priority map
 
@@ -58,6 +60,8 @@ Already shipped:
 | P1.2 | Honest experiment and backtest workflow | Evaluation | M | Before tuning prompts or depth |
 | P1.3 | Portfolio-level concentration risk | Risk logic + UI | M | Before execution |
 | P1.4 | Watchlist and decision-change workflow | Product UX | M | After P0 |
+| P1.5 | Compare decisions with visual price context | Product UX | M | After P1.4 |
+| P1.6 | Find, filter, print, and export research | Workspace UX | S-M | After P0 |
 | P2.1 | Alpaca paper-order workflow | Integration | L | After P1.1-P1.3 |
 | P2.2 | Deployment and operational hardening | Platform | M | Before any shared deployment |
 
@@ -277,6 +281,62 @@ an asset class ([Investor.gov diversification guide](https://www.investor.gov/ad
 
 **Acceptance.** A saved ticker survives restart, links to its last comparable run,
 and distinguishes `no change` from `not reanalyzed`.
+
+### P1.5 Decision comparison and price context
+
+**Problem.** Results are easy to inspect one at a time, but users cannot compare
+several calls on the same dimensions or see where a decision sits within recent
+price movement. That makes differences between candidates and changes between
+runs harder to judge than they need to be.
+
+**Build.**
+
+- Add a Compare action to completed result cards and run-history items. Compare up
+  to three ticker decisions using the same rows: final and manager call, evidence
+  strength, analyst split, price, forecast, data age, risk flags, and suggested
+  size.
+- Add a compact six-month price-context chart to each expanded result. Mark the
+  analysis price and date, current price, and forecast as an estimate. Use native
+  SVG and the existing market-history data; do not add a charting dependency.
+- For repeat analyses, lead with a `What changed` summary derived from structured
+  fields: decision, evidence strength, analyst signals, forecast, data freshness,
+  and risk flags. Do not ask an LLM to rediscover these differences.
+- Keep comparison state in the URL so a view can be refreshed or shared locally.
+  On narrow screens, stack comparison columns as labeled cards rather than
+  shrinking text or introducing page-level horizontal scrolling.
+- Give the chart a concise text summary and expose every important value outside
+  the graphic so color and pointer input are never required.
+
+**Acceptance.** A user can compare three decisions at 1440 px and the same data
+remains usable at 320 px. Keyboard users can add, remove, and reorder compared
+items. Repeat-run changes are deterministic, and every chart fact is available as
+text.
+
+### P1.6 Search, filters, and portable reports
+
+**Problem.** As run history and portfolio activity grow, scanning cards and wide
+tables becomes slow. Users also lack a clean way to keep an offline copy of the
+research they reviewed.
+
+**Build.**
+
+- Add instant search plus native filter and sort controls to Runs and Portfolio.
+  Runs filter by ticker, status, outlook, depth, date, and decision; Portfolio
+  sorts by value, return, ticker, and age.
+- Show active filters as removable chips, include a single Clear filters action,
+  and distinguish an empty account from a filter with no matches.
+- Add a print-friendly decision brief that contains the call, manager-to-risk
+  change, evidence, conditions, sources, timestamps, and the investment-advice
+  disclaimer while omitting navigation and interactive controls.
+- Add downloads for one run as JSON and the visible portfolio table as CSV using
+  browser APIs and existing response data. Export only the selected scope and do
+  not add a PDF or spreadsheet library.
+- Preserve filter state in the URL and ensure the mobile toolbar collapses into a
+  labeled disclosure without hiding the current filter count.
+
+**Acceptance.** Filtering 100 saved runs feels immediate and never requires a
+server round trip. Printed briefs remain legible in grayscale, downloaded files
+match the visible scope, and all controls work at 320 px and with a keyboard.
 
 ## P2 - Connect safely and operate reliably
 
