@@ -470,17 +470,36 @@ replays the full analysis at each grid date using only data known at that date:
 uv run python -m app.backtest --tickers NVDA,AMD,META --start 2026-03-01 --end 2026-06-30 --step 21
 ```
 
-- **Point-in-time data**: six months of OHLCV ending at each decision date, company
-  news filtered to `published <= date` (anti-look-ahead, enforced in code), and
-  current-vintage fundamentals, a known bias the report states explicitly.
-  Social posts have no point-in-time archive, so the Sentiment Analyst replays with
-  an empty set (thin-volume neutral) instead of leaking present-day chatter.
+- **Point-in-time data**: six months of OHLCV ending at each decision date and
+  company news filtered to `published <= date` (anti-look-ahead, enforced in
+  code). Fundamentals have no point-in-time source, so replays exclude the
+  fundamental analyst by default (ROADMAP P1.2);
+  `--allow-current-fundamentals` opts back into current-vintage data and the
+  report carries a large look-ahead warning. Social posts have no
+  point-in-time archive either, so the Sentiment Analyst replays with an
+  empty set (thin-volume neutral) instead of leaking present-day chatter.
   Portfolio context and decision memory are disabled during replay so nothing
   leaks from after the date.
 - **Grading**: BUY earns the window's return minus a 2×5bp round-trip cost, SELL
   scores 0 by default (long-only; `--short` grades shorts), HOLD scores 0, each
   compared with SPY over the same window. Aggregates: hit rate, cumulative
   return, Sharpe, max drawdown, buy-and-hold baseline.
+- **Baselines and uncertainty (P1.2)**: every report includes an all-HOLD
+  baseline, per-ticker buy-and-hold, and a deterministic momentum baseline
+  under the same costs. With `--holdout YYYY-MM-DD`, dates before the holdout
+  form the tune period and dates on/after it an untouched test period, each
+  with its positioned sample size, a 95% bootstrap CI for mean alpha, and a
+  plain verdict that refuses to promote results on thin or inconclusive
+  samples.
+- **Paired experiments (P1.2)**: `--paired depth=fast:expert` (also
+  `rebuttals`, `forecast`, `sentiment`, `model`) runs two backtests that
+  differ in exactly that one dimension, share the same snapshot cache, dates,
+  costs, and seed, and reports the paired alpha difference with its own
+  bootstrap interval. Tune debate depth here, not by eyeballing one report.
+- **Reproducibility**: each report is written with a manifest
+  (`manifest-<name>.json`) recording the code revision, decision policy
+  version, configuration, a hash of every snapshot consumed, and the random
+  seeds; the same manifest plus cache reproduces the same mock report.
 - **Mock mode is the default**: free and deterministic. `--llm` runs the real
   agents after printing a cost estimate, and flags the result
   `memorization_risk: high` because the model's training data already contains

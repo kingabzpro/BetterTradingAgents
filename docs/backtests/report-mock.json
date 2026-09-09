@@ -1,7 +1,8 @@
 {
-  "generated_at": "2026-09-09T18:02:54.663430+00:00",
+  "generated_at": "2026-09-09T18:16:08.503527+00:00",
   "config": {
     "mode": "mock",
+    "name": "mock",
     "model": "rule-based mock",
     "tickers": [
       "NVDA",
@@ -15,12 +16,19 @@
     "depth": "fast",
     "outlook": "short_term",
     "cost_pct": 0.1,
-    "short": false
+    "short": false,
+    "fundamentals": "excluded",
+    "holdout": null,
+    "seed": 7,
+    "excluded_analysts": [],
+    "policy_version": "2026-09-a",
+    "debate_rounds": 2
   },
   "flags": {
     "memorization_risk": "low (mock mode - no LLM)",
     "memorization_note": "",
-    "fundamentals_bias": "fundamentals are current-vintage, not point-in-time - a known bias, stated here per ROADMAP 2.2",
+    "fundamentals_vintage": "excluded",
+    "fundamentals_bias": "fundamentals excluded from replay: no point-in-time source exists (opt back in with --allow-current-fundamentals and accept the bias)",
     "news_rule": "news items filtered to published <= decision date"
   },
   "overall": {
@@ -37,7 +45,36 @@
     "sharpe": 0.25,
     "max_drawdown_pct": 17.42,
     "periods_per_year": 17.4,
-    "spy_cumulative_pct": 11.51
+    "spy_cumulative_pct": 11.51,
+    "baselines": {
+      "all_hold": {
+        "decisions": 18,
+        "cumulative_pct": 0.0,
+        "note": "every decision HOLD scores 0 net after costs"
+      },
+      "momentum": {
+        "decisions": 18,
+        "counts": {
+          "BUY": 9,
+          "SELL": 0,
+          "HOLD": 9
+        },
+        "hit_rate_pct": 44.4,
+        "avg_net_pct": 1.2,
+        "avg_alpha_pct": 0.48,
+        "cumulative_pct": 17.72,
+        "sharpe": 0.63,
+        "max_drawdown_pct": 14.07,
+        "periods_per_year": 17.4,
+        "positioned_n": 9,
+        "alpha_ci_pct": [
+          -4.66,
+          6.0
+        ],
+        "verdict": "insufficient sample (n=9 < 30): do not promote"
+      }
+    },
+    "periods": null
   },
   "tickers": {
     "NVDA": {

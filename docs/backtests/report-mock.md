@@ -1,6 +1,6 @@
 # Backtest report - mock mode
 
-Generated 2026-09-09T18:02:54Z
+Generated 2026-09-09T18:16:08Z
 
 | Setting | Value |
 |---|---|
@@ -10,13 +10,16 @@ Generated 2026-09-09T18:02:54Z
 | Horizon | 21 days |
 | Depth | fast |
 | Outlook | short_term |
+| Fundamentals | excluded |
 | Round-trip cost | 0.10% |
 | Short selling | disabled (SELL scores 0) |
+| Decision policy | `2026-09-a` · debate rounds 2 |
+| Manifest | `manifest-mock.json` (revision, data hashes, seeds) |
 
 ## Flags
 
 - memorization risk: **low (mock mode - no LLM)**
-- fundamentals are current-vintage, not point-in-time - a known bias, stated here per ROADMAP 2.2
+- fundamentals excluded from replay: no point-in-time source exists (opt back in with --allow-current-fundamentals and accept the bias)
 - news items filtered to published <= decision date
 
 ## Results
@@ -27,6 +30,14 @@ Generated 2026-09-09T18:02:54Z
 | AMD | 6 | 3 / 0 / 3 | 66.70% | +3.26% | +6.27% | +19.28% | 1.78 | 6.76% | +156.17% |
 | META | 6 | 3 / 0 / 3 | 0.00% | -2.83% | -5.44% | -16.12% | -3.65 | 16.12% | +3.03% |
 | overall | 18 | 10 / 0 / 8 | 30.00% | +0.47% | +0.05% | +3.45% | 0.25 | 17.42% | - |
+
+## Baselines (the pipeline must beat a cheap baseline to justify its cost)
+
+| Baseline | Decisions | Positioned | Avg alpha | Cumulative | Note |
+|---|---|---|---|---|---|
+| all HOLD | 18 | - | - | 0.00% | every decision HOLD scores 0 net after costs |
+| deterministic momentum | 18 | 9 | +0.48% | +17.72% | 63-day skip-month momentum, volatility-scaled (same costs) |
+| buy & hold | per-ticker column above | - | - | per-ticker column | hold each ticker across the graded span |
 
 ## Decisions
 

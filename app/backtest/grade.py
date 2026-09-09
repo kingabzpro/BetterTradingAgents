@@ -10,9 +10,13 @@ without an exit close (too recent) are ungraded and excluded from aggregates.
 
 from dataclasses import dataclass, field
 from datetime import date, timedelta
+from math import sqrt
+from random import Random
 from statistics import fmean, pstdev
 
 ROUND_TRIP_COST_PCT = 0.10  # 2 x 5bp, per positioned decision
+MIN_POSITIONED_FOR_PROMOTION = 30  # P1.2: fewer graded bets cannot support a headline
+BOOTSTRAP_REPS = 2000
 
 
 @dataclass
@@ -184,6 +188,95 @@ def buy_hold_pct(closes: dict[str, float], outcomes: list[Outcome]) -> float | N
     if entry is None or exit_point is None or not entry[1]:
         return None
     return round((exit_point[1] / entry[1] - 1) * 100, 2)
+
+
+# ---------------------------------------------------------------------------
+# Uncertainty and periods (ROADMAP P1.2)
+# ---------------------------------------------------------------------------
+
+
+def positioned_alphas(outcomes: list[Outcome]) -> list[float]:
+    """Alphas of decisions that took a position (BUY, or SELL when shorting)."""
+    return [o.alpha_pct for o in outcomes if o.alpha_pct is not None]
+
+
+def bootstrap_mean_ci(
+    values: list[float], seed: int = 7, reps: int = BOOTSTRAP_REPS
+) -> tuple[float, float] | None:
+    """Deterministic percentile bootstrap CI (95%) for the mean.
+
+    The fixed seed makes a report reproducible from its manifest: same inputs,
+    same interval. Few than two observations carry no interval.
+    """
+    if len(values) < 2:
+        return None
+    rng = Random(seed)
+    means = sorted(
+        fmean(rng.choices(values, k=len(values))) for _ in range(reps)
+    )
+    low = means[int(0.025 * reps)]
+    high = means[min(reps - 1, int(0.975 * reps))]
+    return round(low, 2), round(high, 2)
+
+
+def promotion_verdict(positioned_n: int, ci: tuple[float, float] | None) -> str:
+    """Plain-language rule from the roadmap: never promote a winner on a thin
+    sample or an interval that still crosses zero."""
+    if positioned_n == 0:
+        return "no positioned decisions"
+    if positioned_n < MIN_POSITIONED_FOR_PROMOTION:
+        return (
+            f"insufficient sample (n={positioned_n} < {MIN_POSITIONED_FOR_PROMOTION}): "
+            "do not promote"
+        )
+    if ci is None:
+        return "uncertainty could not be estimated"
+    if ci[0] <= 0:
+        return f"CI [{ci[0]:+.2f}%, {ci[1]:+.2f}%] crosses 0: not distinguishable from no edge"
+    return f"CI [{ci[0]:+.2f}%, {ci[1]:+.2f}%] excludes 0 with n={positioned_n}"
+
+
+def period_stats(
+    outcomes: list[Outcome], step_days: int, seed: int = 7
+) -> dict:
+    """Aggregate for one date slice plus the uncertainty and verdict the
+    roadmap demands before any period becomes a headline number."""
+    metrics = aggregate(outcomes, step_days)
+    alphas = positioned_alphas(outcomes)
+    ci = bootstrap_mean_ci(alphas, seed=seed)
+    metrics["positioned_n"] = len(alphas)
+    metrics["alpha_ci_pct"] = ci
+    metrics["verdict"] = promotion_verdict(len(alphas), ci)
+    return metrics
+
+
+def momentum_signal(closes: list[float], outlook: str = "short_term") -> float | None:
+    """Deterministic momentum baseline score from a snapshot's own history.
+
+    The snapshot ends at the decision date, so the score is point-in-time by
+    construction. It reuses the discovery weighting (Jegadeesh & Titman
+    1993; Jegadeesh 1990; Barroso & Santa-Clara 2015 - see app/discovery.py):
+    63-day skip-month continuation, last-month reversal penalty,
+    volatility-scaled. The 126-day term needs more history than a 6-month
+    snapshot holds, so this is the 63-day version. None = not enough bars.
+    """
+    from app.discovery import CONTINUATION_WEIGHTS, REVERSAL_WEIGHT
+
+    if len(closes) < 85:  # 63-day formation that skips the last 21 sessions
+        return None
+    ret21 = (closes[-1] / closes[-22] - 1) * 100
+    ret63 = (closes[-22] / closes[-85] - 1) * 100
+    daily = [cur / prev - 1 for prev, cur in zip(closes[-64:-1], closes[-63:])]
+    volatility = pstdev(daily) * sqrt(252) * 100
+    weight63 = CONTINUATION_WEIGHTS.get(outlook, (0.40, 0.35))[0]
+    raw = weight63 * ret63 - REVERSAL_WEIGHT * max(ret21, 0.0)
+    return raw / max(volatility / 20, 0.75)
+
+
+def momentum_decision(closes: list[float], outlook: str = "short_term") -> str:
+    """The cheap baseline's call: BUY on a positive momentum score, else HOLD."""
+    score = momentum_signal(closes, outlook)
+    return "BUY" if score is not None and score > 0 else "HOLD"
 
 
 @dataclass

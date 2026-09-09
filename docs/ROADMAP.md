@@ -72,6 +72,17 @@ Already shipped:
   emits `probability_beat_spy` against a frozen success event scored with a
   reliability table and Brier loss, and `uv run python -m app.calibration`
   regenerates the full report from SQLite with no LLM calls
+- honest experiment and backtest workflow (ROADMAP P1.2): replays exclude
+  current-vintage fundamentals by default (opt-in via
+  `--allow-current-fundamentals` with a loud look-ahead warning), every
+  report ships a reproducibility manifest (code revision, decision policy
+  version, config, snapshot hashes, seeds), reports include all-HOLD,
+  buy-and-hold, and deterministic-momentum baselines under identical costs,
+  `--holdout` splits tune from untouched test dates with positioned sample
+  sizes, bootstrap intervals, and promotion verdicts that refuse thin or
+  inconclusive results, and `--paired` compares two runs differing in exactly
+  one dimension (depth, rebuttals, forecast, sentiment, model) over a shared
+  cache with a paired-difference interval
 
 ## Priority map
 
@@ -81,7 +92,7 @@ Already shipped:
 | P0.2 | Cancel, rerun, and recover without guessing | UX + run logic | S | Done (2026-09-09) |
 | P0.3 | Accessible, mobile-safe core journey | UI quality | S-M | Done (2026-09-09) |
 | P1.1 | Historical confidence calibration | Logic + evaluation | M | Done (2026-09-09) |
-| P1.2 | Honest experiment and backtest workflow | Evaluation | M | Before tuning prompts or depth |
+| P1.2 | Honest experiment and backtest workflow | Evaluation | M | Done (2026-09-09) |
 | P1.3 | Portfolio-level concentration risk | Risk logic + UI | M | Before execution |
 | P1.4 | Watchlist and decision-change workflow | Product UX | M | After P0 |
 | P1.5 | Compare decisions with visual price context | Product UX | M | After P1.4 |
@@ -261,6 +272,19 @@ while proper scores such as Brier loss assess probabilistic predictions
 ([scikit-learn calibration guide](https://scikit-learn.org/stable/modules/calibration.html)).
 
 ### P1.2 Honest experiment and backtest workflow
+
+**Status: complete (2026-09-09).** Shipped as fundamentals-excluded-by-default
+replays (`app/backtest/data.py` strips them from cached snapshots too;
+`--allow-current-fundamentals` opts back in with a large report warning), the
+reproducibility manifest beside every report (`app/backtest/manifest.py`:
+code revision, decision policy version, config, per-snapshot hashes, seeds),
+the baselines block (all-HOLD, per-ticker buy-and-hold, deterministic
+momentum under the same costs), the `--holdout` tune/test split with
+positioned sample sizes, 95% bootstrap intervals for mean alpha, and plain
+promotion verdicts, the one-change `--paired` mode (depth, rebuttals,
+forecast, sentiment, model; shared cache/dates/costs/seed; paired difference
+CI) in `app/backtest/experiments.py`, and the extended
+`scripts/check_backtest.py`. Kept below for the record.
 
 **Problem.** The harness can replay decisions, but current-vintage fundamentals
 leak later information into historical runs. It also lacks a fixed comparison

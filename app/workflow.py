@@ -573,6 +573,7 @@ async def analyze_ticker(
     run_id: str = "",
     market_data: MarketData | None = None,
     live_context: bool = True,
+    exclude_analysts: tuple[str, ...] | list[str] = (),
 ) -> StockAnalysis:
     """Full 3-stage workflow for one ticker.
 
@@ -586,7 +587,9 @@ async def analyze_ticker(
     `market_data` injects a pre-built snapshot (backtests replay date T with
     only data known at T); `live_context=False` is the backtest mode: no
     portfolio fetch, no decision-memory lookup or recording - both would leak
-    information from after the replayed date.
+    information from after the replayed date. `exclude_analysts` drops
+    researchers whose inputs have no point-in-time source (P1.2: the
+    fundamental analyst in replays), from prompts, events, and coverage.
     """
     started = time.perf_counter()
     await emit("ticker_started", {"ticker": ticker})
@@ -611,7 +614,12 @@ async def analyze_ticker(
         market.closes, market.highs, market.lows, market.volumes
     )
     prof = depth_profile(depth)
-    research: tuple[str, ...] = prof["research"]
+    # Backtests can drop researchers whose data has no point-in-time source
+    # (P1.2: fundamentals); the exclusion applies to prompts, events, and the
+    # data-quality coverage report alike.
+    research: tuple[str, ...] = tuple(
+        key for key in prof["research"] if key not in exclude_analysts
+    )
     local_forecast: dict | None = None
     timegpt_forecast: dict | None = None
     if "forecast" in research:
@@ -729,6 +737,8 @@ async def analyze_ticker(
             return result.model_dump()
         if key in research:
             return "FAILED - researcher ran but returned nothing usable"
+        if key in prof["research"]:
+            return "SKIPPED - excluded from this replay (no point-in-time data source)"
         return f"SKIPPED - not requested in the {prof['label']} depth profile"
 
     context = {

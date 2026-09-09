@@ -1,0 +1,60 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-09-09T18:16:08+00:00",
+  "code": {
+    "revision": "e6bf3ee",
+    "dirty": true
+  },
+  "decision_policy_version": "2026-09-a",
+  "config": {
+    "mode": "mock",
+    "name": "mock",
+    "model": "rule-based mock",
+    "tickers": [
+      "NVDA",
+      "AMD",
+      "META"
+    ],
+    "start": "2026-03-16",
+    "end": "2026-06-29",
+    "step_days": 21,
+    "horizon_days": 21,
+    "depth": "fast",
+    "outlook": "short_term",
+    "cost_pct": 0.1,
+    "short": false,
+    "fundamentals": "excluded",
+    "holdout": null,
+    "seed": 7,
+    "excluded_analysts": [],
+    "policy_version": "2026-09-a",
+    "debate_rounds": 2
+  },
+  "data": {
+    "snapshot_hashes": {
+      "AMD@2026-03-16": "sha256:60c8d3c75d59b9bc",
+      "AMD@2026-04-06": "sha256:c7530f330e496bff",
+      "AMD@2026-04-27": "sha256:abafe17d25745435",
+      "AMD@2026-05-18": "sha256:25ce872d07106cde",
+      "AMD@2026-06-08": "sha256:6663bc4ed85079d1",
+      "AMD@2026-06-29": "sha256:f75b540e337ef7f1",
+      "META@2026-03-16": "sha256:73a74d6a7fa5ded7",
+      "META@2026-04-06": "sha256:4b317b426e3043ac",
+      "META@2026-04-27": "sha256:0e638a50d45ca187",
+      "META@2026-05-18": "sha256:0eb974abf1e984d8",
+      "META@2026-06-08": "sha256:fe0a2b12b9058b5e",
+      "META@2026-06-29": "sha256:c8b79247837b85b6",
+      "NVDA@2026-03-16": "sha256:c6a2e583c3952d0c",
+      "NVDA@2026-04-06": "sha256:6c56b853a56e9b41",
+      "NVDA@2026-04-27": "sha256:82b14787216330af",
+      "NVDA@2026-05-18": "sha256:0f2ce4f272d21de4",
+      "NVDA@2026-06-08": "sha256:1375a10def1137e0",
+      "NVDA@2026-06-29": "sha256:6eca29dd0587ac60"
+    }
+  },
+  "random_seeds": {
+    "bootstrap": 7,
+    "bootstrap_reps": 2000,
+    "pipeline": "deterministic (mock mode)"
+  }
+}
