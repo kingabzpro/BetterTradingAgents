@@ -21,8 +21,12 @@ export function setChatOpen(ticker, open) {
   const panel = $(`chat-panel-${ticker}`);
   const toggle = $(`chat-toggle-${ticker}`);
   if (!panel || !toggle) return;
+  // If focus sits inside the panel (e.g. the message box), return it to the
+  // control that opened the chat instead of dropping it to the page (P0.3).
+  const returnFocus = !open && panel.contains(document.activeElement);
   panel.hidden = !open;
   toggle.setAttribute("aria-expanded", String(open));
+  if (returnFocus) toggle.focus();
   if (open) {
     renderChatMessages(ticker);
     const input = $(`chat-input-${ticker}`);

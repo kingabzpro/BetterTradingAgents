@@ -198,14 +198,15 @@ function renderCsvPreview(result) {
   const ready = csvRows.filter((row) => !row.error);
   const failed = csvRows.filter((row) => row.error);
   const rowsHtml = csvRows.map((row) => row.error
-    ? `<tr class="row-error"><td>${esc(row.rawTicker) || "n/a"}</td><td class="num">n/a</td><td class="num">n/a</td><td>${esc(row.error)} (line ${row.line})</td></tr>`
-    : `<tr><td><strong>${esc(row.ticker)}</strong></td><td class="num">${row.quantity % 1 === 0 ? row.quantity : row.quantity.toFixed(4)}</td><td class="num">${row.price == null ? "live price" : `$${row.price}`}</td><td>ready</td></tr>`
+    ? `<tr class="row-error"><td data-label="Ticker">${esc(row.rawTicker) || "n/a"}</td><td class="num" data-label="Quantity">n/a</td><td class="num" data-label="Entry price">n/a</td><td data-label="Status">${esc(row.error)} (line ${row.line})</td></tr>`
+    : `<tr><td data-label="Ticker"><strong>${esc(row.ticker)}</strong></td><td class="num" data-label="Quantity">${row.quantity % 1 === 0 ? row.quantity : row.quantity.toFixed(4)}</td><td class="num" data-label="Entry price">${row.price == null ? "live price" : `$${row.price}`}</td><td data-label="Status">ready</td></tr>`
   ).join("");
   const box = $("csv-preview");
   box.classList.remove("hidden");
   box.innerHTML = `
     <div class="preview-title">Preview: ${ready.length} ready, ${failed.length} with errors</div>
     <div class="table-wrap"><table class="preview-table">
+      <caption class="sr-only">CSV import preview</caption>
       <thead><tr><th>Ticker</th><th class="num">Quantity</th><th class="num">Entry price</th><th>Status</th></tr></thead>
       <tbody>${rowsHtml}</tbody>
     </table></div>
@@ -267,6 +268,10 @@ function resetCsvImport() {
   const box = $("csv-preview");
   box.classList.add("hidden");
   box.innerHTML = "";
+  // The import/cancel buttons just left the DOM; if focus was on them it fell
+  // to the page, so return it to the control that opened the preview (P0.3).
+  const active = document.activeElement;
+  if (!active || active === document.body || box.contains(active)) $("csv-pick-btn").focus();
 }
 
 /* ---------- utilities ---------- */

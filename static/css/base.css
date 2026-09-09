@@ -142,7 +142,8 @@ h2 {
 }
 .secondary-btn:hover, .table-open-btn:hover { background: var(--panel-2); border-color: rgba(16, 201, 115, 0.48); color: var(--text); }
 
-button:focus-visible, a:focus-visible, input:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+button:focus-visible, a:focus-visible, input:focus-visible, summary:focus-visible,
+[role="button"]:focus-visible, [role="radio"]:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 button, input, summary { touch-action: manipulation; }
 
 /* ---------- decision badges (analysis + history) ---------- */

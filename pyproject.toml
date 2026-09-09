@@ -16,3 +16,8 @@ dependencies = [
 
 [tool.uv]
 package = false
+
+# Dev-only: drives the automated browser smoke test (scripts/check_browser_smoke.py).
+# It launches a system Chromium (Edge/Chrome), so no browser download is needed.
+[dependency-groups]
+dev = ["playwright>=1.45"]

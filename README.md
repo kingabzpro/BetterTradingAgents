@@ -415,6 +415,13 @@ PYTHONPATH=. uv run python scripts/check_chat.py
 # Offline checks for the decision brief: staleness by outlook, coverage, gate change
 PYTHONPATH=. uv run python scripts/check_decision_brief.py
 
+# Offline checks for run controls: cancel, rerun, partial results
+PYTHONPATH=. uv run python scripts/check_run_controls.py
+
+# Automated browser smoke test: keyboard journey, focus, live regions, reflow
+# (uses a system Edge/Chrome via the dev-only playwright dependency)
+PYTHONPATH=. uv run python scripts/check_browser_smoke.py
+
 # One-shot check that the configured LLM endpoint answers
 PYTHONPATH=. uv run python scripts/smoke_llm.py
 ```

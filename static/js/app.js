@@ -2,7 +2,7 @@
    Wires the DOM and boots recovery / rerun, then hands off to run.js. */
 
 import { ADVANCED_OPEN_KEY, CLIENT_ID_KEY, DEPTH_KEY, OUTLOOK_KEY } from "./constants.js";
-import { setDepth, setOutlook, updateAdvancedSummary, updateDepthLabels } from "./options.js";
+import { setDepth, setOutlook, updateAdvancedSummary, updateDepthLabels, wireRadioGroups } from "./options.js";
 import { state } from "./state.js";
 import { addTickerTags, analyzeAnother, removeTickerTag, renderTickerTags } from "./tickers.js";
 import { applyRerunParams, cancelRun, feelingLucky, restoreSavedRun, startAnalysis } from "./run.js";
@@ -33,6 +33,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   document.querySelectorAll("[data-depth]").forEach((button) => {
     button.addEventListener("click", () => setDepth(button.dataset.depth));
   });
+  wireRadioGroups();
   $("advanced-options").addEventListener("toggle", () => {
     try { localStorage.setItem(ADVANCED_OPEN_KEY, $("advanced-options").open ? "1" : "0"); } catch (_) {}
   });

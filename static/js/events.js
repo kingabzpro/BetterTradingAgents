@@ -59,6 +59,7 @@ export function handleEvent(event) {
       entry.done = entry.total;
       setHeader(ticker, null, `failed: ${event.error || "market data unavailable"}`, null);
       updateProgress(ticker, entry);
+      announceTickerResult(ticker, true);
       renderResultCard({ ticker, error: event.error || "Market data unavailable", decision: "HOLD", confidence: 0, risk_flags: [] });
       renderSummaryTable();
       break;
@@ -74,6 +75,7 @@ export function handleEvent(event) {
         manager: { signal: event.decision, confidence: event.confidence, summary: event.analysis.summary },
       };
       updateProgress(ticker, entry);
+      announceTickerResult(ticker, false, event.decision);
       renderResultCard(event.analysis);
       renderSummaryTable();
       break;
@@ -84,6 +86,18 @@ function markAgentDone(entry, agent) {
   if (entry.completedAgents.has(agent)) return;
   entry.completedAgents.add(agent);
   entry.done = Math.min(entry.total, entry.done + 1);
+}
+
+// One announcement per ticker through the overall status region: the
+// meaningful unit is the finished call, not each agent step (P0.3).
+function announceTickerResult(ticker, failed, decision) {
+  const status = $("overall-status");
+  if (!status || !state.running) return;
+  const total = state.tickers.size;
+  const done = [...state.tickers.values()].filter((entry) => entry.done >= entry.total).length;
+  status.textContent = failed
+    ? `${ticker} failed · ${done} of ${total} analyzed`
+    : `${ticker}: ${decision || "HOLD"} · ${done} of ${total} analyzed`;
 }
 
 export function updateProgress(ticker, entry) {

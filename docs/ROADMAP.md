@@ -48,6 +48,20 @@ Already shipped:
   keyboard-visible focus styles
 - responsive portfolio cards, skip navigation, semantic page landmarks,
   mobile-sized touch targets, and higher-contrast primary actions
+- accessibility and small-screen completion pass (ROADMAP P0.3): outlook and
+  depth selectors behave like native radio groups (one tab stop, arrow-key
+  selection), Escape closes the evidence disclosure and manager chat and
+  returns focus to the control that opened them, ticker-tag removal and CSV
+  preview dismissal return focus instead of dropping it to the page, the
+  per-agent status cells are no longer live regions (one polite announcement
+  per finished ticker plus the run-level status), the icon-only tag remove
+  button keeps its compact look but gains a 44 by 44 CSS-pixel hit area,
+  `[role=button]` elements show visible keyboard focus, and the CSV preview
+  table reflows into labeled cards on narrow screens; verified by
+  `scripts/check_browser_smoke.py` (keyboard-only journey in a system
+  Chromium, focus order, accessible names, and no page-level horizontal
+  scrolling at 320 px and 640 px) plus the manual screen-reader protocol in
+  `docs/ACCESSIBILITY.md`
 
 ## Priority map
 
@@ -55,7 +69,7 @@ Already shipped:
 |---|---|---|---|---|
 | P0.1 | Decision brief users can audit in seconds | UI/UX + API | M | Done (2026-09-08) |
 | P0.2 | Cancel, rerun, and recover without guessing | UX + run logic | S | Done (2026-09-09) |
-| P0.3 | Accessible, mobile-safe core journey | UI quality | S-M | Next release |
+| P0.3 | Accessible, mobile-safe core journey | UI quality | S-M | Done (2026-09-09) |
 | P1.1 | Historical confidence calibration | Logic + evaluation | M | Before execution |
 | P1.2 | Honest experiment and backtest workflow | Evaluation | M | Before tuning prompts or depth |
 | P1.3 | Portfolio-level concentration risk | Risk logic + UI | M | Before execution |
@@ -155,6 +169,20 @@ outlook and depth.
 - One offline check covers cancellation during data fetch and during agent work.
 
 ### P0.3 Accessibility and small-screen completion pass
+
+**Status: complete (2026-09-09).** Shipped as the radio-group keyboard model in
+`static/js/options.js` (roving tabindex, arrow and Home/End selection), the
+Escape-and-refocus handlers on result cards and the manager chat in
+`static/js/render.js` / `static/js/chat.js`, focus recovery after ticker-tag
+removal (`static/js/tickers.js`) and CSV preview dismissal
+(`static/js/portfolio.js`), the shift from per-agent live regions to one
+polite announcement per finished ticker (`static/js/events.js`), the 44 by 44
+hit area on the icon-only tag remove button and visible focus for
+`[role=button]` elements (`static/css/analysis.css`, `base.css`), CSV preview
+table reflow (`static/css/portfolio.css`), the automated browser smoke test
+`scripts/check_browser_smoke.py` (dev-only playwright dependency, launches a
+system Edge/Chrome, no browser download), and the manual screen-reader
+protocol in `docs/ACCESSIBILITY.md`. Kept below for the record.
 
 **Build.**
 

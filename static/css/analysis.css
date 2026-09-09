@@ -18,11 +18,15 @@
   background: rgba(16, 201, 115, 0.14); border: 1px solid rgba(16, 201, 115, 0.38); color: #b7ecc9;
 }
 .tag-remove {
-  background: none; border: none; color: inherit; cursor: pointer; font-size: 15px; line-height: 1;
-  font-family: var(--font); padding: 2px 6px; border-radius: 6px; opacity: 0.7;
+  position: relative; background: none; border: none; color: inherit; cursor: pointer;
+  font-size: 15px; line-height: 1; font-family: var(--font); padding: 2px 6px;
+  border-radius: 6px; opacity: 0.7;
   transition: opacity 0.15s, background 0.15s;
 }
 .tag-remove:hover { opacity: 1; background: rgba(255, 255, 255, 0.12); }
+/* Icon-only control: keep the small visual size but grow the pointer target
+   to the 44x44 CSS-pixel minimum (P0.3). */
+.tag-remove::after { content: ""; position: absolute; inset: -13px; }
 #ticker-input {
   flex: 1; min-width: 110px; background: none; border: none; color: var(--text);
   font-size: 15px; font-family: var(--font); outline: none; padding: 6px 2px;

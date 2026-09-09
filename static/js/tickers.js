@@ -32,6 +32,9 @@ export function addTickerTags(raw) {
 export function removeTickerTag(ticker) {
   state.tickerTags = state.tickerTags.filter((existing) => existing !== ticker);
   renderTickerTags();
+  // The remove button is gone from the DOM, so focus fell back to the page;
+  // keep keyboard users on the control that owns the tag list.
+  if (!document.activeElement || document.activeElement === document.body) $("ticker-input").focus();
 }
 
 export function setTickerTags(raw) {

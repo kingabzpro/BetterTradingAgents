@@ -12,6 +12,8 @@ export function setOutlook(outlook) {
     const selected = button.dataset.outlook === state.outlook;
     button.classList.toggle("selected", selected);
     button.setAttribute("aria-checked", String(selected));
+    // Roving tabindex: one tab stop per radio group, arrows move inside it.
+    button.setAttribute("tabindex", selected ? "0" : "-1");
   });
   try { localStorage.setItem(OUTLOOK_KEY, state.outlook); } catch (_) {}
   updateAdvancedSummary();
@@ -23,9 +25,35 @@ export function setDepth(depth) {
     const selected = button.dataset.depth === state.depth;
     button.classList.toggle("selected", selected);
     button.setAttribute("aria-checked", String(selected));
+    button.setAttribute("tabindex", selected ? "0" : "-1");
   });
   try { localStorage.setItem(DEPTH_KEY, state.depth); } catch (_) {}
   updateAdvancedSummary();
+}
+
+// Arrow keys move selection inside each role=radiogroup the way native radio
+// inputs behave; Home/End jump to the first/last option (P0.3).
+export function wireRadioGroups() {
+  document.querySelectorAll('[role="radiogroup"]').forEach((group) => {
+    group.addEventListener("keydown", (event) => {
+      const steps = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 };
+      const buttons = [...group.querySelectorAll('[role="radio"]')];
+      if (!buttons.length) return;
+      let target = null;
+      if (event.key in steps) {
+        event.preventDefault();
+        const current = buttons.indexOf(document.activeElement);
+        target = buttons[(current + steps[event.key] + buttons.length) % buttons.length];
+      } else if (event.key === "Home" || event.key === "End") {
+        event.preventDefault();
+        target = event.key === "Home" ? buttons[0] : buttons[buttons.length - 1];
+      }
+      if (target) {
+        target.click();
+        target.focus();
+      }
+    });
+  });
 }
 
 // The collapsed disclosure still shows the current selections.

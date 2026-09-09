@@ -11,8 +11,8 @@
   <link rel="icon" href="/static/favicon.ico?v=2" sizes="any">
   <link rel="icon" type="image/png" href="/static/favicon.png?v=2">
   <link rel="apple-touch-icon" href="/static/favicon.png?v=2">
-  <link rel="stylesheet" href="/static/css/base.css?v=2">
-  <link rel="stylesheet" href="/static/css/analysis.css?v=2">
+  <link rel="stylesheet" href="/static/css/base.css?v=3">
+  <link rel="stylesheet" href="/static/css/analysis.css?v=3">
 </head>
 <body>
   <a class="skip-link" href="#main-content">Skip to content</a>
@@ -39,7 +39,7 @@
       <label for="ticker-input">Stocks</label>
       <div class="search-row">
         <div class="ticker-box" id="ticker-box">
-          <div id="ticker-tags" aria-label="Selected tickers"></div>
+          <div id="ticker-tags" role="group" aria-label="Selected tickers"></div>
           <input id="ticker-input" type="text" placeholder="Type a symbol, e.g. NVDA" autocomplete="off"
                  spellcheck="false" aria-describedby="ticker-hint">
           <button id="add-ticker-btn" class="tag-add-btn" type="button">Add</button>
@@ -136,6 +136,6 @@
   </div>
 
   <div id="toast" class="toast hidden" role="status" aria-live="polite" aria-atomic="true"></div>
-  <script type="module" src="/static/js/app.js?v=1"></script>
+  <script type="module" src="/static/js/app.js?v=2"></script>
 </body>
 </html>

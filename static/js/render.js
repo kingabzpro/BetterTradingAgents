@@ -166,7 +166,7 @@ export function renderProgressCard(ticker) {
         <div class="agent-row ${agent.stage !== "Research" ? "stage2" : ""}" data-agent="${agent.key}">
           <span class="agent-left"><span class="agent-icon">${ICONS[agent.key]}</span><span>${agent.label}<small>${agent.stage}</small></span></span>
           <span class="stream-hint" hidden>reasoning ▾</span>
-          <span class="status" id="status-${ticker}-${agent.key}" role="status" aria-live="polite"><span class="icon" aria-hidden="true"></span>Waiting</span>
+          <span class="status" id="status-${ticker}-${agent.key}"><span class="icon" aria-hidden="true"></span>Waiting</span>
         </div>
         <div class="stream-pane" id="stream-${ticker}-${agent.key}" hidden><pre id="stream-pre-${ticker}-${agent.key}"></pre></div>
       </div>`).join("")}`;
@@ -216,8 +216,9 @@ export function setAgentStatus(ticker, agent, statusClass, text, duration) {
   if (!element) return;
   element.className = `status ${statusClass}`;
   const durationText = duration ? `${Number(duration).toFixed(1)}s` : "";
+  // Visual progress only: the overall status live region announces ticker
+  // results, so per-agent starts/completions are not spoken (P0.3).
   element.innerHTML = `<span class="icon" aria-hidden="true"></span><span class="status-label">${escapeHtml(text)}</span>${durationText ? `<span class="status-duration">${durationText}</span>` : ""}`;
-  element.setAttribute("aria-label", `${text}${durationText ? `, ${durationText}` : ""}`);
 }
 
 function signalClass(signal) { return `sig-${String(signal || "unknown").toLowerCase()}`; }
@@ -335,6 +336,21 @@ export function renderResultCard(analysis) {
   const existing = $(`result-${ticker}`);
   if (existing) existing.replaceWith(card); else $("results-list").appendChild(card);
   card.querySelector(".result-summary").addEventListener("click", () => toggleResult(card));
+  // Escape closes the innermost open panel and returns focus to the control
+  // that opened it (P0.3).
+  card.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape") return;
+    const chatPanel = $(`chat-panel-${ticker}`);
+    if (chatPanel && !chatPanel.hidden) {
+      setChatOpen(ticker, false);
+      return;
+    }
+    const summary = card.querySelector(".result-summary");
+    if (summary.getAttribute("aria-expanded") === "true") {
+      toggleResult(card, false);
+      summary.focus();
+    }
+  });
   card.querySelector(".retry-btn").addEventListener("click", () => retryTicker(ticker));
   if (canAdd) $(`add-${ticker}`).addEventListener("click", () => addToPortfolio(ticker, Number(analysis.price)));
   if (!analysis.error) {

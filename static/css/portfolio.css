@@ -72,6 +72,26 @@
     font-weight: 700; letter-spacing: 0.065em; text-align: left; text-transform: uppercase;
   }
   .portfolio-table .close-btn { min-height: 44px; min-width: 92px; }
+
+  /* CSV preview table reflows into labeled cards too (P0.3). */
+  .csv-preview .table-wrap { overflow: visible; }
+  .csv-preview .preview-table, .csv-preview .preview-table tbody,
+  .csv-preview .preview-table tr, .csv-preview .preview-table td { display: block; width: 100%; }
+  .csv-preview .preview-table thead { display: none; }
+  .csv-preview .preview-table tr {
+    margin-bottom: 10px; padding: 8px 12px; border: 1px solid var(--border);
+    border-radius: 10px; background: var(--panel);
+  }
+  .csv-preview .preview-table td {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    min-height: 34px; padding: 6px 0; border-bottom: 1px solid rgba(255, 255, 255, 0.055);
+    white-space: normal; text-align: right;
+  }
+  .csv-preview .preview-table td:last-child { border-bottom: 0; }
+  .csv-preview .preview-table td::before {
+    content: attr(data-label); flex: none; color: var(--muted); font-size: 10px;
+    font-weight: 700; letter-spacing: 0.065em; text-transform: uppercase; text-align: left;
+  }
 }
 
 @media (max-width: 620px) {
