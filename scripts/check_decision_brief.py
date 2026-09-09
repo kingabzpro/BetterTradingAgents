@@ -222,16 +222,16 @@ asyncio.run(e2e())
 
 # ---- UI hooks: trust columns, split, gate line, conditions, reading order -------
 root = Path(__file__).resolve().parents[1]
-js = (root / "static" / "app.js").read_text(encoding="utf-8")
+js = "\n".join(path.read_text(encoding="utf-8") for path in sorted((root / "static" / "js").glob("*.js")))
 html = (root / "static" / "index.html").read_text(encoding="utf-8")
-css = (root / "static" / "style.css").read_text(encoding="utf-8")
+css = "\n".join(path.read_text(encoding="utf-8") for path in sorted((root / "static" / "css").glob("*.css")))
 
 for token in ("signalSplit", "splitLabel", "gateLine", "gateChanged", "downgradeFlag",
               "staleInfo", "coverageInfo", "dataAgeHours", "risk-adjusted",
               "Manager: ", "Analyst coverage", "Conditions for a different call",
               "entry.cached", "Data age", "Horizon"):
     assert token in js, f"app.js missing {token}"
-assert "app.js?v=21" in html and "style.css?v=18" in html
+assert 'type="module" src="/static/js/app.js' in html
 for token in (".gate-banner", ".gate-chip", ".gate-line", ".manager-conditions"):
     assert token in css, f"style.css missing {token}"
 

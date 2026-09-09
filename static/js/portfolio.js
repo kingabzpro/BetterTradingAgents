@@ -47,16 +47,16 @@ function render(data) {
       : "";
     const row = document.createElement("tr");
     row.innerHTML = `
-      <td><strong>${esc(position.ticker)}</strong>${tracked}</td>
-      <td class="num">${position.quantity % 1 === 0 ? position.quantity : position.quantity.toFixed(4)}</td>
-      <td class="num">${fmt(position.entry_price)}</td>
-      <td class="num">${fmt(position.current_price)}</td>
-      <td class="num">${fmt(position.cost)}</td>
-      <td class="num">${fmt(position.value)}</td>
-      <td class="num ${pnlClass}">${fmt(position.pnl)}</td>
-      <td class="num ${pnlClass}">${position.pnl_pct == null ? "n/a" : `${position.pnl_pct >= 0 ? "+" : ""}${position.pnl_pct}%`}</td>
-      <td class="muted col-added">${esc(position.added_at || "")}</td>
-      <td><button class="close-btn" type="button" title="Close the entire position at the live price" data-close-id="${position.id}" data-close-ticker="${esc(position.ticker)}">Close</button></td>`;
+      <td data-label="Ticker"><strong>${esc(position.ticker)}</strong>${tracked}</td>
+      <td class="num" data-label="Quantity">${position.quantity % 1 === 0 ? position.quantity : position.quantity.toFixed(4)}</td>
+      <td class="num" data-label="Entry">${fmt(position.entry_price)}</td>
+      <td class="num" data-label="Current">${fmt(position.current_price)}</td>
+      <td class="num" data-label="Cost">${fmt(position.cost)}</td>
+      <td class="num" data-label="Value">${fmt(position.value)}</td>
+      <td class="num ${pnlClass}" data-label="P&amp;L">${fmt(position.pnl)}</td>
+      <td class="num ${pnlClass}" data-label="P&amp;L %">${position.pnl_pct == null ? "n/a" : `${position.pnl_pct >= 0 ? "+" : ""}${position.pnl_pct}%`}</td>
+      <td class="muted col-added" data-label="Added">${esc(position.added_at || "")}</td>
+      <td data-label="Action"><button class="close-btn" type="button" title="Close the entire position at the live price" data-close-id="${position.id}" data-close-ticker="${esc(position.ticker)}">Close</button></td>`;
     body.appendChild(row);
   }
   body.querySelectorAll("[data-close-id]").forEach((button) => {
@@ -70,15 +70,15 @@ function render(data) {
     const pnlClass = trade.pnl == null ? "" : trade.pnl >= 0 ? "pnl-green" : "pnl-red";
     const row = document.createElement("tr");
     row.innerHTML = `
-      <td><strong>${esc(trade.ticker)}</strong></td>
-      <td class="num">${trade.quantity % 1 === 0 ? trade.quantity : trade.quantity.toFixed(4)}</td>
-      <td class="num">${fmt(trade.entry_price)}</td>
-      <td class="num">${fmt(trade.exit_price)}</td>
-      <td class="num">${fmt(trade.cost)}</td>
-      <td class="num">${fmt(trade.value)}</td>
-      <td class="num ${pnlClass}">${fmt(trade.pnl)}</td>
-      <td class="num ${pnlClass}">${trade.pnl_pct == null ? "n/a" : `${trade.pnl_pct >= 0 ? "+" : ""}${trade.pnl_pct}%`}</td>
-      <td class="muted col-added">${esc(trade.closed_at || "")}</td>`;
+      <td data-label="Ticker"><strong>${esc(trade.ticker)}</strong></td>
+      <td class="num" data-label="Quantity">${trade.quantity % 1 === 0 ? trade.quantity : trade.quantity.toFixed(4)}</td>
+      <td class="num" data-label="Entry">${fmt(trade.entry_price)}</td>
+      <td class="num" data-label="Exit">${fmt(trade.exit_price)}</td>
+      <td class="num" data-label="Cost">${fmt(trade.cost)}</td>
+      <td class="num" data-label="Proceeds">${fmt(trade.value)}</td>
+      <td class="num ${pnlClass}" data-label="Realized P&amp;L">${fmt(trade.pnl)}</td>
+      <td class="num ${pnlClass}" data-label="P&amp;L %">${trade.pnl_pct == null ? "n/a" : `${trade.pnl_pct >= 0 ? "+" : ""}${trade.pnl_pct}%`}</td>
+      <td class="muted col-added" data-label="Closed">${esc(trade.closed_at || "")}</td>`;
     historyBody.appendChild(row);
   }
 }

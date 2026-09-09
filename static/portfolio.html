@@ -3,6 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#05070d">
   <title>Portfolio · BetterTradingAgents</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -10,10 +11,11 @@
   <link rel="icon" href="/static/favicon.ico?v=2" sizes="any">
   <link rel="icon" type="image/png" href="/static/favicon.png?v=2">
   <link rel="apple-touch-icon" href="/static/favicon.png?v=2">
-  <link rel="stylesheet" href="/static/css/base.css?v=1">
-  <link rel="stylesheet" href="/static/css/portfolio.css?v=1">
+  <link rel="stylesheet" href="/static/css/base.css?v=2">
+  <link rel="stylesheet" href="/static/css/portfolio.css?v=2">
 </head>
 <body>
+  <a class="skip-link" href="#main-content">Skip to content</a>
   <div class="container">
     <header>
       <div class="brand">
@@ -25,12 +27,13 @@
           <p class="tagline">Your holdings · paper trades</p>
         </div>
       </div>
-      <nav>
+      <nav aria-label="Primary navigation">
         <a href="/history" class="nav-link">Runs</a>
-        <a href="/" class="nav-link">← Analysis</a>
+        <a href="/" class="nav-link">Analysis</a>
       </nav>
     </header>
 
+    <main id="main-content" tabindex="-1">
     <div class="summary-grid" id="summary-grid">
       <div class="summary-card" title="The simulation's starting balance"><div class="sc-label">Starting cash</div><div class="sc-value" id="sc-start">…</div></div>
       <div class="summary-card" title="Demo trading cash: starting cash − simulated buys + sell proceeds (tracked holdings excluded)"><div class="sc-label">Cash remaining</div><div class="sc-value" id="sc-cash">…</div></div>
@@ -65,8 +68,9 @@
       <div class="csv-preview hidden" id="csv-preview"></div>
     </div>
 
-    <div class="card table-wrap">
+    <div class="card table-wrap portfolio-table">
       <table id="positions-table">
+        <caption>Open portfolio positions</caption>
         <thead>
           <tr>
             <th>Ticker</th>
@@ -89,8 +93,9 @@
       </p>
     </div>
 
-    <div class="card table-wrap" id="history-card">
+    <div class="card table-wrap portfolio-table" id="history-card">
       <table id="history-table">
+        <caption>Closed portfolio positions</caption>
         <thead>
           <tr>
             <th>Ticker</th>
@@ -110,9 +115,10 @@
         No closed trades yet. Close an open position to see realized P&L here.
       </p>
     </div>
+    </main>
   </div>
 
-  <div id="toast" class="toast hidden"></div>
-  <script src="/static/js/portfolio.js?v=1"></script>
+  <div id="toast" class="toast hidden" role="status" aria-live="polite" aria-atomic="true"></div>
+  <script src="/static/js/portfolio.js?v=2"></script>
 </body>
 </html>

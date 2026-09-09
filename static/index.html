@@ -3,6 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#05070d">
   <title>BetterTradingAgents</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -10,10 +11,11 @@
   <link rel="icon" href="/static/favicon.ico?v=2" sizes="any">
   <link rel="icon" type="image/png" href="/static/favicon.png?v=2">
   <link rel="apple-touch-icon" href="/static/favicon.png?v=2">
-  <link rel="stylesheet" href="/static/css/base.css?v=1">
-  <link rel="stylesheet" href="/static/css/analysis.css?v=1">
+  <link rel="stylesheet" href="/static/css/base.css?v=2">
+  <link rel="stylesheet" href="/static/css/analysis.css?v=2">
 </head>
 <body>
+  <a class="skip-link" href="#main-content">Skip to content</a>
   <div class="container">
     <header>
       <div class="brand">
@@ -25,13 +27,14 @@
           <p class="tagline">Fast multi-agent stock analysis</p>
         </div>
       </div>
-      <nav>
+      <nav aria-label="Primary navigation">
         <span id="mode-chip" class="chip hidden" aria-label="Mock mode: agents use rule-based fallbacks">mock mode</span>
         <a href="/history" class="nav-link">Runs</a>
         <a href="/portfolio" class="nav-link">Portfolio</a>
       </nav>
     </header>
 
+    <main id="main-content" tabindex="-1">
     <section class="card search-card">
       <label for="ticker-input">Stocks</label>
       <div class="search-row">
@@ -42,14 +45,14 @@
           <button id="add-ticker-btn" class="tag-add-btn" type="button">Add</button>
         </div>
         <button id="feeling-lucky-btn" class="lucky-btn" type="button" aria-describedby="ticker-hint">I Am Feeling Lucky</button>
-        <button id="analyze-btn">Analyze Stocks</button>
+        <button id="analyze-btn" type="button">Analyze Stocks</button>
       </div>
       <div class="chips" id="example-chips">
         <span class="chips-label">Quick add:</span>
-        <button class="chip-btn" data-tickers="NVDA">NVDA</button>
-        <button class="chip-btn" data-tickers="MSFT, AAPL">MSFT, AAPL</button>
-        <button class="chip-btn" data-tickers="NVDA, AMD, META">NVDA, AMD, META</button>
-        <button class="chip-btn" data-tickers="TSLA">TSLA</button>
+        <button class="chip-btn" type="button" data-tickers="NVDA">NVDA</button>
+        <button class="chip-btn" type="button" data-tickers="MSFT, AAPL">MSFT, AAPL</button>
+        <button class="chip-btn" type="button" data-tickers="NVDA, AMD, META">NVDA, AMD, META</button>
+        <button class="chip-btn" type="button" data-tickers="TSLA">TSLA</button>
       </div>
       <details class="advanced-options" id="advanced-options">
         <summary><span class="adv-title">Advanced options</span><span class="adv-summary-values" id="adv-values">Short term · Medium</span><span class="adv-caret" aria-hidden="true"></span></summary>
@@ -124,6 +127,7 @@
       <div id="summary-panel"></div>
       <div id="results-list"></div>
     </section>
+    </main>
 
     <footer>
       <span id="provider-line" class="muted"></span>

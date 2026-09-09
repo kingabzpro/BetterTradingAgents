@@ -53,6 +53,25 @@
 @media (max-width: 768px) {
   .summary-grid { grid-template-columns: repeat(2, 1fr); }
   .manage-grid { grid-template-columns: 1fr; gap: 16px; }
+  .portfolio-table { overflow: visible; padding: 0; background: transparent; border: 0; box-shadow: none; }
+  .portfolio-table table, .portfolio-table tbody, .portfolio-table tr, .portfolio-table td { display: block; width: 100%; }
+  .portfolio-table caption { padding: 4px 2px 9px; }
+  .portfolio-table thead { display: none; }
+  .portfolio-table tr {
+    margin-bottom: 12px; padding: 10px 14px; border: 1px solid var(--border);
+    border-radius: var(--radius); background: var(--panel); box-shadow: var(--shadow);
+  }
+  .portfolio-table td {
+    display: flex; align-items: center; justify-content: space-between; gap: 16px;
+    min-height: 38px; padding: 7px 0; border-bottom: 1px solid rgba(255, 255, 255, 0.055);
+    white-space: normal; text-align: right;
+  }
+  .portfolio-table td:last-child { border-bottom: 0; }
+  .portfolio-table td::before {
+    content: attr(data-label); flex: none; color: var(--muted); font-size: 10px;
+    font-weight: 700; letter-spacing: 0.065em; text-align: left; text-transform: uppercase;
+  }
+  .portfolio-table .close-btn { min-height: 44px; min-width: 92px; }
 }
 
 @media (max-width: 620px) {
@@ -62,5 +81,8 @@
 @media (max-width: 560px) {
   .summary-grid { grid-template-columns: repeat(2, 1fr); gap: 10px; }
   .summary-card .sc-value { font-size: 16px; }
-  .col-added { display: none; }
+  .manage-col:first-child .manage-row { display: grid; grid-template-columns: 1fr 1fr; }
+  .manage-col:first-child .manage-row input { width: 100%; min-height: 44px; }
+  .manage-col:first-child .manage-row #add-price,
+  .manage-col:first-child .manage-row .add-btn { grid-column: 1 / -1; width: 100%; }
 }
