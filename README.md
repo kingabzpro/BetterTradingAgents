@@ -436,7 +436,11 @@ app/
   run_history.py SQLite persistence for completed/interrupted runs
   memory.py      decision log + realized-return/SPY-alpha reflection
   portfolio.py   SQLite positions, closes, realized P&L
-static/          vanilla HTML/CSS/JS, no build step
+static/          vanilla HTML + ES-module JS + per-page CSS, no build step
+  js/            one module per concern: app entry, run lifecycle, SSE events,
+                 rendering, chat, portfolio page; shared via native ES imports
+  css/           base.css (tokens, chrome, shared components) plus one sheet
+                 per page: analysis, history, portfolio
 scripts/         sanity checks
 ```
 

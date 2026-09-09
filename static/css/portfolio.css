@@ -1,0 +1,66 @@
+/* Portfolio page: summary cards, holding management, CSV import, positions
+   and closed-trade tables. Loads after base.css. */
+
+.summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 18px; }
+.summary-card {
+  background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 14px 16px; box-shadow: var(--shadow); transition: border-color 0.15s; min-width: 0;
+}
+.summary-card:hover { border-color: var(--border-strong); }
+.summary-card .sc-label { font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.07em; }
+.summary-card .sc-value { font-size: 19px; font-weight: 700; margin-top: 5px; font-variant-numeric: tabular-nums; letter-spacing: -0.01em; overflow-wrap: anywhere; }
+.sc-value.green { color: #6fe0a0; }
+.sc-value.red { color: #ff8296; }
+
+#unpriced-note { margin: -6px 0 14px; }
+.manage-card { margin-bottom: 18px; }
+.manage-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; }
+.manage-label { font-weight: 650; font-size: 13px; letter-spacing: 0.01em; margin-bottom: 10px; }
+.manage-card .add-row { border-top: none; padding-top: 0; }
+.manage-card .add-row input { width: 104px; }
+.manage-card .add-row input#add-ticker { width: 92px; text-transform: uppercase; }
+.manage-card .hint { margin-top: 10px; }
+.sample-link { color: var(--muted); text-decoration: underline; text-underline-offset: 2px; }
+.sample-link:hover { color: var(--text); }
+.manage-card code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 11.5px; color: #a6aec0; }
+.src-tag {
+  display: inline-block; margin-left: 7px; padding: 2px 8px; border-radius: 999px;
+  font-size: 10px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase;
+  border: 1px solid rgba(96, 165, 250, 0.35); background: rgba(96, 165, 250, 0.1); color: #8ab4f8;
+  vertical-align: 1px; cursor: help;
+}
+.csv-preview { margin-top: 16px; border-top: 1px dashed var(--border-strong); padding-top: 14px; }
+.preview-title { font-size: 12px; font-weight: 650; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 8px; }
+.preview-table { font-size: 12.5px; }
+.preview-table th, .preview-table td { padding: 7px 10px; }
+.preview-table .row-error td { color: #ff8296; }
+.preview-error { color: #ff8296; font-size: 13px; margin: 4px 0 0; }
+.preview-skip { color: var(--muted); font-size: 12.5px; margin: 8px 0 0; padding-left: 18px; }
+.preview-skip li { margin: 3px 0; }
+.preview-actions { display: flex; gap: 10px; margin-top: 12px; }
+
+.close-btn {
+  background: rgba(255, 82, 82, 0.12); color: #ff8296; border: 1px solid rgba(255, 82, 82, 0.4);
+  border-radius: 9px; padding: 5px 12px; font-size: 12px; font-weight: 600; font-family: var(--font);
+  cursor: pointer; transition: background 0.15s, box-shadow 0.15s;
+}
+.close-btn:hover { background: rgba(255, 82, 82, 0.2); box-shadow: 0 0 16px rgba(255, 82, 82, 0.15); }
+.pnl-green { color: #6fe0a0; }
+.pnl-red { color: #ff8296; }
+.empty-note { color: var(--muted); padding: 28px 0; text-align: center; }
+
+/* ---------- responsive: portfolio page ---------- */
+@media (max-width: 768px) {
+  .summary-grid { grid-template-columns: repeat(2, 1fr); }
+  .manage-grid { grid-template-columns: 1fr; gap: 16px; }
+}
+
+@media (max-width: 620px) {
+  .secondary-btn, .add-btn { min-height: 44px; }
+}
+
+@media (max-width: 560px) {
+  .summary-grid { grid-template-columns: repeat(2, 1fr); gap: 10px; }
+  .summary-card .sc-value { font-size: 16px; }
+  .col-added { display: none; }
+}

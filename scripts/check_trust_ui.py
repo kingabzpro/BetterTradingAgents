@@ -101,8 +101,10 @@ assert len(AnalysisRequest(tickers=["A", "B", "C", "D", "E"]).normalized()) == 5
 # Static hooks cover restoration, semantic disclosure, live announcements, and mobile cards.
 root = Path(__file__).resolve().parents[1]
 html = (root / "static" / "index.html").read_text(encoding="utf-8")
-js = (root / "static" / "app.js").read_text(encoding="utf-8")
-css = (root / "static" / "style.css").read_text(encoding="utf-8")
+js_files = sorted((root / "static" / "js").glob("*.js"))
+css_files = sorted((root / "static" / "css").glob("*.css"))
+js = "\n".join(path.read_text(encoding="utf-8") for path in js_files)
+css = "\n".join(path.read_text(encoding="utf-8") for path in css_files)
 for token in ("overall-progress", "feeling-lucky-btn", 'role="status"', 'role="alert"', 'tabindex="-1"'):
     assert token in html
 for token in ("localStorage", "?run", "aria-expanded", "aria-controls", "restoreSavedRun", "retryTicker", "feelingLucky", "/api/discover"):
@@ -111,6 +113,7 @@ for token in ("localStorage", "?run", "aria-expanded", "aria-controls", "restore
     else:
         assert token in js
 assert "onclick=" not in js
+assert "type=\"module\"" in html  # ES module entry point, still no build step
 assert "prefers-reduced-motion" in css
 assert "#summary-table td::before" in css
 assert "@media (max-width: 900px)" in css
@@ -146,7 +149,7 @@ async def endpoint_checks() -> None:
         assert stale.status_code == 404
         # UI assets must always revalidate: a heuristically cached stale
         # stylesheet paired with fresh markup produces broken layout.
-        for path in ("/static/style.css?v=16", "/static/app.js?v=19", "/"):
+        for path in ("/static/css/base.css?v=1", "/static/js/app.js?v=1", "/static/js/render.js", "/"):
             asset = await client.get(path)
             assert asset.headers.get("cache-control") == "no-cache", path
     store.runs.pop(run.run_id, None)
