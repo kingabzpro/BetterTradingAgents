@@ -69,6 +69,12 @@ class Settings:
         "true",
         "yes",
     )
+    # Confidence calibration (docs/ROADMAP.md P1.1): a bucket with fewer mature
+    # graded decisions than this reports "Track record unavailable" instead of
+    # a rate that a handful of outcomes cannot support.
+    calibration_min_observations: int = max(
+        1, int(_env("CALIBRATION_MIN_OBSERVATIONS", "30"))
+    )
 
     # Live reasoning stream (docs/ROADMAP.md 3.2): stream agent tokens to the
     # UI as agent_token SSE events. OFF by default - in live use the stream is

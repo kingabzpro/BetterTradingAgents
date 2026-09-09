@@ -1,6 +1,6 @@
 # Backtest report - mock mode
 
-Generated 2026-09-09T17:48:07Z
+Generated 2026-09-09T18:02:54Z
 
 | Setting | Value |
 |---|---|

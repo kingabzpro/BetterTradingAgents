@@ -61,6 +61,23 @@ def _init_db() -> None:
             )
             """
         )
+        # Databases created before calibration provenance (ROADMAP P1.1) lack
+        # these columns; their rows keep the defaults and group as "unknown /
+        # unversioned" scope in the calibration report.
+        for column in (
+            "outlook TEXT NOT NULL DEFAULT ''",
+            "depth TEXT NOT NULL DEFAULT ''",
+            "model TEXT NOT NULL DEFAULT ''",
+            "manager_decision TEXT",
+            "manager_confidence REAL",
+            "manager_probability REAL",
+            "policy_version TEXT NOT NULL DEFAULT ''",
+            "success_event TEXT NOT NULL DEFAULT ''",
+        ):
+            try:
+                connection.execute(f"ALTER TABLE decisions ADD COLUMN {column}")
+            except sqlite3.OperationalError:
+                pass  # column already exists
         connection.execute(
             "CREATE INDEX IF NOT EXISTS idx_decisions_ticker_date "
             "ON decisions(ticker, date DESC, id DESC)"
@@ -80,14 +97,17 @@ def _insert_decision(
     run_id: str,
     analysis: StockAnalysis,
     decision_date: str,
+    provenance: dict,
 ) -> int:
     with _connect() as connection:
         cursor = connection.execute(
             """
             INSERT INTO decisions (
                 run_id, ticker, date, decision, confidence, price_at_decision,
-                summary, bull_case, bear_case
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                summary, bull_case, bear_case, outlook, depth, model,
+                manager_decision, manager_confidence, manager_probability,
+                policy_version, success_event
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 run_id,
@@ -99,21 +119,36 @@ def _insert_decision(
                 analysis.summary[:600],
                 analysis.bull_case[:400],
                 analysis.bear_case[:400],
+                provenance.get("outlook", ""),
+                provenance.get("depth", ""),
+                provenance.get("model", ""),
+                analysis.manager_decision,
+                analysis.manager_confidence,
+                analysis.manager_probability,
+                provenance.get("policy_version", ""),
+                provenance.get("success_event", ""),
             ),
         )
         return int(cursor.lastrowid)
 
 
 async def record_decision(
-    run_id: str, analysis: StockAnalysis, decision_date: str | None = None
+    run_id: str,
+    analysis: StockAnalysis,
+    decision_date: str | None = None,
+    provenance: dict | None = None,
 ) -> int:
     """Append one completed decision. `decision_date` defaults to today (UTC).
 
     An explicit date lets the check script (and later the backtester) seed
-    decisions as of a past day so outcomes are gradeable.
+    decisions as of a past day so outcomes are gradeable. `provenance` carries
+    the calibration scope (outlook, depth, model, policy version) so outcomes
+    from materially different systems are never pooled silently (P1.1).
     """
     decision_date = decision_date or datetime.now(timezone.utc).date().isoformat()
-    row_id = await asyncio.to_thread(_insert_decision, run_id, analysis, decision_date)
+    row_id = await asyncio.to_thread(
+        _insert_decision, run_id, analysis, decision_date, provenance or {}
+    )
     logger.info(
         "[memory] recorded %s %s %.0f%% @ %.2f",
         analysis.ticker,

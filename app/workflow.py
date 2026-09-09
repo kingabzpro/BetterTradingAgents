@@ -901,8 +901,11 @@ async def analyze_ticker(
     # Preserve the manager's own call before the deterministic risk gate
     # overwrites `decision`/`confidence` (ROADMAP P0.1) so the UI can show
     # `Manager: BUY -> Final: HOLD` with the exact flag that caused it.
+    # The probability of the frozen success event travels with it (P1.1);
+    # the risk gate never touches it.
     manager_decision = final.decision if mgr_data else None
     manager_confidence = final.confidence if mgr_data else None
+    manager_probability = final.probability_beat_spy if mgr_data else None
 
     # Risk gate: deterministic sizing, forecast check, and exposure caps.
     size_usd, risk_flags = None, []
@@ -933,6 +936,7 @@ async def analyze_ticker(
         confidence=confidence,
         manager_decision=manager_decision,
         manager_confidence=manager_confidence,
+        manager_probability=manager_probability,
         summary=summary,
         bull_case=bull_case,
         bear_case=bear_case,
@@ -972,14 +976,28 @@ async def analyze_ticker(
     logger.info(
         "[analysis] %s completed in %.1fs (%s)", ticker, analysis.duration_s, decision
     )
-    # Record the decision for future reflection (ROADMAP 1.1). A failure here
-    # must never surface to the user or block the result. Backtest replays
-    # never write - they are not live decisions.
+    # Record the decision for future reflection (ROADMAP 1.1) with its
+    # calibration provenance (P1.1). A failure here must never surface to the
+    # user or block the result. Backtest replays never write - they are not
+    # live decisions.
     if analysis.error is None and live_context:
         try:
+            from app import calibration
             from app import memory
 
-            await memory.record_decision(run_id, analysis)
+            await memory.record_decision(
+                run_id,
+                analysis,
+                provenance={
+                    "outlook": outlook,
+                    "depth": depth,
+                    "model": settings.llm_for("manager")["model"]
+                    if settings.llm_configured
+                    else "mock",
+                    "policy_version": calibration.DECISION_POLICY_VERSION,
+                    "success_event": calibration.SUCCESS_EVENT,
+                },
+            )
         except Exception as exc:  # noqa: BLE001 - best-effort like the portfolio
             logger.warning("[memory] could not record decision: %s", exc)
     await emit(

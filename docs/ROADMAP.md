@@ -62,6 +62,16 @@ Already shipped:
   Chromium, focus order, accessible names, and no page-level horizontal
   scrolling at 320 px and 640 px) plus the manual screen-reader protocol in
   `docs/ACCESSIBILITY.md`
+- historical confidence calibration (ROADMAP P1.1): every recorded decision
+  carries its scope (outlook, depth, manager model, policy version) and the
+  manager's pre-gate call, evidence strength renders as Low/Moderate/Strong
+  with the raw value secondary, each result card shows the bucket's real
+  track record or `Track record unavailable` with its sample size
+  (`CALIBRATION_MIN_OBSERVATIONS`, default 30), HOLD buckets report missed
+  upside and avoided downside instead of an invented win rate, the manager
+  emits `probability_beat_spy` against a frozen success event scored with a
+  reliability table and Brier loss, and `uv run python -m app.calibration`
+  regenerates the full report from SQLite with no LLM calls
 
 ## Priority map
 
@@ -70,7 +80,7 @@ Already shipped:
 | P0.1 | Decision brief users can audit in seconds | UI/UX + API | M | Done (2026-09-08) |
 | P0.2 | Cancel, rerun, and recover without guessing | UX + run logic | S | Done (2026-09-09) |
 | P0.3 | Accessible, mobile-safe core journey | UI quality | S-M | Done (2026-09-09) |
-| P1.1 | Historical confidence calibration | Logic + evaluation | M | Before execution |
+| P1.1 | Historical confidence calibration | Logic + evaluation | M | Done (2026-09-09) |
 | P1.2 | Honest experiment and backtest workflow | Evaluation | M | Before tuning prompts or depth |
 | P1.3 | Portfolio-level concentration risk | Risk logic + UI | M | Before execution |
 | P1.4 | Watchlist and decision-change workflow | Product UX | M | After P0 |
@@ -211,6 +221,16 @@ status messages, including progress and completion updates
 ## P1 - Prove and improve the logic
 
 ### P1.1 Calibrate confidence from outcomes
+
+**Status: complete (2026-09-09).** Shipped as the evidence-strength labels
+(Low/Moderate/Strong first, raw value second) with a per-card track-record
+line fed by `GET /api/calibration`, the `Track record unavailable` gate
+(`CALIBRATION_MIN_OBSERVATIONS`, default 30, sample size always shown), the
+calibration provenance columns on every recorded decision (outlook, depth,
+manager model, `policy_version` `2026-09-a`, frozen `success_event`), the new
+`probability_beat_spy` manager field scored with a reliability table and Brier
+loss, and the one-command SQLite report `uv run python -m app.calibration`
+plus `scripts/check_calibration.py`. Kept below for the record.
 
 **Problem.** Manager confidence is model-authored evidence strength. A value such as
 `0.72` has not been shown to mean a 72% win rate, yet numeric percentages can imply

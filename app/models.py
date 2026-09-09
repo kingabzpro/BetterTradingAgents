@@ -48,6 +48,30 @@ class ManagerResult(BaseModel):
     bear_case: str = ""
     would_upgrade_if: str = ""
     would_downgrade_if: str = ""
+    # Probability of the frozen success event (app/calibration.py SUCCESS_EVENT):
+    # the call's direction beating SPY over the decision-memory horizon. It is
+    # a separate, explicitly probabilistic field - `confidence` above stays
+    # evidence strength and is never relabeled. HOLD carries no probability.
+    probability_beat_spy: float | None = Field(default=None, ge=0.0, le=1.0)
+
+
+class CalibrationTrackRecord(BaseModel):
+    """Historical rates for one (decision, evidence bucket) scope, or an
+    explicit unavailable state when the mature sample is too small (P1.1)."""
+
+    decision: Decision = "HOLD"
+    confidence_bucket: str = ""
+    n_mature: int = 0
+    min_observations: int = 0
+    available: bool = False
+    directional_hit_rate: float | None = None
+    positive_alpha_rate: float | None = None
+    mean_alpha_pct: float | None = None
+    median_alpha_pct: float | None = None
+    missed_upside_rate: float | None = None
+    avoided_downside_rate: float | None = None
+    mean_realized_pct: float | None = None
+    models_pooled: int = 0
 
 
 class SourceReference(BaseModel):
@@ -114,6 +138,9 @@ class StockAnalysis(BaseModel):
     manager_confidence: float | None = Field(
         default=None, ge=0.0, le=1.0
     )  # evidence strength before the risk gate; None = not recorded (old runs)
+    manager_probability: float | None = Field(
+        default=None, ge=0.0, le=1.0
+    )  # probability of the frozen success event; None = not asked or HOLD
     summary: str = ""
     bull_case: str = ""
     bear_case: str = ""

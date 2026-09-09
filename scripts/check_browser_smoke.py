@@ -207,6 +207,22 @@ def check_analysis_page(page) -> None:
         "!(b.getAttribute('aria-label') || b.textContent.trim())).length === 0"
     ), "every button needs an accessible name"
 
+    # The evidence-strength fact shows the label first, raw value second, and
+    # a track-record line that is honest about a small sample (P1.1).
+    page.wait_for_function(
+        f"document.querySelector('#track-record-{TICKER}') "
+        f"&& document.querySelector('#track-record-{TICKER}').textContent.trim().length > 0",
+        timeout=10_000,
+    )
+    strength = page.evaluate(
+        f"document.getElementById('track-record-{TICKER}').parentElement.querySelector('strong').textContent"
+    )
+    assert strength.startswith(("Low evidence", "Moderate evidence", "Strong evidence")), \
+        "evidence-strength label must be primary, raw value secondary"
+    track_record = page.inner_text(f"#track-record-{TICKER}")
+    assert "Track record unavailable" in track_record or "n=" in track_record, \
+        "track record must always state its sample size"
+
     # Chat panel: Enter opens and focuses the input, Escape closes and
     # returns focus to the toggle.
     tab_until_focused(page, f"#chat-toggle-{TICKER}")

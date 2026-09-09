@@ -10,12 +10,13 @@ from fastapi import FastAPI, Header, HTTPException, Query
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
-from app import chat, memory, portfolio
+from app import calibration, chat, memory, portfolio
 from app.config import settings
 from app.discovery import discover_stocks
 from app.models import (
     AnalysisRequest,
     AnalysisResponse,
+    CalibrationTrackRecord,
     CancelRunResponse,
     ClearHistoryResponse,
     ManagerChatRequest,
@@ -99,6 +100,41 @@ async def health():
         "max_tickers": settings.max_tickers,
         "debate_rounds": settings.debate_rounds,
     }
+
+
+@app.get("/api/calibration", response_model=CalibrationTrackRecord)
+async def calibration_lookup(
+    decision: str = Query(pattern="^(BUY|HOLD|SELL)$"),
+    confidence: float = Query(ge=0.0, le=1.0),
+    outlook: str = Query(default="", max_length=32),
+    depth: str = Query(default="", max_length=32),
+):
+    """Historical outcome rates for one decision + evidence bucket (P1.1).
+
+    Rates only exist once enough mature graded decisions share the scope;
+    otherwise available=false with the sample size, so the UI shows
+    "Track record unavailable" instead of a number a handful of outcomes
+    cannot support. Confidence stays evidence strength: no screen may
+    present it as a probability of profit.
+    """
+    record = await asyncio.to_thread(
+        calibration.track_record, decision, confidence, outlook, depth
+    )
+    return CalibrationTrackRecord(
+        decision=decision,
+        confidence_bucket=record["confidence_bucket"],
+        n_mature=record["n"],
+        min_observations=record["min_observations"],
+        available=record["available"],
+        directional_hit_rate=record.get("directional_hit_rate"),
+        positive_alpha_rate=record.get("positive_alpha_rate"),
+        mean_alpha_pct=record.get("mean_alpha_pct"),
+        median_alpha_pct=record.get("median_alpha_pct"),
+        missed_upside_rate=record.get("missed_upside_rate"),
+        avoided_downside_rate=record.get("avoided_downside_rate"),
+        mean_realized_pct=record.get("mean_realized_pct"),
+        models_pooled=record.get("models_pooled", 0),
+    )
 
 
 @app.get("/api/discover")

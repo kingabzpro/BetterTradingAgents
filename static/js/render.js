@@ -21,9 +21,38 @@ export function labelFor(agent, signal, confidence) {
 
 export function convictionLabel(confidence) {
   const pct = Math.round((confidence || 0) * 100);
-  if (pct >= 70) return "High evidence";
+  if (pct >= 70) return "Strong evidence";
   if (pct >= 50) return "Moderate evidence";
   return "Low evidence";
+}
+
+// Historical outcome rates for this decision + evidence bucket, or an honest
+// "unavailable" while the mature sample is too small (P0.1 -> P1.1). Fetched
+// after the card renders so grading data never delays the decision brief.
+function fetchTrackRecord(analysis) {
+  if (analysis.error) return;
+  const params = new URLSearchParams({
+    decision: analysis.decision || "HOLD",
+    confidence: String(analysis.confidence ?? 0),
+    outlook: state.outlook,
+    depth: state.depth,
+  });
+  const pct = (value) => `${Math.round(Number(value) * 100)}%`;
+  const signedPct = (value) => `${Number(value) >= 0 ? "+" : ""}${Number(value).toFixed(1)}%`;
+  fetch(`/api/calibration?${params}`)
+    .then((response) => (response.ok ? response.json() : null))
+    .then((record) => {
+      const cell = $(`track-record-${analysis.ticker}`);
+      if (!cell || !record) return;
+      if (!record.available) {
+        cell.textContent = `Track record unavailable · ${record.n_mature} mature call${record.n_mature === 1 ? "" : "s"} (${record.min_observations} needed)`;
+        return;
+      }
+      cell.textContent = record.decision === "HOLD"
+        ? `Track record: missed upside ${pct(record.missed_upside_rate)} · avoided downside ${pct(record.avoided_downside_rate)} · n=${record.n_mature}`
+        : `Track record: ${pct(record.directional_hit_rate)} directional hit · mean alpha ${signedPct(record.mean_alpha_pct)} · n=${record.n_mature}`;
+    })
+    .catch(() => {});
 }
 
 // Compact signal split from the analyst results themselves - no extra LLM call.
@@ -138,7 +167,7 @@ export function renderSummaryTable() {
             : '<span class="flag-ok">✓ Clear</span>';
       return `<tr>
         <td data-label="Ticker"><strong>${escapeHtml(analysis.ticker)}</strong></td>
-        <td data-label="Call">${decisionBadge(analysis)}${gated ? `<span class="gate-chip">risk-adjusted</span>` : ""}<small>${Math.round((analysis.confidence || 0) * 100)}% · ${convictionLabel(analysis.confidence)}</small></td>
+        <td data-label="Call">${decisionBadge(analysis)}${gated ? `<span class="gate-chip">risk-adjusted</span>` : ""}<small>${convictionLabel(analysis.confidence)} · ${Math.round((analysis.confidence || 0) * 100)}%</small></td>
         <td data-label="Price" class="num">${analysis.price != null ? `$${Number(analysis.price).toFixed(2)}` : "Not available"}</td>
         <td data-label="Horizon">${OUTLOOK_LABELS[state.outlook] || state.outlook}<small>${depthProfile().label} depth</small></td>
         <td data-label="Data age">${age.stale ? '<span class="flag-warn">' : ""}${ageLabel(age.hours)}${age.stale ? " · stale</span>" : ""}<small>${analysis.as_of ? escapeHtml(formatDateTime(analysis.as_of)) : "no timestamp"}${entry?.cached ? " · cached" : ""}</small></td>
@@ -304,7 +333,7 @@ export function renderResultCard(analysis) {
     <button class="result-summary" type="button" aria-expanded="false" aria-controls="${detailId}"><span class="result-identity"><span class="tk">${escapeHtml(ticker)}</span><span class="company">${escapeHtml(analysis.company_name || "Company name unavailable")}</span></span>${decisionBadge(analysis)}${gated ? '<span class="gate-chip">risk-adjusted</span>' : ""}<span class="summary-action">Evidence &amp; sources <span class="caret" aria-hidden="true">▶</span></span></button>
     <div class="decision-brief">
       ${gated ? `<div class="gate-banner"><span class="gate-chip">risk-adjusted</span><span class="gate-line">${escapeHtml(gateLine(analysis))}</span>${downgradeFlag(analysis) ? `<small>⚠ ${escapeHtml(downgradeFlag(analysis))}</small>` : ""}</div>` : ""}
-      <div class="decision-facts"><div><span>Current price</span><strong>${analysis.price != null ? `$${Number(analysis.price).toFixed(2)}` : "Unavailable"}</strong></div><div><span>5-day forecast</span><strong>${analysis.forecast_price_5d != null ? `$${Number(analysis.forecast_price_5d).toFixed(2)} (${Number(analysis.forecast_change_5d_pct) >= 0 ? "+" : ""}${Number(analysis.forecast_change_5d_pct).toFixed(2)}%)` : "Unavailable"}</strong><small>${analysis.forecast_method === "timegpt-1" ? "TimeGPT" : analysis.forecast_trend_r2 != null ? `Local fit R² ${Number(analysis.forecast_trend_r2).toFixed(2)}` : "Local"}${forecastBandNote(analysis)}</small></div><div><span>Data age</span><strong>${age.stale ? '<span class="flag-warn">' : ""}${ageLabel(age.hours)}${cachedRun ? " · cached" : ""}${age.stale ? " · stale</span>" : ""}</strong><small>${escapeHtml(asOf)}</small></div><div><span>Evidence strength</span><strong>${confidencePct}% · ${convictionLabel(analysis.confidence)}</strong></div><div><span>Horizon</span><strong>${OUTLOOK_LABELS[state.outlook] || state.outlook}</strong><small>${profile.label} depth</small></div><div><span>Analyst coverage</span><strong>${analysis.error ? "n/a" : `${cov.available}/${cov.expected} analysts`}</strong>${!analysis.error && cov.split.available ? `<small>${splitLabel(cov.split)}</small>` : ""}${fallbacks.length ? `<small class="flag-warn">${fallbacks.map(escapeHtml).join(" · ")}</small>` : ""}</div><div><span>Suggested size</span><strong>${analysis.suggested_size_usd ? fmtUsd(analysis.suggested_size_usd) : "No position"}</strong></div>${tokenFact}</div>
+      <div class="decision-facts"><div><span>Current price</span><strong>${analysis.price != null ? `$${Number(analysis.price).toFixed(2)}` : "Unavailable"}</strong></div><div><span>5-day forecast</span><strong>${analysis.forecast_price_5d != null ? `$${Number(analysis.forecast_price_5d).toFixed(2)} (${Number(analysis.forecast_change_5d_pct) >= 0 ? "+" : ""}${Number(analysis.forecast_change_5d_pct).toFixed(2)}%)` : "Unavailable"}</strong><small>${analysis.forecast_method === "timegpt-1" ? "TimeGPT" : analysis.forecast_trend_r2 != null ? `Local fit R² ${Number(analysis.forecast_trend_r2).toFixed(2)}` : "Local"}${forecastBandNote(analysis)}</small></div><div><span>Data age</span><strong>${age.stale ? '<span class="flag-warn">' : ""}${ageLabel(age.hours)}${cachedRun ? " · cached" : ""}${age.stale ? " · stale</span>" : ""}</strong><small>${escapeHtml(asOf)}</small></div><div><span>Evidence strength</span><strong>${convictionLabel(analysis.confidence)} · ${confidencePct}%</strong><small id="track-record-${ticker}" class="track-record"></small></div><div><span>Horizon</span><strong>${OUTLOOK_LABELS[state.outlook] || state.outlook}</strong><small>${profile.label} depth</small></div><div><span>Analyst coverage</span><strong>${analysis.error ? "n/a" : `${cov.available}/${cov.expected} analysts`}</strong>${!analysis.error && cov.split.available ? `<small>${splitLabel(cov.split)}</small>` : ""}${fallbacks.length ? `<small class="flag-warn">${fallbacks.map(escapeHtml).join(" · ")}</small>` : ""}</div><div><span>Suggested size</span><strong>${analysis.suggested_size_usd ? fmtUsd(analysis.suggested_size_usd) : "No position"}</strong></div>${tokenFact}</div>
       <div class="manager-conclusion"><span class="eyebrow">Manager conclusion</span><p class="thesis">${escapeHtml(analysis.summary || analysis.error || "No manager summary was returned.")}</p></div>
       ${conditions}
       ${analysis.error ? `<div class="risk-flags"><strong>Analysis unavailable</strong><span>⚠ ${escapeHtml(analysis.error)}</span></div>` : flags.length ? `<div class="risk-flags"><strong>Risk flags</strong>${flags.map((flag) => `<span>⚠ ${escapeHtml(flag)}</span>`).join("")}</div>` : '<div class="risk-clear"><span aria-hidden="true">✓</span> No risk rules were triggered.</div>'}
@@ -364,6 +393,7 @@ export function renderResultCard(analysis) {
   }
   const entry = state.tickers.get(ticker);
   if (entry) entry.analysis = analysis;
+  fetchTrackRecord(analysis);
 }
 
 export function toggleResult(card, forceOpen = null) {

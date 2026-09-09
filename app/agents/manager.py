@@ -46,12 +46,14 @@ Decision rules:
 
 "would_upgrade_if" and "would_downgrade_if" state what evidence would change this call. Ground each one in the dossier above (a reading, a level, a reported metric), keep each to one sentence, and never promise a price target or an alert - they are conditions, not predictions.
 
+"probability_beat_spy" is a calibrated probability, separate from "confidence" (which stays evidence strength): for BUY or SELL, the probability that this call's direction beats SPY over the next 21 days - for BUY that the stock outperforms SPY, for SELL that it underperforms. Use the honest full range: 0.5 means a coin flip against the market, and a rare genuinely-strong setup may justify 0.8, not everything does. Set it to null for HOLD.
+
 Respond with ONLY a JSON object, no markdown fences, no text outside the JSON:
-{{"ticker": "{ticker}", "decision": "BUY" | "HOLD" | "SELL", "confidence": <number 0.0-1.0>, "summary": "<at most 3 sentences explaining the decision>", "bull_case": "<at most 2 sentences>", "bear_case": "<at most 2 sentences>", "would_upgrade_if": "<one condition from the dossier that would justify a stronger call>", "would_downgrade_if": "<one condition from the dossier that would justify a weaker call>"}}""",
+{{"ticker": "{ticker}", "decision": "BUY" | "HOLD" | "SELL", "confidence": <number 0.0-1.0>, "probability_beat_spy": <number 0.0-1.0, or null when decision is HOLD>, "summary": "<at most 3 sentences explaining the decision>", "bull_case": "<at most 2 sentences>", "bear_case": "<at most 2 sentences>", "would_upgrade_if": "<one condition from the dossier that would justify a stronger call>", "would_downgrade_if": "<one condition from the dossier that would justify a weaker call>"}}""",
         expected_output=(
             "A JSON object with keys: ticker, decision (BUY|HOLD|SELL), confidence "
-            "(0.0-1.0), summary, bull_case, bear_case, would_upgrade_if, "
-            "would_downgrade_if."
+            "(0.0-1.0), probability_beat_spy (0.0-1.0 or null for HOLD), summary, "
+            "bull_case, bear_case, would_upgrade_if, would_downgrade_if."
         ),
         agent=agent,
         output_pydantic=ManagerResult,
@@ -76,10 +78,18 @@ def to_manager_result(data: dict, ticker: str) -> ManagerResult:
         decision = "SELL"
     else:
         decision = "HOLD"
+    raw_probability = data.get("probability_beat_spy")
+    try:
+        probability = None if raw_probability in (None, "") else float(raw_probability)
+    except (TypeError, ValueError):
+        probability = None
+    if probability is not None:
+        probability = min(1.0, max(0.0, probability))
     return ManagerResult(
         ticker=ticker,
         decision=decision,
         confidence=clamp_conf(data.get("confidence")),
+        probability_beat_spy=None if decision == "HOLD" else probability,
         summary=clip(data.get("summary", ""), 600),
         bull_case=clip(data.get("bull_case", ""), 400),
         bear_case=clip(data.get("bear_case", ""), 400),
@@ -96,10 +106,16 @@ def mock(ticker: str, payload: dict) -> dict:
     bear_score = bear.get("confidence", 0.5) if isinstance(bear, dict) else 0.5
     net = bull_score - bear_score
     decision = "BUY" if net >= 0.15 else "SELL" if net <= -0.15 else "HOLD"
+    probability = (
+        None
+        if decision == "HOLD"
+        else round(min(0.95, max(0.05, 0.5 + abs(net))), 2)
+    )
     return {
         "ticker": ticker,
         "decision": decision,
         "confidence": round(0.5 + abs(net), 2),
+        "probability_beat_spy": probability,
         "summary": f"[mock] Bull {bull_score:.2f} vs bear {bear_score:.2f} -> {decision}.",
         "bull_case": "[mock] See bull researcher summary.",
         "bear_case": "[mock] See bear researcher summary.",

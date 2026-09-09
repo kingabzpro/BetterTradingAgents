@@ -418,12 +418,22 @@ PYTHONPATH=. uv run python scripts/check_decision_brief.py
 # Offline checks for run controls: cancel, rerun, partial results
 PYTHONPATH=. uv run python scripts/check_run_controls.py
 
+# Offline checks for confidence calibration: buckets, sample gate, Brier, API
+PYTHONPATH=. uv run python scripts/check_calibration.py
+
 # Automated browser smoke test: keyboard journey, focus, live regions, reflow
 # (uses a system Edge/Chrome via the dev-only playwright dependency)
 PYTHONPATH=. uv run python scripts/check_browser_smoke.py
 
 # One-shot check that the configured LLM endpoint answers
 PYTHONPATH=. uv run python scripts/smoke_llm.py
+```
+
+Regenerate the confidence calibration report from the decision database with
+one command and no LLM calls:
+
+```bash
+uv run python -m app.calibration
 ```
 
 `check_risk.py` also runs a full mock-mode analysis end-to-end, so it needs network access for
