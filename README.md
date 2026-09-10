@@ -10,7 +10,7 @@
 [![uv](https://img.shields.io/badge/uv-managed-de5fe9?logo=uv&logoColor=white)](https://docs.astral.sh/uv/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](#license)
 
-[Highlights](#highlights) · [Quick start](#quick-start) · [Using the app](#using-the-app) · [Configuration](#configuration) · [API](#api) · [Backtesting](#backtesting)
+[Highlights](#highlights) · [Quick start](#quick-start) · [Using the app](#using-the-app) · [Configuration](#configuration) · [API](#api) · [Backtesting](#backtesting) · [Wiki](https://github.com/kingabzpro/BetterTradingAgents/wiki)
 
 </div>
 
@@ -108,28 +108,10 @@ Prefer configuring by hand? Copy [`.env.example`](.env.example) to `.env` and ed
 setting is optional and documented in [Configuration](#configuration). Keys stay in `.env`,
 which is gitignored; restart the app after changing it.
 
-### Recommended models
-
-> [!IMPORTANT]
-> For the best balance of **price, accuracy, and speed**, start with DeepSeek V4 Flash,
-> Qwen3.8 Flash, or GLM-5.3-Flash. Provider pricing and availability can vary by region.
-
-| Provider | `LLM_MODEL` value | Why choose it |
-|---|---|---|
-| [DeepSeek](https://api-docs.deepseek.com/quick_start/pricing) | `deepseek-v4-flash` | Fast, cost-efficient general reasoning for multi-agent runs |
-| [Alibaba Cloud Qwen](https://www.alibabacloud.com/help/en/model-studio/getting-started/models) | `qwen3.8-flash` | High-speed model with strong instruction following and a large context window |
-| [Z.AI](https://docs.z.ai/guides/vlm/glm-5.3-flash) | `glm-5.3-flash` | Efficient reasoning with strong quality at a lower serving cost |
-
-### Per-role models
-
-Set `LLM_MODEL` to the cheap fast model, then override the manager so the final judgment runs
-on the stronger one. Each role can also point at its own endpoint and key
-(`LLM_BASE_URL_*` / `LLM_API_KEY_*`):
-
-```env
-LLM_MODEL=zai-org/GLM-5.3-Flash
-LLM_MODEL_MANAGER=zai-org/GLM-5.3
-```
+For model picks (DeepSeek V4 Flash, Qwen3.8 Flash, and GLM-5.3-Flash are the recommended
+starters) and per-role splits that put a cheap fast model on the researchers and a stronger
+one on the final call, see the wiki's
+[Configuration](https://github.com/kingabzpro/BetterTradingAgents/wiki/Configuration) page.
 
 ## Using the app
 
@@ -217,139 +199,62 @@ has no known price.
 ## Configuration
 
 Run `uv run setup` to configure interactively, or copy [`.env.example`](.env.example) to
-`.env` and override only what you need. Every setting is optional; without an LLM key, the
-app starts in mock mode. The groups below mirror the sections of `.env.example`, and the
-defaults live in `app/config.py`.
-
-### LLM
-
-Any OpenAI-compatible endpoint. Pair a cheap fast model with the researchers and a stronger one
-with the manager via the per-role overrides.
+`.env`. Every setting is optional; without an LLM key, the app starts in mock mode. The
+settings most people touch:
 
 | Variable | Default | Purpose |
 |---|---|---|
 | `LLM_BASE_URL` | `https://api.openai.com/v1` | OpenAI-compatible API endpoint |
 | `LLM_API_KEY` | Not set | Enables the LLM agents (researchers, debaters, manager) |
 | `LLM_MODEL` | `gpt-5.6-luna` | Model used by every agent without a per-role override |
-| `LLM_TEMPERATURE` | `0.2` | Sampling temperature |
-| `LLM_TIMEOUT_SECONDS` | `90` | Timeout for each agent call |
-| `LLM_REASONING_EFFORT` | Not set | Optional provider-specific reasoning effort (e.g. `none`/`low` for GLM) |
-| `LLM_PRICE_IN` / `LLM_PRICE_OUT` | `0` | Cost-estimate override in USD per 1M input/output tokens for every role (custom/proxied pricing); `0` uses the built-in list-price table in `app/cost.py` |
-| `LLM_MODEL_MANAGER` | `LLM_MODEL` | Per-role model for the final BUY/HOLD/SELL call |
-| `LLM_BASE_URL_MANAGER` / `LLM_API_KEY_MANAGER` | global values | Optional endpoint/key just for the manager |
-| `LLM_MODEL_ANALYSTS` (+ `_BASE_URL_` / `_API_KEY_`) | global values | Per-role overrides for the 5 researchers |
-| `LLM_MODEL_DEBATE` (+ `_BASE_URL_` / `_API_KEY_`) | global values | Per-role overrides for the bull/bear debaters |
-
-### Market-data providers
-
-All optional; each has a built-in fallback.
-
-| Variable | Default | Purpose |
-|---|---|---|
 | `FINNHUB_API_KEY` | Not set | Company profiles, fundamentals, and news; falls back to yfinance |
-| `OLOSTEP_API_KEY` | Not set | News search/scraping fallback and Reddit/StockTwits sentiment search |
+| `OLOSTEP_API_KEY` | Not set | News search fallback and Reddit/StockTwits sentiment search |
 | `NIXTLA_API_KEY` | Not set | Nixtla TimeGPT 5-day forecast; falls back to the local trend model |
-
-### Analysis
-
-| Variable | Default | Purpose |
-|---|---|---|
 | `MAX_TICKERS` | `5` | Maximum tickers accepted in one analysis |
-| `DEBATE_ROUNDS` | `2` | Bull/bear debate depth: `1` = single round, `2`+ adds one rebuttal exchange (capped at 3) |
-| `STREAM_REASONING` | `0` | Live reasoning stream: `1` streams agent tokens to the UI (off by default: the stream is mostly the final JSON and reads as noise) |
+| `STREAM_REASONING` | `0` | `1` streams agent tokens to the UI live (off by default) |
 
-### Demo portfolio and storage
-
-| Variable | Default | Purpose |
-|---|---|---|
-| `STARTING_CASH` | `100000` | Initial simulated portfolio balance |
-| `DEFAULT_POSITION_SIZE` | `10000` | Suggested position value |
-| `DB_PATH` | `portfolio.db` | SQLite app database path for portfolio positions and run history |
-
-### Risk gate
-
-Fractions of total equity applied to every BUY.
-
-| Variable | Default | Purpose |
-|---|---|---|
-| `MAX_POSITION_PCT` | `0.10` | Max fraction of equity in one ticker |
-| `MAX_INVESTED_PCT` | `0.60` | Max fraction of equity invested |
-| `MIN_CASH_PCT` | `0.10` | Min cash buffer after a BUY |
-
-### Decision memory and calibration
-
-| Variable | Default | Purpose |
-|---|---|---|
-| `MEMORY_HORIZON_DAYS` | `21` | Days a past call is held before its realized-return grade is final |
-| `MEMORY_REFLECT_WITH_LLM` | `0` | `1` asks the LLM for reflection lessons instead of deterministic sentences |
-| `CALIBRATION_MIN_OBSERVATIONS` | `30` | Minimum mature graded decisions before a confidence bucket shows a track record instead of `Track record unavailable` |
-
-### Backtests
-
-| Variable | Default | Purpose |
-|---|---|---|
-| `BACKTEST_CACHE` | `docs/backtests/cache.db` | SQLite snapshot cache location (gitignored) |
-| `BACKTEST_OFFLINE` | `0` | `1` makes cache misses fail instead of hitting the network (proves warm re-runs are truly offline) |
+Per-role model splits, cost-estimate overrides, risk-gate caps, decision memory, and
+backtest cache settings are documented in the wiki's
+[Configuration](https://github.com/kingabzpro/BetterTradingAgents/wiki/Configuration) page;
+the defaults live in `app/config.py`.
 
 ## API
+
+The core endpoints:
 
 | Method | Route | Purpose |
 |:---:|---|---|
 | `POST` | `/api/analyze` | Start an analysis run for one or more tickers |
-| `GET` | `/api/discover` | Rank liquid growth companies with a research-grounded momentum score and return up to five candidates |
-| `GET` | `/api/runs` | List saved analysis runs, newest first |
-| `DELETE` | `/api/runs` | Clear the current browser's finished run history |
 | `GET` | `/api/runs/{run_id}` | Read run status and complete results |
 | `GET` | `/api/runs/{run_id}/events` | Stream live progress over SSE |
 | `POST` | `/api/runs/{run_id}/cancel` | Cancel a running analysis, keeping finished ticker results |
-| `POST` | `/api/runs/{run_id}/chat` | Ask the portfolio manager follow-up questions about one ticker |
+| `POST` | `/api/runs/{run_id}/chat` | Ask the portfolio manager follow-up questions |
 | `GET` | `/api/portfolio` | List positions with live prices and profit/loss |
-| `POST` | `/api/portfolio/add` | Add a simulated position |
-| `POST` | `/api/portfolio/import` | Record tracked holdings (manual entry / CSV import) |
-| `POST` | `/api/portfolio/close` | Close a position at the live (or given) price and realize P/L |
 | `GET` | `/api/health` | Check configuration and provider status |
 
-<details>
-<summary><strong>Example: start an analysis</strong></summary>
-
 ```bash
-curl -X POST http://localhost:8000/api/analyze \
-  -H "Content-Type: application/json" \
-  -d '{"tickers":["NVDA","AMD"]}'
+curl -X POST http://localhost:8000/api/analyze   -H "Content-Type: application/json"   -d '{"tickers":["NVDA","AMD"]}'
 ```
 
-</details>
-
-Every endpoint returns documented Pydantic models; see `app/models.py` for the full result
-schema (pre-gate manager call, change conditions, data quality, forecast, per-agent reports,
-risk output, and the cost estimate).
+The full endpoint list, the complete result schema (pre-gate manager call, change
+conditions, data quality, forecast, per-agent reports, risk output, cost estimate), and the
+SSE event catalog live in the wiki's
+[API](https://github.com/kingabzpro/BetterTradingAgents/wiki/API) page.
 
 ## Backtesting
 
 The walk-forward harness answers "is the pipeline better than buy-and-hold?" It replays the
-full analysis at each grid date using only data known at that date:
+full analysis at each grid date using only data known at that date, grades every call
+against SPY after costs, and compares with all-HOLD, buy-and-hold, and momentum baselines:
 
 ```bash
 uv run python -m app.backtest --tickers NVDA,AMD,META --start 2026-03-01 --end 2026-06-30 --step 21
 ```
 
-- **Point-in-time data**: OHLCV and news are cut off at each decision date; fundamentals and
-  social posts have no point-in-time source, so those analysts replay honestly (excluded and
-  thin-neutral respectively) instead of leaking present-day data. Portfolio context and
-  decision memory are disabled during replay.
-- **Grading with costs**: BUY earns the window's return minus a 2×5bp round-trip cost, each
-  call compared with SPY over the same window; reports add hit rate, cumulative return,
-  Sharpe, max drawdown, and an all-HOLD / buy-and-hold / deterministic-momentum baseline set.
-- **Honest experiments**: `--holdout YYYY-MM-DD` splits tune and untouched test dates with
-  bootstrap intervals; `--paired depth=fast:expert` (also `rebuttals`, `forecast`,
-  `sentiment`, `model`) changes exactly one dimension at a time. Verdicts refuse to promote
-  thin or inconclusive samples.
-- **Reproducible**: every report carries a manifest (code revision, policy version, config,
-  snapshot hashes, seeds); mock mode is the free default, and `--llm` flags its result
-  `memorization_risk: high`.
-
-Reports land in [`docs/backtests/`](docs/backtests/) as JSON + markdown, and warm-cache
-re-runs make zero network calls.
+Mock mode is the free default; `--holdout` splits tune and untouched test dates with
+bootstrap intervals, and `--paired` changes exactly one dimension at a time. The full
+guide lives in the wiki's
+[Backtesting](https://github.com/kingabzpro/BetterTradingAgents/wiki/Backtesting) page.
 
 ## Development
 
@@ -358,24 +263,20 @@ uv run test         # fast offline suite (quick wins, cost, run history, setup w
 uv run test chat    # one specific group
 uv run test all     # every group, including the browser smoke test
 
-uv run python scripts/smoke_llm.py        # one-shot: does the configured LLM answer?
-uv run python -m app.calibration           # regenerate the calibration report, no LLM calls
+uv run python scripts/smoke_llm.py   # one-shot: does the configured LLM answer?
+uv run python -m app.calibration      # regenerate the calibration report, no LLM calls
 ```
 
-Every check is a standalone script in `scripts/` with a docstring explaining what it covers;
-`check_risk.py` runs a full mock analysis end-to-end and needs network access for market data.
-
-```
-app/            FastAPI app: main routes, workflow pipeline, agents, tools,
-                risk gate, chat, portfolio, run history, memory, backtests
-static/         vanilla HTML + ES-module JS + per-page CSS, no build step
-scripts/        offline checks + the setup wizard (uv run test / uv run setup)
-docs/           roadmap, accessibility protocol, backtest reports
-```
+Every check is a standalone script in `scripts/` with a docstring explaining what it
+covers; the full catalog lives in the wiki's
+[Testing](https://github.com/kingabzpro/BetterTradingAgents/wiki/Testing) page, and the
+module-by-module walkthrough in
+[Architecture](https://github.com/kingabzpro/BetterTradingAgents/wiki/Architecture).
 
 ## Roadmap
 
-The detailed, research-backed plan lives in [docs/ROADMAP.md](docs/ROADMAP.md). Shipped so
+The detailed, research-backed plan lives in the wiki's
+[Roadmap](https://github.com/kingabzpro/BetterTradingAgents/wiki/Roadmap) page. Shipped so
 far: the decision brief with trust state, run controls, the accessibility pass, historical
 confidence calibration, and the honest experiment workflow. Next up: portfolio concentration
 risk, a watchlist with decision-change tracking, decision comparison with price context,
