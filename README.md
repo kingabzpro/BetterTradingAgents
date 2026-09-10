@@ -192,6 +192,20 @@ uv sync
 
 ### 2. Configure
 
+The fastest path is the interactive setup wizard:
+
+```bash
+uv run python scripts/setup_wizard.py
+```
+
+It offers the common LLM providers as presets (OpenAI, Z.AI, DeepSeek, Qwen, OpenRouter, or any
+custom OpenAI-compatible endpoint), hides your API key while typing, optionally tests it with a
+one-token request, collects the optional market-data keys, and writes `.env`. It uses only the
+Python standard library, so `python scripts/setup_wizard.py` also works before dependencies are
+installed, and Ctrl+C cancels at any prompt without writing anything.
+
+Prefer doing it by hand?
+
 ```bash
 cp .env.example .env
 ```
@@ -287,13 +301,20 @@ incomplete snapshots are not cached, and restarting the application clears the i
 
 ## Configuration
 
-Copy [`.env.example`](.env.example) to `.env`, then override only what you need. Every setting is
-optional; without an LLM key, the app starts in mock mode.
+Run `uv run python scripts/setup_wizard.py` to configure interactively, or copy
+[`.env.example`](.env.example) to `.env` and override only what you need. Every setting is
+optional; without an LLM key, the app starts in mock mode. The groups below mirror the sections
+of `.env.example`, and the defaults live in `app/config.py`.
+
+### LLM
+
+Any OpenAI-compatible endpoint. Pair a cheap fast model with the researchers and a stronger one
+with the manager via the per-role overrides.
 
 | Variable | Default | Purpose |
 |---|---|---|
 | `LLM_BASE_URL` | `https://api.openai.com/v1` | OpenAI-compatible API endpoint |
-| `LLM_API_KEY` | Not set | Enables the six CrewAI agents |
+| `LLM_API_KEY` | Not set | Enables the LLM agents (researchers, debaters, manager) |
 | `LLM_MODEL` | `gpt-5.6-luna` | Model used by every agent without a per-role override |
 | `LLM_TEMPERATURE` | `0.2` | Sampling temperature |
 | `LLM_TIMEOUT_SECONDS` | `90` | Timeout for each agent call |
@@ -303,22 +324,57 @@ optional; without an LLM key, the app starts in mock mode.
 | `LLM_BASE_URL_MANAGER` / `LLM_API_KEY_MANAGER` | global values | Optional endpoint/key just for the manager |
 | `LLM_MODEL_ANALYSTS` (+ `_BASE_URL_` / `_API_KEY_`) | global values | Per-role overrides for the 5 researchers |
 | `LLM_MODEL_DEBATE` (+ `_BASE_URL_` / `_API_KEY_`) | global values | Per-role overrides for the bull/bear debaters |
+
+### Market-data providers
+
+All optional; each has a built-in fallback.
+
+| Variable | Default | Purpose |
+|---|---|---|
 | `FINNHUB_API_KEY` | Not set | Company profiles, fundamentals, and news; falls back to yfinance |
 | `OLOSTEP_API_KEY` | Not set | News search/scraping fallback and Reddit/StockTwits sentiment search |
 | `NIXTLA_API_KEY` | Not set | Nixtla TimeGPT 5-day forecast; falls back to the local trend model |
+
+### Analysis
+
+| Variable | Default | Purpose |
+|---|---|---|
 | `MAX_TICKERS` | `5` | Maximum tickers accepted in one analysis |
 | `DEBATE_ROUNDS` | `2` | Bull/bear debate depth: `1` = single round, `2`+ adds one rebuttal exchange (capped at 3) |
 | `STREAM_REASONING` | `0` | Live reasoning stream: `1` streams agent tokens to the UI (off by default: the stream is mostly the final JSON and reads as noise) |
+
+### Demo portfolio and storage
+
+| Variable | Default | Purpose |
+|---|---|---|
 | `STARTING_CASH` | `100000` | Initial simulated portfolio balance |
 | `DEFAULT_POSITION_SIZE` | `10000` | Suggested position value |
 | `DB_PATH` | `portfolio.db` | SQLite app database path for portfolio positions and run history |
-| `MAX_POSITION_PCT` | `0.10` | Risk gate: max fraction of equity in one ticker |
-| `MAX_INVESTED_PCT` | `0.60` | Risk gate: max fraction of equity invested |
-| `MIN_CASH_PCT` | `0.10` | Risk gate: min cash buffer after a BUY |
-| `MEMORY_HORIZON_DAYS` | `21` | Decision memory: days a past call is held before its realized-return grade is final |
-| `MEMORY_REFLECT_WITH_LLM` | `0` | Decision memory: `1` asks the LLM for reflection lessons instead of deterministic sentences |
-| `BACKTEST_CACHE` | `docs/backtests/cache.db` | Backtests: SQLite snapshot cache location (gitignored) |
-| `BACKTEST_OFFLINE` | `0` | Backtests: `1` makes cache misses fail instead of hitting the network |
+
+### Risk gate
+
+Fractions of total equity applied to every BUY.
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `MAX_POSITION_PCT` | `0.10` | Max fraction of equity in one ticker |
+| `MAX_INVESTED_PCT` | `0.60` | Max fraction of equity invested |
+| `MIN_CASH_PCT` | `0.10` | Min cash buffer after a BUY |
+
+### Decision memory and calibration
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `MEMORY_HORIZON_DAYS` | `21` | Days a past call is held before its realized-return grade is final |
+| `MEMORY_REFLECT_WITH_LLM` | `0` | `1` asks the LLM for reflection lessons instead of deterministic sentences |
+| `CALIBRATION_MIN_OBSERVATIONS` | `30` | Minimum mature graded decisions before a confidence bucket shows a track record instead of `Track record unavailable` |
+
+### Backtests
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `BACKTEST_CACHE` | `docs/backtests/cache.db` | SQLite snapshot cache location (gitignored) |
+| `BACKTEST_OFFLINE` | `0` | `1` makes cache misses fail instead of hitting the network (proves warm re-runs are truly offline) |
 
 ## Portfolio: your own holdings + paper trading
 
