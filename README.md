@@ -26,6 +26,15 @@ comes back with a suggested position size and the full reasoning trail. Every co
 is also remembered and graded against what the market actually did, so the Portfolio Manager
 brings a track record to the next decision, not just fresh data.
 
+The design is research-backed: the multi-agent structure improves on the
+[TradingAgents framework](https://arxiv.org/abs/2412.20138), and the discovery screen's
+momentum score follows the published literature
+([Jegadeesh & Titman 1993](https://ideas.repec.org/r/bla/jfinan/v48y1993i1p65-91.html),
+[Da, Gurun & Warachka 2014](https://ideas.repec.org/a/oup/rfinst/v27y2014i7p2171-2218..html),
+[Barroso & Santa-Clara 2015](https://ideas.repec.org/a/eee/jfinec/v116y2015i1p111-120.html));
+the [wiki](https://github.com/kingabzpro/BetterTradingAgents/wiki) carries the full
+reference list and how each finding shapes the roadmap.
+
 ![BetterTradingAgents home screen](static/screenshots/home.png)
 
 ## Highlights
