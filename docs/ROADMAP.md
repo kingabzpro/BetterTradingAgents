@@ -1,7 +1,7 @@
 # BetterTradingAgents development roadmap
 
 Practical next steps for turning the current research demo into a trustworthy
-decision workspace. Last updated: 2026-09-09.
+decision workspace. Last updated: 2026-09-10.
 
 This roadmap is ordered by user value and risk reduction, not novelty. The app
 already has enough agents. The next releases should make existing analysis easier
@@ -97,7 +97,7 @@ Already shipped:
 | P1.4 | Watchlist and decision-change workflow | Product UX | M | After P0 |
 | P1.5 | Compare decisions with visual price context | Product UX | M | After P1.4 |
 | P1.6 | Find, filter, print, and export research | Workspace UX | S-M | After P0 |
-| P2.1 | Alpaca paper-order workflow | Integration | L | After P1.1-P1.3 |
+| P2.1 | Direct paper-trading result loop | Integration | L | After P1.1-P1.3 |
 | P2.2 | Deployment and operational hardening | Platform | M | Before any shared deployment |
 
 ## P0 - Make today's analysis useful
@@ -420,10 +420,18 @@ match the visible scope, and all controls work at 320 px and with a keyboard.
 **Scope.** Paper accounts only. Real-money endpoints, automated submission, options,
 short selling, and background strategy execution are explicitly out of scope.
 
+**Direction.** Move away from the manually maintained demo portfolio as the primary
+feedback loop. Once a paper account is connected, its cash, positions, orders, and
+fills become the source of truth so users can place simulated trades from completed
+research and see how those decisions actually perform over time. Keep the local
+portfolio only as an offline fallback and migration path.
+
 **Build.**
 
 - Use the installed `httpx` dependency for a small `alpaca-paper` adapter; do not
   add an SDK until the REST surface becomes painful.
+- Import and reconcile paper-account cash, positions, orders, and fills instead of
+  requiring users to maintain the same portfolio manually in the app.
 - Keep Analyze and Place paper order as separate actions. The order action opens a
   review step showing symbol, side, quantity/notional, order type, time in force,
   reference-price timestamp, buying power, and portfolio exposure before/after.
@@ -433,13 +441,18 @@ short selling, and background strategy execution are explicitly out of scope.
 - Store the full lifecycle: accepted, partial fill, filled, cancelled, expired,
   rejected, and replaced. Reconcile by REST polling on submission and page load;
   add a streaming client only if real usage needs lower latency.
+- Link each paper order and fill back to the recommendation that produced it, then
+  show realized/unrealized return, equity curve, and performance versus SPY so the
+  system's results are visible without manual portfolio updates.
 - Add cancel for open orders, a connection test, a paper-mode banner, and a local
   kill switch that disables all submissions.
 - Keep Alpaca credentials server-side and redact them from logs and errors.
 
 **Acceptance.** A duplicate HTTP retry cannot place a second order. Partial fills
 update quantity and average price correctly. A rejected order never becomes a
-portfolio position. Tests use a fake HTTP transport and make no broker calls.
+portfolio position. Paper-account positions and performance reconcile after a
+restart, and every filled trade remains traceable to its originating recommendation.
+Tests use a fake HTTP transport and make no broker calls.
 
 Alpaca documents partial fills and several simulation limits, including simplified
 market impact and liquidity behavior, so the UI must not present paper results as
