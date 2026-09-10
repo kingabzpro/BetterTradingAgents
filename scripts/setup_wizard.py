@@ -8,12 +8,17 @@ provider, and writes .env from .env.example. Nothing is written until the
 final confirmation, so Ctrl+C at any prompt is safe. Existing values in
 .env are kept by default. Uses only the standard library so it also runs
 before `uv sync`.
+
+Colors are pure ANSI: enabled on terminals, disabled automatically when
+output is piped or NO_COLOR is set (https://no-color.org), and forced on
+with BTA_WIZARD_COLOR=1 for previewing.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -25,6 +30,92 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 ENV_PATH = REPO_ROOT / ".env"
 TEMPLATE_PATH = REPO_ROOT / ".env.example"
 
+# ---------------------------------------------------------------- styling --
+# ANSI codes only; no dependency. _COLOR is computed once so piped runs
+# (scripts/check_setup_wizard.py) and NO_COLOR users get plain text.
+
+
+class Style:
+    RESET = "\033[0m"
+    BOLD = "\033[1m"
+    DIM = "\033[2m"
+    CYAN = "\033[36m"
+    GREEN = "\033[32m"
+    YELLOW = "\033[33m"
+    RED = "\033[31m"
+    MAGENTA = "\033[35m"
+
+
+def _use_color() -> bool:
+    if os.environ.get("NO_COLOR"):
+        return False
+    if os.environ.get("BTA_WIZARD_COLOR") == "1":
+        return True
+    return sys.stdout.isatty()
+
+
+_COLOR = _use_color()
+if _COLOR and os.name == "nt":
+    os.system("")  # enable ANSI on legacy Windows consoles; no-op elsewhere
+
+
+def paint(text: str, *codes: str) -> str:
+    if not _COLOR:
+        return text
+    return "".join(codes) + text + Style.RESET
+
+
+def ok(text: str) -> str:
+    return paint(f"  ✓ {text}", Style.GREEN, Style.BOLD)
+
+
+def warn(text: str) -> str:
+    return paint(f"  ⚠ {text}", Style.YELLOW)
+
+
+def fail(text: str) -> str:
+    return paint(f"  ✗ {text}", Style.RED, Style.BOLD)
+
+
+def divider() -> str:
+    width = 58
+    return paint("  " + "─" * width, Style.DIM)
+
+
+def header(step: int, total: int, title: str) -> None:
+    print()
+    print(divider())
+    print(paint(f"  Step {step} of {total}  ", Style.BOLD, Style.CYAN)
+          + paint(f"· {title}", Style.BOLD))
+    print(divider())
+
+
+def banner() -> None:
+    title = " BetterTradingAgents "
+    tagline = " first-run setup "
+    bar = "─" * 22
+    print()
+    print(paint(f"  ┌{bar}┬{bar}┐", Style.CYAN))
+    print(paint(f"  │{title:^22}│{tagline:^22}│", Style.BOLD, Style.CYAN))
+    print(paint(f"  └{bar}┴{bar}┘", Style.CYAN))
+    print(paint(
+        "  A few questions and you are running. Everything is optional;",
+        Style.DIM,
+    ))
+    print(paint(
+        "  anything you skip falls back to a documented default, and with no",
+        Style.DIM,
+    ))
+    print(paint(
+        "  LLM key the app runs in clearly labeled mock mode on live market",
+        Style.DIM,
+    ))
+    print(paint(
+        "  data. Ctrl+C cancels safely at any prompt.", Style.DIM,
+    ))
+
+
+# --------------------------------------------------------------- presets --
 # Provider presets: default base URL + a good starter model. Every value is
 # editable at the prompt, so a regional endpoint or another model is one
 # keystroke away. Model names follow the provider docs checked 2026-09-10.
@@ -181,39 +272,35 @@ def main() -> int:
     )
     args = parser.parse_args()
     out_path = Path(args.out)
+    steps = 3
 
-    print()
-    print("BetterTradingAgents setup")
-    print("=" * 60)
-    print("A few questions and you are running. Everything is optional;")
-    print("anything you skip falls back to a documented default, and with no")
-    print("LLM key the app runs in clearly labeled mock mode on live market")
-    print("data. Ctrl+C cancels safely at any prompt.")
+    banner()
 
     if sys.version_info < (3, 12):
-        print(f"\nWARNING: Python {sys.version.split()[0]} found; the app needs >= 3.12.")
+        print(warn(f"Python {sys.version.split()[0]} found; the app needs >= 3.12."))
 
     # ---- base text: keep an existing .env, else start from the template ------
     base_text = None
     if out_path.exists():
-        print(f"\nFound an existing {out_path.name}.")
-        if ask_yes_no("Keep its current values and only fill what is missing?", True):
+        print(f"\n  Found an existing {paint(out_path.name, Style.MAGENTA)}.")
+        if ask_yes_no("  Keep its current values and only fill what is missing?", True):
             base_text = out_path.read_text(encoding="utf-8")
-        elif not ask_yes_no("Overwrite it from the template?", False):
-            print("Setup cancelled; nothing was changed.")
+        elif not ask_yes_no("  Overwrite it from the template?", False):
+            print(fail("Setup cancelled; nothing was changed."))
             return 0
     if base_text is None:
         try:
             base_text = TEMPLATE_PATH.read_text(encoding="utf-8")
         except OSError:
-            print(f"ERROR: {TEMPLATE_PATH} is missing; cannot build {out_path.name}.")
+            print(fail(f"{TEMPLATE_PATH} is missing; cannot build {out_path.name}."))
             return 1
 
     # ---- LLM provider ---------------------------------------------------------
-    print("\n1) LLM provider (any OpenAI-compatible endpoint)")
+    header(1, steps, "LLM provider (any OpenAI-compatible endpoint)")
     for number, provider in enumerate(PROVIDERS, start=1):
-        print(f"   {number}) {provider['label']}")
-    choice = ask("Choose", "2")  # the README's recommended starter (GLM-5.3-Flash)
+        marker = paint("●", Style.CYAN) if provider["key"] == "zai" else " "
+        print(f"   {marker} {number}) {provider['label']}")
+    choice = ask("  Choose", "2")  # the README's recommended starter (GLM-5.3-Flash)
     try:
         provider = PROVIDERS[int(choice) - 1]
     except (ValueError, IndexError):
@@ -221,11 +308,11 @@ def main() -> int:
 
     values: dict[str, str] = {}
     if provider["key"] == "mock":
-        print("   Mock mode it is. You can add a key later in .env.")
+        print(ok("Mock mode it is. You can add a key later in .env."))
     else:
-        base_url = ask("   Base URL", provider["base_url"])
-        model = ask("   Model", provider["model"])
-        api_key = ask_secret("   API key (input hidden; Enter to skip and edit .env later)")
+        base_url = ask("  Base URL", provider["base_url"])
+        model = ask("  Model", provider["model"])
+        api_key = ask_secret("  API key (input hidden; Enter to skip and edit .env later)")
         values.update(
             {
                 "LLM_BASE_URL": base_url,
@@ -233,53 +320,59 @@ def main() -> int:
                 "LLM_API_KEY": api_key,
             }
         )
-        if api_key and ask_yes_no("   Test the key with a one-token request now?", True):
-            ok, detail = ping_llm(base_url, api_key, model)
-            mark = "OK" if ok else "WARNING"
-            print(f"   [{mark}] {detail}")
-            if not ok:
-                print("   The wizard will still save your answers; fix and retry later.")
+        if api_key and ask_yes_no("  Test the key with a one-token request now?", True):
+            reachable, detail = ping_llm(base_url, api_key, model)
+            print(ok(detail) if reachable else warn(detail))
+            if not reachable:
+                print(warn("The wizard will still save your answers; fix and retry later."))
         elif not api_key:
-            print("   No key entered: the app will start in mock mode until you add one.")
+            print(warn("No key entered: the app will start in mock mode until you add one."))
 
     # ---- data providers -------------------------------------------------------
-    print("\n2) Market-data providers (all optional; each has a built-in fallback)")
+    header(2, steps, "Market-data providers (all optional; each has a fallback)")
     for env_key, label, purpose, signup in DATA_PROVIDERS:
-        if ask_yes_no(f"   Add a key for {label}? ({purpose})"):
-            key = ask_secret(f"      {label} API key")
+        if ask_yes_no(f"  Add a key for {label}? ({purpose})"):
+            key = ask_secret(f"     {label} API key")
             if key:
                 values[env_key] = key
-                print(f"      Saved {env_key} ({mask(key)}); sign up or manage keys at {signup}")
+                print(ok(f"Saved {env_key} ({mask(key)}); manage keys at {signup}"))
             else:
-                print(f"      Skipped {label}.")
+                print(warn(f"Skipped {label}."))
 
     # ---- write ----------------------------------------------------------------
-    print("\n3) Ready to write")
+    header(3, steps, "Ready to write")
     for key, value in values.items():
         shown = mask(value) if "API_KEY" in key else value
-        print(f"   {key}={shown}")
-    if not ask_yes_no(f"   Write these to {out_path.name}?", True):
-        print("Setup cancelled; nothing was changed.")
+        styled = paint(shown, Style.GREEN) if value else paint(shown, Style.DIM)
+        print(f"   {paint(key, Style.BOLD)} = {styled}")
+    if not values:
+        print(paint("   (nothing to change; the template defaults stay)", Style.DIM))
+    if not ask_yes_no(f"  Write these to {out_path.name}?", True):
+        print(fail("Setup cancelled; nothing was changed."))
         return 0
     out_path.write_text(apply_values(base_text, values), encoding="utf-8")
-    print(f"   Wrote {out_path}.")
+    print(ok(f"Wrote {out_path}"))
 
     # ---- optional dependency install + next steps ------------------------------
-    if shutil.which("uv") and ask_yes_no("4) Install dependencies with `uv sync` now?", True):
+    if shutil.which("uv") and ask_yes_no("  Install dependencies with `uv sync` now?", True):
         completed = subprocess.run(["uv", "sync"], cwd=REPO_ROOT)
         if completed.returncode != 0:
-            print("   `uv sync` failed; run it manually and check the error above.")
+            print(fail("`uv sync` failed; run it manually and check the error above."))
 
     print()
-    print("Next steps")
-    print("  uv run app                               # start the app")
-    print("  open http://127.0.0.1:8000               # analyze your first tickers")
-    print("  uv run test                              # fast offline check suite")
-    print("  README.md -> Configuration               # every knob, one table each")
-    print("  .env                                     # your file; it is gitignored")
+    print(divider())
+    for line in (
+        "uv run app                               # start the app",
+        "open http://127.0.0.1:8000               # analyze your first tickers",
+        "uv run test                              # fast offline check suite",
+        "README.md -> Configuration               # every knob, one table each",
+        ".env                                     # your file; it is gitignored",
+    ):
+        print(paint("  " + line, Style.CYAN))
+    print(divider())
     print()
-    print("Setup complete. Happy researching - this is an educational")
-    print("simulation, not investment advice.")
+    print(paint("  ✔ Setup complete. Happy researching!", Style.GREEN, Style.BOLD))
+    print(paint("  Educational simulation, not investment advice.", Style.DIM))
     return 0
 
 
@@ -287,5 +380,5 @@ if __name__ == "__main__":
     try:
         sys.exit(main())
     except KeyboardInterrupt:
-        print("\nSetup cancelled; nothing was written.")
+        print("\n" + fail("Setup cancelled; nothing was written."))
         sys.exit(130)

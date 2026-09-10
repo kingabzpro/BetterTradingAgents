@@ -62,6 +62,8 @@ with tempfile.TemporaryDirectory() as tmp:
     assert values["FINNHUB_API_KEY"] == ""
     # The key must never appear verbatim in the wizard's own output.
     assert "test-key-123" not in stdout, "API key leaked into wizard output"
+    # Piped output must stay plain: colors are for terminals only.
+    assert "\x1b[" not in stdout, "ANSI escapes emitted while stdout is piped"
     print("preset path OK: Z.AI values written, template complete, key masked")
 
     # ---- mock path: provider skipped, no key at all ---------------------------
