@@ -45,6 +45,15 @@ async def llm_checks():
 asyncio.run(llm_checks())
 print("chat LLM OK: manager model, no JSON mode, no streaming")
 
+# ---- provider output cleanup ---------------------------------------------------
+final = "Buy only after the trend confirms. Sell if support breaks."
+assert chat.clean_answer(f"<think>private reasoning</think>{final}") == final
+assert chat.clean_answer(f"private reasoning\\</think>{final}") == final
+assert chat.clean_answer(f"private reasoning<\\/think>{final}") == final
+assert chat.clean_answer("Wait&#x20;for confirmation.") == "Wait for confirmation."
+assert len(chat.clean_answer("word " * 500)) <= chat.MAX_ANSWER_CHARS
+print("chat cleanup OK: reasoning hidden, entities decoded, answers capped")
+
 # ---- dossier + mock answer ------------------------------------------------------
 analysis = StockAnalysis(
     ticker="NVDA", company_name="Nvidia Corp", price=120.5, decision="BUY",

@@ -8,9 +8,11 @@ portfolio?" get answers tied to the research instead of generic advice.
 """
 
 import asyncio
+import html
 import json
 import logging
 import re
+import textwrap
 
 from app.config import settings
 from app.models import PortfolioSummary, StockAnalysis
@@ -23,8 +25,10 @@ from app.workflow import (
 
 logger = logging.getLogger("analysis")
 
-MAX_ANSWER_CHARS = 4000
-_THINK_BLOCK = re.compile(r"<think>.*?</think>", re.DOTALL)
+MAX_ANSWER_CHARS = 400
+_THINK_BLOCK = re.compile(r"<think\b[^>]*>.*?</think\s*>", re.DOTALL | re.IGNORECASE)
+_THINK_CLOSE = re.compile(r"\\?<\\?/think\s*>", re.IGNORECASE)
+_THINK_OPEN = re.compile(r"\\?<think\b[^>]*>", re.IGNORECASE)
 
 
 def build_agent(llm):
@@ -32,14 +36,13 @@ def build_agent(llm):
 
     return Agent(
         role="Portfolio Manager",
-        goal="Help the user reach their own decision with the research at hand.",
+        goal="Give the user a brief, natural, useful answer to their latest message.",
         backstory=(
-            "You are a candid portfolio manager in a follow-up conversation "
-            "with the user who just received your analysis. You answer in plain "
-            "prose, ground every claim in the dossier you are given, and say "
-            "plainly when the research does not cover something. The user makes "
-            "the final call - you inform it, you do not push it. This is an "
-            "educational simulation, never investment advice."
+            "You are a practical portfolio manager having a normal conversation. "
+            "Answer what the user just asked without narrating your research process. "
+            "Use the supplied context silently and treat the user's statements about "
+            "their own portfolio as current. This is an educational simulation, not "
+            "investment advice."
         ),
         llm=llm,
         allow_delegation=False,
@@ -55,23 +58,23 @@ def build_task(agent, ticker: str, dossier: dict, history: list[dict], question:
         for message in history
     ) or "(no earlier turns)"
     return Task(
-        description=f"""The user just received the analysis below for ticker {ticker} and is asking follow-up questions.
-
-Analysis dossier from the finished run (values of null or "FAILED" mean that input is unavailable - say so when it matters):
-{json.dumps(dossier, indent=2, default=str)}
-
-Conversation so far:
-{transcript}
-
-Answer the user's latest question:
+        description=f"""Reply to this latest user message:
 {question}
 
+Supporting research for {ticker} (use silently; null and "FAILED" mean unavailable):
+{json.dumps(dossier, indent=2, default=str)}
+
+Earlier conversation, only if needed for context:
+{transcript}
+
 Rules:
-- Ground every claim in the dossier; quote the numbers in it when they matter.
-- If the question reaches beyond this research (other tickers, personal finances, taxes), reason from the dossier where possible and clearly mark what it cannot cover.
-- The user decides whether to invest - inform that decision instead of restating the BUY/HOLD/SELL verdict.
-- Plain prose, at most around 150 words, no markdown headings, no JSON.""",
-        expected_output="A short plain-text answer grounded in the dossier.",
+- Answer the latest message first and sound like a helpful person, not a report.
+- Trust what the user says about their holdings; do not correct it from an incomplete portfolio snapshot.
+- Use relevant research facts, but never mention "the dossier", "my records", models, data coverage, or the research process unless asked.
+- Give practical guidance for broad questions instead of listing caveats.
+- Use no more than 2 short sentences (about 50 words).
+- Output only the answer: no analysis, reasoning, transcript, markdown headings, or JSON.""",
+        expected_output="A direct, natural answer of no more than two short sentences.",
         agent=agent,
     )
 
@@ -155,10 +158,20 @@ async def _ask_once(agent, task) -> str:
     output = await asyncio.wait_for(
         crew.kickoff_async(), timeout=settings.llm_timeout_seconds
     )
-    raw = _THINK_BLOCK.sub("", str(getattr(output, "raw", ""))).strip()
-    if not raw:
+    answer = clean_answer(str(getattr(output, "raw", "")))
+    if not answer:
         raise ValueError("empty chat response")
-    return raw[:MAX_ANSWER_CHARS]
+    return answer
+
+
+def clean_answer(raw: str) -> str:
+    """Remove provider reasoning wrappers and keep chat replies brief."""
+    cleaned = _THINK_BLOCK.sub("", html.unescape(raw))
+    closers = list(_THINK_CLOSE.finditer(cleaned))
+    if closers:
+        cleaned = cleaned[closers[-1].end() :]
+    cleaned = _THINK_OPEN.split(cleaned, maxsplit=1)[0].strip()
+    return textwrap.shorten(cleaned, width=MAX_ANSWER_CHARS, placeholder="…")
 
 
 def mock_answer(analysis: StockAnalysis) -> str:
