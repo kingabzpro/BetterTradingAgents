@@ -10,7 +10,7 @@ import { addToPortfolio } from "./portfolio-actions.js";
 import { retryTicker } from "./tickers.js";
 import { sendChatMessage, setChatOpen, toggleChat } from "./chat.js";
 import {
-  $, escapeAttr, escapeHtml, fmtUsd, formatDate, formatDateTime, safeUrl,
+  $, escapeAttr, escapeHtml, fmtCostUsd, fmtUsd, formatDate, formatDateTime, safeUrl,
 } from "./util.js";
 
 export function labelFor(agent, signal, confidence) {
@@ -72,6 +72,22 @@ function signalSplit(analysis) {
 
 function splitLabel(split) {
   return `${split.counts.bullish} bullish / ${split.counts.neutral} neutral / ${split.counts.bearish} bearish`;
+}
+
+// Estimated model cost from the server's per-result estimate (app/cost.py):
+// a floor ("at least") when a model has no known list price, hidden in mock
+// mode where no tokens are recorded.
+function runCostSummary(analyses) {
+  const estimates = analyses
+    .map((analysis) => analysis.cost_estimate)
+    .filter((estimate) => estimate && Object.keys(estimate.by_role || {}).length);
+  if (!estimates.length) return "";
+  const total = estimates.reduce((sum, estimate) => sum + Number(estimate.total_usd || 0), 0);
+  const unpriced = [...new Set(estimates.flatMap((estimate) => estimate.unpriced_models || []))];
+  if (unpriced.length) {
+    return ` Estimated model cost for this run: at least ${fmtCostUsd(total)} (no known price for ${unpriced.map(escapeHtml).join(", ")}).`;
+  }
+  return ` Estimated model cost for this run: ${fmtCostUsd(total)} at provider list prices as of ${escapeHtml(estimates[0].prices_as_of || "")}.`;
 }
 
 // Data age is recomputed at view time from as_of, so a restored or cached run
@@ -177,7 +193,7 @@ export function renderSummaryTable() {
       </tr>`;
     }).join("")}</tbody>`;
   $("summary-panel").appendChild(table);
-  $("summary-panel").insertAdjacentHTML("beforeend", '<p class="results-help"><strong>Confidence = evidence strength, not profit odds.</strong> Educational simulation, not advice.</p>');
+  $("summary-panel").insertAdjacentHTML("beforeend", `<p class="results-help"><strong>Confidence = evidence strength, not profit odds.</strong> Educational simulation, not advice.${runCostSummary(analyses)}</p>`);
   $("summary-panel").querySelectorAll("[data-open-ticker]").forEach((button) => button.addEventListener("click", () => openResult(button.dataset.openTicker)));
 }
 
@@ -318,6 +334,11 @@ export function renderResultCard(analysis) {
   const tokenFact = tokens.total_tokens
     ? `<div><span>LLM tokens</span><strong>${Number(tokens.total_tokens).toLocaleString()}</strong><small>${Number(tokens.prompt_tokens || 0).toLocaleString()} prompt + ${Number(tokens.completion_tokens || 0).toLocaleString()} completion${tokens.reasoning_tokens ? ` · ${Number(tokens.reasoning_tokens).toLocaleString()} reasoning` : ""}</small></div>`
     : "";
+  const costEst = analysis.cost_estimate || {};
+  const costRoles = Object.keys(costEst.by_role || {});
+  const costFact = costRoles.length
+    ? `<div><span>Model cost</span><strong>${costEst.priced ? "~" : "≥ "}${fmtCostUsd(costEst.total_usd)}</strong><small>estimate · provider list prices${(costEst.unpriced_models || []).length ? ` · unpriced: ${costEst.unpriced_models.map(escapeHtml).join(", ")}` : ` as of ${escapeHtml(costEst.prices_as_of || "")}`}</small></div>`
+    : "";
   const profile = depthProfile();
   const skippedResearch = Object.keys(EVIDENCE_META).filter((key) => !profile.research.includes(key));
   const evidenceHtml = profile.research.map((key) => evidenceCard(
@@ -333,7 +354,7 @@ export function renderResultCard(analysis) {
     <button class="result-summary" type="button" aria-expanded="false" aria-controls="${detailId}"><span class="result-identity"><span class="tk">${escapeHtml(ticker)}</span><span class="company">${escapeHtml(analysis.company_name || "Company name unavailable")}</span></span>${decisionBadge(analysis)}${gated ? '<span class="gate-chip">risk-adjusted</span>' : ""}<span class="summary-action">Evidence &amp; sources <span class="caret" aria-hidden="true">▶</span></span></button>
     <div class="decision-brief">
       ${gated ? `<div class="gate-banner"><span class="gate-chip">risk-adjusted</span><span class="gate-line">${escapeHtml(gateLine(analysis))}</span>${downgradeFlag(analysis) ? `<small>⚠ ${escapeHtml(downgradeFlag(analysis))}</small>` : ""}</div>` : ""}
-      <div class="decision-facts"><div><span>Current price</span><strong>${analysis.price != null ? `$${Number(analysis.price).toFixed(2)}` : "Unavailable"}</strong></div><div><span>5-day forecast</span><strong>${analysis.forecast_price_5d != null ? `$${Number(analysis.forecast_price_5d).toFixed(2)} (${Number(analysis.forecast_change_5d_pct) >= 0 ? "+" : ""}${Number(analysis.forecast_change_5d_pct).toFixed(2)}%)` : "Unavailable"}</strong><small>${analysis.forecast_method === "timegpt-1" ? "TimeGPT" : analysis.forecast_trend_r2 != null ? `Local fit R² ${Number(analysis.forecast_trend_r2).toFixed(2)}` : "Local"}${forecastBandNote(analysis)}</small></div><div><span>Data age</span><strong>${age.stale ? '<span class="flag-warn">' : ""}${ageLabel(age.hours)}${cachedRun ? " · cached" : ""}${age.stale ? " · stale</span>" : ""}</strong><small>${escapeHtml(asOf)}</small></div><div><span>Evidence strength</span><strong>${convictionLabel(analysis.confidence)} · ${confidencePct}%</strong><small id="track-record-${ticker}" class="track-record"></small></div><div><span>Horizon</span><strong>${OUTLOOK_LABELS[state.outlook] || state.outlook}</strong><small>${profile.label} depth</small></div><div><span>Analyst coverage</span><strong>${analysis.error ? "n/a" : `${cov.available}/${cov.expected} analysts`}</strong>${!analysis.error && cov.split.available ? `<small>${splitLabel(cov.split)}</small>` : ""}${fallbacks.length ? `<small class="flag-warn">${fallbacks.map(escapeHtml).join(" · ")}</small>` : ""}</div><div><span>Suggested size</span><strong>${analysis.suggested_size_usd ? fmtUsd(analysis.suggested_size_usd) : "No position"}</strong></div>${tokenFact}</div>
+      <div class="decision-facts"><div><span>Current price</span><strong>${analysis.price != null ? `$${Number(analysis.price).toFixed(2)}` : "Unavailable"}</strong></div><div><span>5-day forecast</span><strong>${analysis.forecast_price_5d != null ? `$${Number(analysis.forecast_price_5d).toFixed(2)} (${Number(analysis.forecast_change_5d_pct) >= 0 ? "+" : ""}${Number(analysis.forecast_change_5d_pct).toFixed(2)}%)` : "Unavailable"}</strong><small>${analysis.forecast_method === "timegpt-1" ? "TimeGPT" : analysis.forecast_trend_r2 != null ? `Local fit R² ${Number(analysis.forecast_trend_r2).toFixed(2)}` : "Local"}${forecastBandNote(analysis)}</small></div><div><span>Data age</span><strong>${age.stale ? '<span class="flag-warn">' : ""}${ageLabel(age.hours)}${cachedRun ? " · cached" : ""}${age.stale ? " · stale</span>" : ""}</strong><small>${escapeHtml(asOf)}</small></div><div><span>Evidence strength</span><strong>${convictionLabel(analysis.confidence)} · ${confidencePct}%</strong><small id="track-record-${ticker}" class="track-record"></small></div><div><span>Horizon</span><strong>${OUTLOOK_LABELS[state.outlook] || state.outlook}</strong><small>${profile.label} depth</small></div><div><span>Analyst coverage</span><strong>${analysis.error ? "n/a" : `${cov.available}/${cov.expected} analysts`}</strong>${!analysis.error && cov.split.available ? `<small>${splitLabel(cov.split)}</small>` : ""}${fallbacks.length ? `<small class="flag-warn">${fallbacks.map(escapeHtml).join(" · ")}</small>` : ""}</div><div><span>Suggested size</span><strong>${analysis.suggested_size_usd ? fmtUsd(analysis.suggested_size_usd) : "No position"}</strong></div>${tokenFact}${costFact}</div>
       <div class="manager-conclusion"><span class="eyebrow">Manager conclusion</span><p class="thesis">${escapeHtml(analysis.summary || analysis.error || "No manager summary was returned.")}</p></div>
       ${conditions}
       ${analysis.error ? `<div class="risk-flags"><strong>Analysis unavailable</strong><span>⚠ ${escapeHtml(analysis.error)}</span></div>` : flags.length ? `<div class="risk-flags"><strong>Risk flags</strong>${flags.map((flag) => `<span>⚠ ${escapeHtml(flag)}</span>`).join("")}</div>` : '<div class="risk-clear"><span aria-hidden="true">✓</span> No risk rules were triggered.</div>'}

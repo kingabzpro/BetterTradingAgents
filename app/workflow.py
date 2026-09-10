@@ -14,7 +14,7 @@ import re
 import time
 from typing import Any, Awaitable, Callable
 
-from app import quality, risk
+from app import cost, quality, risk
 from app.agents import bear, bull, forecast, fundamental, manager, news, sentiment, technical
 from app.config import settings
 from app.depth import DEFAULT_DEPTH, depth_profile
@@ -333,6 +333,7 @@ async def _run_agent(
     emit: Emit,
     name: str | None = None,
     token_totals: dict | None = None,
+    role_usage: dict | None = None,
     live: bool = True,
     **task_payload,
 ) -> dict | None:
@@ -342,8 +343,10 @@ async def _run_agent(
     retries (1s, then 4s), a rejected response_format disables JSON mode for
     the role, a rejected stream disables streaming for the role, and a
     malformed output is retried once with the validation error appended to
-    the task. `token_totals` accumulates per-run usage; `live` gates the
-    cosmetic token stream (backtest replays skip it).
+    the task. `token_totals` accumulates per-run usage; `role_usage` records
+    it per role (manager / analysts / debate) so the cost estimate can price
+    each role's own model; `live` gates the cosmetic token stream (backtest
+    replays skip it).
     """
     agent_name = name or mod.NAME
     role = ROLE_BY_AGENT.get(mod.NAME, "analysts")
@@ -447,6 +450,18 @@ async def _run_agent(
         if token_totals is not None:
             for key, value in usage.items():
                 token_totals[key] = token_totals.get(key, 0) + value
+        if role_usage is not None and usage:
+            entry = role_usage.setdefault(
+                role,
+                {
+                    "model": settings.llm_for(role)["model"],
+                    "prompt_tokens": 0,
+                    "completion_tokens": 0,
+                    "total_tokens": 0,
+                },
+            )
+            for key in ("prompt_tokens", "completion_tokens", "total_tokens"):
+                entry[key] += int(usage.get(key, 0) or 0)
         await emit(
             "agent_completed",
             {
@@ -646,6 +661,7 @@ async def analyze_ticker(
     # Stage 1: the profile's researchers in parallel. Excluded researchers
     # never run (no events either - the UI shows no row for them).
     token_totals: dict[str, int] = {}
+    role_usage: dict[str, dict] = {}
     user_ctx = user_context(outlook)
     forecast_payload = {
         "price": market.price,
@@ -674,6 +690,7 @@ async def analyze_ticker(
                 ticker,
                 emit,
                 token_totals=token_totals,
+                role_usage=role_usage,
                 live=live_context,
                 payload={**indicators, "user_context": user_ctx},
             )
@@ -683,6 +700,7 @@ async def analyze_ticker(
                 ticker,
                 emit,
                 token_totals=token_totals,
+                role_usage=role_usage,
                 live=live_context,
                 payload={**market.fundamentals, "user_context": user_ctx},
             )
@@ -692,6 +710,7 @@ async def analyze_ticker(
                 ticker,
                 emit,
                 token_totals=token_totals,
+                role_usage=role_usage,
                 live=live_context,
                 payload={"items": market.news, "user_context": user_ctx},
             )
@@ -701,6 +720,7 @@ async def analyze_ticker(
                 ticker,
                 emit,
                 token_totals=token_totals,
+                role_usage=role_usage,
                 live=live_context,
                 payload={"items": market.social, "user_context": user_ctx},
             )
@@ -709,6 +729,7 @@ async def analyze_ticker(
             ticker,
             emit,
             token_totals=token_totals,
+            role_usage=role_usage,
             live=live_context,
             payload=forecast_payload,
         )
@@ -755,12 +776,12 @@ async def analyze_ticker(
     # Stage 2: bull and bear in parallel.
     bull_data, bear_data = await asyncio.gather(
         _run_agent(
-            bull, ticker, emit, token_totals=token_totals, live=live_context,
-            payload=context,
+            bull, ticker, emit, token_totals=token_totals, role_usage=role_usage,
+            live=live_context, payload=context,
         ),
         _run_agent(
-            bear, ticker, emit, token_totals=token_totals, live=live_context,
-            payload=context,
+            bear, ticker, emit, token_totals=token_totals, role_usage=role_usage,
+            live=live_context, payload=context,
         ),
     )
 
@@ -777,6 +798,7 @@ async def analyze_ticker(
                     emit,
                     name="bull_rebuttal",
                     token_totals=token_totals,
+                    role_usage=role_usage,
                     live=live_context,
                     payload={
                         "research": context,
@@ -791,6 +813,7 @@ async def analyze_ticker(
                     emit,
                     name="bear_rebuttal",
                     token_totals=token_totals,
+                    role_usage=role_usage,
                     live=live_context,
                     payload={
                         "research": context,
@@ -885,6 +908,7 @@ async def analyze_ticker(
         ticker,
         emit,
         token_totals=token_totals,
+        role_usage=role_usage,
         live=live_context,
         payload=full_context,
     )
@@ -966,6 +990,11 @@ async def analyze_ticker(
         risk_flags=risk_flags,
         past_decisions=past["past_decisions"] if past else [],
         token_usage=token_totals,
+        cost_estimate=cost.estimate(
+            role_usage,
+            settings.llm_price_in or None,
+            settings.llm_price_out or None,
+        ),
         as_of=market.as_of,
         providers={str(key): str(value) for key, value in market.sources.items()},
         source_references=_source_references(market),

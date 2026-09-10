@@ -294,10 +294,11 @@ optional; without an LLM key, the app starts in mock mode.
 |---|---|---|
 | `LLM_BASE_URL` | `https://api.openai.com/v1` | OpenAI-compatible API endpoint |
 | `LLM_API_KEY` | Not set | Enables the six CrewAI agents |
-| `LLM_MODEL` | `gpt-4o-mini` | Model used by every agent without a per-role override |
+| `LLM_MODEL` | `gpt-5.6-luna` | Model used by every agent without a per-role override |
 | `LLM_TEMPERATURE` | `0.2` | Sampling temperature |
 | `LLM_TIMEOUT_SECONDS` | `90` | Timeout for each agent call |
 | `LLM_REASONING_EFFORT` | Not set | Optional provider-specific reasoning effort (e.g. `none`/`low` for GLM) |
+| `LLM_PRICE_IN` / `LLM_PRICE_OUT` | `0` | Cost-estimate override in USD per 1M input/output tokens for every role (custom/proxied pricing); `0` uses the built-in list-price table in `app/cost.py` |
 | `LLM_MODEL_MANAGER` | `LLM_MODEL` | Per-role model for the final BUY/HOLD/SELL call |
 | `LLM_BASE_URL_MANAGER` / `LLM_API_KEY_MANAGER` | global values | Optional endpoint/key just for the manager |
 | `LLM_MODEL_ANALYSTS` (+ `_BASE_URL_` / `_API_KEY_`) | global values | Per-role overrides for the 5 researchers |

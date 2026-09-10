@@ -4,6 +4,16 @@ export const $ = (id) => document.getElementById(id);
 
 export function fmtUsd(value) { return `$${Number(value).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`; }
 
+// Estimated model cost: single run totals are cents, so keep more decimals
+// until whole dollars make them noise.
+export function fmtCostUsd(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n < 0) return "$0";
+  if (n < 1) return `$${n.toFixed(4)}`;
+  if (n < 1000) return `$${n.toFixed(2)}`;
+  return `$${n.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+}
+
 export function formatDate(value) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return String(value);

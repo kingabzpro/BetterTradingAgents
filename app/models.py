@@ -161,6 +161,7 @@ class StockAnalysis(BaseModel):
     risk_flags: list[str] = Field(default_factory=list)
     past_decisions: list[dict] = Field(default_factory=list)  # graded prior calls on this ticker
     token_usage: dict = Field(default_factory=dict)  # summed LLM tokens for this ticker's run
+    cost_estimate: dict = Field(default_factory=dict)  # app/cost.py estimate; {} = no tokens recorded
     as_of: str = ""
     providers: dict[str, str] = Field(default_factory=dict)
     source_references: list[SourceReference] = Field(default_factory=list)
@@ -218,6 +219,8 @@ class RunHistoryItem(BaseModel):
     result_count: int = 0
     has_errors: bool = False
     decisions: dict[str, Decision] = Field(default_factory=dict)
+    cost_usd: float | None = None  # summed cost estimate; None = no tokens recorded (mock mode)
+    cost_unknown: bool = False  # tokens exist but a model had no known list price
 
 
 class ClearHistoryResponse(BaseModel):

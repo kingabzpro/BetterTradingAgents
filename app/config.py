@@ -22,7 +22,7 @@ class Settings:
     # LLM (any OpenAI-compatible endpoint: OpenAI, OpenRouter, DeepSeek, Qwen, GLM, vLLM...)
     llm_base_url: str = _env("LLM_BASE_URL", "https://api.openai.com/v1")
     llm_api_key: str = _env("LLM_API_KEY")
-    llm_model: str = _env("LLM_MODEL", "gpt-4o-mini")
+    llm_model: str = _env("LLM_MODEL", "gpt-5.6-luna")
     llm_temperature: float = float(_env("LLM_TEMPERATURE", "0.2"))
     llm_timeout_seconds: float = float(_env("LLM_TIMEOUT_SECONDS", "90"))
     # Optional provider-specific reasoning effort (e.g. "none"/"low" for GLM).
@@ -40,6 +40,11 @@ class Settings:
     llm_model_debate: str = _env("LLM_MODEL_DEBATE")
     llm_base_url_debate: str = _env("LLM_BASE_URL_DEBATE")
     llm_api_key_debate: str = _env("LLM_API_KEY_DEBATE")
+    # Cost estimate overrides (app/cost.py): USD per 1M input/output tokens
+    # applied to every role regardless of model - for custom or proxied
+    # pricing. 0 = use the built-in list-price table (app/cost.py).
+    llm_price_in: float = float(_env("LLM_PRICE_IN", "0") or 0)
+    llm_price_out: float = float(_env("LLM_PRICE_OUT", "0") or 0)
 
     # Data providers
     finnhub_api_key: str = _env("FINNHUB_API_KEY")

@@ -194,6 +194,18 @@ def _list(limit: int, owner_id: str) -> list[RunHistoryItem]:
         except (json.JSONDecodeError, ValueError, TypeError) as exc:
             logger.warning("[history] skipping corrupt run %s: %s", row["run_id"], exc)
             continue
+        # Cost is summed from each result's estimate; a result with tokens but
+        # no price for its model makes the total a floor, flagged cost_unknown.
+        any_tokens = False
+        cost_usd = 0.0
+        cost_unknown = False
+        for result in status.results.values():
+            estimate = result.cost_estimate or {}
+            if result.token_usage:
+                any_tokens = True
+                if not estimate or not estimate.get("priced"):
+                    cost_unknown = True
+            cost_usd += float(estimate.get("total_usd") or 0.0)
         items.append(
             RunHistoryItem(
                 run_id=status.run_id,
@@ -212,6 +224,8 @@ def _list(limit: int, owner_id: str) -> list[RunHistoryItem]:
                     for ticker, result in status.results.items()
                     if not result.error
                 },
+                cost_usd=round(cost_usd, 6) if any_tokens else None,
+                cost_unknown=cost_unknown,
             )
         )
     return items

@@ -71,6 +71,11 @@ function runCard(run) {
   const decisions = run.decisions || {};
   const incomplete = (run.status === "failed" || run.status === "cancelled")
     && run.result_count < run.tickers.length;
+  const cost = run.cost_usd != null
+    ? `<span>${run.cost_unknown ? "≥" : "≈"} ${fmtCostUsd(run.cost_usd)} model cost</span>`
+    : run.cost_unknown
+      ? "<span>Model cost unknown</span>"
+      : "";
   const rerunHref = `/?rerun=1&tickers=${encodeURIComponent(run.tickers.join(","))}`
     + `&outlook=${encodeURIComponent(run.outlook || "")}`
     + `&depth=${encodeURIComponent(run.depth || "")}`;
@@ -87,7 +92,7 @@ function runCard(run) {
         const decision = decisions[ticker];
         return `<span class="history-ticker"><strong>${escapeHtml(ticker)}</strong>${decision ? decisionBadge(decision) : '<span class="muted">No decision</span>'}</span>`;
       }).join("")}</div>
-      <div class="history-meta"><span>${Number(run.duration_s || 0).toFixed(1)}s</span><span>${run.result_count}/${run.tickers.length} result${run.tickers.length === 1 ? "" : "s"}</span>${run.outlook ? `<span>${escapeHtml(OUTLOOK_LABELS[run.outlook] || run.outlook)} outlook</span>` : ""}${run.depth ? `<span>${escapeHtml(DEPTH_LABELS[run.depth] || run.depth)} depth</span>` : ""}${run.mock_mode ? "<span>Mock mode</span>" : ""}</div>
+      <div class="history-meta"><span>${Number(run.duration_s || 0).toFixed(1)}s</span><span>${run.result_count}/${run.tickers.length} result${run.tickers.length === 1 ? "" : "s"}</span>${run.outlook ? `<span>${escapeHtml(OUTLOOK_LABELS[run.outlook] || run.outlook)} outlook</span>` : ""}${run.depth ? `<span>${escapeHtml(DEPTH_LABELS[run.depth] || run.depth)} depth</span>` : ""}${cost}${run.mock_mode ? "<span>Mock mode</span>" : ""}</div>
       ${incomplete ? `<p class="history-partial">${run.result_count} of ${run.tickers.length} ticker${run.tickers.length === 1 ? "" : "s"} finished before the run was ${run.status === "cancelled" ? "cancelled" : "interrupted"}; the rest have no result.</p>` : ""}
       ${run.error ? `<p class="history-error">${escapeHtml(run.error)}</p>` : ""}
     </div>
@@ -119,6 +124,16 @@ function formatDateTime(timestamp) {
   const date = new Date(Number(timestamp) * 1000);
   if (Number.isNaN(date.getTime())) return "Unknown date";
   return new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(date);
+}
+
+// Estimated model cost: per-run totals are cents, so keep more decimals
+// until whole dollars make them noise (matches util.js fmtCostUsd).
+function fmtCostUsd(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n < 0) return "$0";
+  if (n < 1) return `$${n.toFixed(4)}`;
+  if (n < 1000) return `$${n.toFixed(2)}`;
+  return `$${n.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
 }
 
 function showToast(message, isError = true) {

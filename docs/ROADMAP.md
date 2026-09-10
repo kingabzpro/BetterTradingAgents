@@ -83,6 +83,13 @@ Already shipped:
   inconclusive results, and `--paired` compares two runs differing in exactly
   one dimension (depth, rebuttals, forecast, sentiment, model) over a shared
   cache with a paired-difference interval
+- estimated model cost per run (first slice of the P2.2 run metrics): each
+  result carries a `cost_estimate` priced per role from recorded token usage
+  against a dated list-price table (`app/cost.py`; `LLM_PRICE_IN`/`OUT`
+  override it for custom endpoints), result cards show a `Model cost` fact
+  beside the token count, the summary panel totals the run, the Runs page
+  shows each run's estimate, and a model with no known price renders `cost
+  unknown` / a floor instead of a confident wrong number
 
 ## Priority map
 
