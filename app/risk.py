@@ -1,6 +1,6 @@
 """Deterministic risk gate applied after the Portfolio Manager decides.
 
-Rules, not an LLM: free, testable, no hallucination surface (docs/ROADMAP.md 1.2).
+Rules, not an LLM: free, testable, no hallucination surface (wiki Roadmap 1.2).
 
 - Sizing: dollar-volatility parity scaled by conviction -
   size = DEFAULT_POSITION_SIZE x confidence x min(1, target_vol / realized_vol),

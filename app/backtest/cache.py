@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 DEFAULT_DB = (
-    Path(__file__).resolve().parent.parent.parent / "docs" / "backtests" / "cache.db"
+    Path(__file__).resolve().parent.parent.parent / "backtests" / "cache.db"
 )
 
 

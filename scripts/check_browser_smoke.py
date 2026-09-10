@@ -9,7 +9,7 @@ journey, focus behavior, live-region setup, accessible names, and reflow at
 Run: uv run python -m scripts.check_browser_smoke
 Skips with exit 0 when playwright or a system Chromium is unavailable; every
 other failure is real. The manual screen-reader protocol lives in
-docs/ACCESSIBILITY.md.
+the wiki Accessibility page.
 """
 
 import asyncio

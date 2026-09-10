@@ -1,4 +1,4 @@
-"""Decision memory with realized-return reflection (docs/ROADMAP.md 1.1).
+"""Decision memory with realized-return reflection (wiki Roadmap 1.1).
 
 Every completed run appends its decision to the `decisions` table. Before the
 next run of the same ticker, past decisions are graded against realized prices

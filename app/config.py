@@ -27,7 +27,7 @@ class Settings:
     llm_timeout_seconds: float = float(_env("LLM_TIMEOUT_SECONDS", "90"))
     # Optional provider-specific reasoning effort (e.g. "none"/"low" for GLM).
     llm_reasoning_effort: str = _env("LLM_REASONING_EFFORT")
-    # Per-role overrides (docs/ROADMAP.md 2.3); each falls back to the global
+    # Per-role overrides (wiki Roadmap 2.3); each falls back to the global
     # LLM_* value. Roles: analysts = the 4 researchers, debate = bull/bear,
     # manager = the final BUY/HOLD/SELL call - cheap fast researchers, a
     # stronger model only where judgment matters.
@@ -61,12 +61,12 @@ class Settings:
     default_position_size: float = float(_env("DEFAULT_POSITION_SIZE", "10000"))
     db_path: Path = Path(_env("DB_PATH", str(BASE_DIR / "portfolio.db")))
 
-    # Risk gate (docs/ROADMAP.md 1.2) - fractions of total equity
+    # Risk gate (wiki Roadmap 1.2) - fractions of total equity
     max_position_pct: float = float(_env("MAX_POSITION_PCT", "0.10"))
     max_invested_pct: float = float(_env("MAX_INVESTED_PCT", "0.60"))
     min_cash_pct: float = float(_env("MIN_CASH_PCT", "0.10"))
 
-    # Decision memory (docs/ROADMAP.md 1.1): days a decision is held before its
+    # Decision memory (wiki Roadmap 1.1): days a decision is held before its
     # outcome is final; LLM-written reflections are opt-in (off = deterministic).
     memory_horizon_days: int = max(1, int(_env("MEMORY_HORIZON_DAYS", "21")))
     memory_reflect_with_llm: bool = _env("MEMORY_REFLECT_WITH_LLM", "0").lower() in (
@@ -74,14 +74,14 @@ class Settings:
         "true",
         "yes",
     )
-    # Confidence calibration (docs/ROADMAP.md P1.1): a bucket with fewer mature
+    # Confidence calibration (wiki Roadmap P1.1): a bucket with fewer mature
     # graded decisions than this reports "Track record unavailable" instead of
     # a rate that a handful of outcomes cannot support.
     calibration_min_observations: int = max(
         1, int(_env("CALIBRATION_MIN_OBSERVATIONS", "30"))
     )
 
-    # Live reasoning stream (docs/ROADMAP.md 3.2): stream agent tokens to the
+    # Live reasoning stream (wiki Roadmap 3.2): stream agent tokens to the
     # UI as agent_token SSE events. OFF by default - in live use the stream is
     # mostly the final JSON blob, which reads as noise next to the result card.
     # Set STREAM_REASONING=1 to enable; a provider that rejects streaming makes

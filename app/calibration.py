@@ -1,4 +1,4 @@
-"""Confidence calibration from graded outcomes (docs/ROADMAP.md P1.1).
+"""Confidence calibration from graded outcomes (wiki Roadmap P1.1).
 
 Model confidence means evidence strength, not a probability of profit. This
 module grades that meaning against history: mature decisions are grouped by

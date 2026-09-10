@@ -35,7 +35,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                         help="run the real LLM agents (default: free mock mode)")
     parser.add_argument("--short", action="store_true",
                         help="grade SELLs as short returns (default: long-only, SELL=0)")
-    parser.add_argument("--out", default=None, help="report directory (default docs/backtests)")
+    parser.add_argument("--out", default=None, help="report directory (default backtests/)")
     parser.add_argument("--yes", action="store_true",
                         help="skip the interactive confirmation for --llm cost")
     parser.add_argument("--allow-current-fundamentals", action="store_true",

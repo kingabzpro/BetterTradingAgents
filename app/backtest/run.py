@@ -43,7 +43,7 @@ from app.tools.market_data import get_closes_between
 
 logger = logging.getLogger("backtest")
 
-DEFAULT_OUT_DIR = Path(__file__).resolve().parent.parent.parent / "docs" / "backtests"
+DEFAULT_OUT_DIR = Path(__file__).resolve().parent.parent.parent / "backtests"
 
 
 def date_grid(start: str, end: str, step_days: int) -> list[str]:

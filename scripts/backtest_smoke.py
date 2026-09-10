@@ -1,7 +1,7 @@
 """Weekly backtest smoke (ROADMAP 2.2): 3 tickers x 6 dates, mock mode.
 
 Run: PYTHONPATH=. uv run python scripts/backtest_smoke.py
-Regenerates docs/backtests/report-mock.{md,json}; with a warm cache it makes
+Regenerates backtests/report-mock.{md,json}; with a warm cache it makes
 zero network calls (the first run fetches ~40 provider requests once).
 """
 

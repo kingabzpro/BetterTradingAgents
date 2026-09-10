@@ -26,7 +26,7 @@ comes back with a suggested position size and the full reasoning trail. Every co
 is also remembered and graded against what the market actually did, so the Portfolio Manager
 brings a track record to the next decision, not just fresh data.
 
-![BetterTradingAgents home screen](docs/screenshots/home.png)
+![BetterTradingAgents home screen](static/screenshots/home.png)
 
 ## Highlights
 
@@ -128,7 +128,7 @@ Watch each agent move from waiting to running to complete, with a progress bar p
 If an agent fails, its slot says so and the manager still makes a call on the inputs that
 survived.
 
-![Live agent progress](docs/screenshots/live-analysis.png)
+![Live agent progress](static/screenshots/live-analysis.png)
 
 ### Read the results
 
@@ -143,7 +143,7 @@ that would change the call (`would_upgrade_if` / `would_downgrade_if`, labeled a
 not alerts), risk changes, the bull-versus-bear debate including rebuttals, analyst evidence,
 sources with links, and the track record of previous calls graded against SPY.
 
-![Analysis results](docs/screenshots/results.png)
+![Analysis results](static/screenshots/results.png)
 
 ### Chat with the Portfolio Manager
 
@@ -178,7 +178,7 @@ The portfolio page tracks two kinds of positions in one SQLite-backed book:
 The Portfolio Manager sees all open positions when making its next call, and the risk gate's
 exposure caps use the combined equity. No broker is connected and no real orders are placed.
 
-![Demo portfolio](docs/screenshots/portfolio.png)
+![Demo portfolio](static/screenshots/portfolio.png)
 
 ### Run history
 
