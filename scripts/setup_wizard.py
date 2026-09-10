@@ -1,6 +1,6 @@
 """Interactive setup wizard for new users (run this first).
 
-    uv run python scripts/setup_wizard.py        (preferred; also installs deps)
+    uv run setup                                 (preferred; also installs deps)
     python scripts/setup_wizard.py               (stdlib only, no deps needed)
 
 Asks a handful of questions, optionally tests the LLM key against the
@@ -272,9 +272,10 @@ def main() -> int:
 
     print()
     print("Next steps")
-    print("  uv run uvicorn app.main:app --reload    # start the app")
-    print("  open http://127.0.0.1:8000              # analyze your first tickers")
-    print("  README.md -> Configuration              # every knob, one table each")
+    print("  uv run app                               # start the app")
+    print("  open http://127.0.0.1:8000               # analyze your first tickers")
+    print("  uv run test                              # fast offline check suite")
+    print("  README.md -> Configuration               # every knob, one table each")
     print("  .env                                     # your file; it is gitignored")
     print()
     print("Setup complete. Happy researching - this is an educational")

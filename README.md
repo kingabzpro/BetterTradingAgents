@@ -195,7 +195,7 @@ uv sync
 The fastest path is the interactive setup wizard:
 
 ```bash
-uv run python scripts/setup_wizard.py
+uv run setup
 ```
 
 It offers the common LLM providers as presets (OpenAI, Z.AI, DeepSeek, Qwen, OpenRouter, or any
@@ -255,7 +255,7 @@ LLM_BASE_URL_MANAGER=https://your-glm-53-endpoint/v1
 ### 3. Run
 
 ```bash
-uv run uvicorn app.main:app --reload
+uv run app
 ```
 
 Open [http://localhost:8000](http://localhost:8000), add tickers such as `NVDA, AMD, META`
@@ -301,7 +301,7 @@ incomplete snapshots are not cached, and restarting the application clears the i
 
 ## Configuration
 
-Run `uv run python scripts/setup_wizard.py` to configure interactively, or copy
+Run `uv run setup` to configure interactively, or copy
 [`.env.example`](.env.example) to `.env` and override only what you need. Every setting is
 optional; without an LLM key, the app starts in mock mode. The groups below mirror the sections
 of `.env.example`, and the defaults live in `app/config.py`.
@@ -453,6 +453,13 @@ BUY was downgraded or confidence capped, if it was).
 ## Development
 
 ```bash
+# Fast offline suite (quick wins, cost estimate, run history, setup wizard)
+uv run test
+
+# One specific group, or every group including the browser smoke test
+uv run test chat
+uv run test all
+
 # Offline sanity suite: indicators, portfolio accounting + migration, risk gate
 PYTHONPATH=. uv run python scripts/check_quick_wins.py
 PYTHONPATH=. uv run python scripts/check_risk.py
