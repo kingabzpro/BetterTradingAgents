@@ -10,7 +10,7 @@ from app.depth import DEFAULT_DEPTH, normalize_depth
 from app.models import PortfolioSummary, RunHistoryItem, RunStatus, StockAnalysis
 from app.outlook import DEFAULT_OUTLOOK, normalize_outlook
 from app import run_history
-from app.workflow import analyze_ticker, fetch_portfolio_summary
+from app.workflow import analyze_ticker, fetch_held_closes, fetch_portfolio_summary
 
 logger = logging.getLogger("analysis")
 ANALYSIS_CACHE_TTL_SECONDS = 60 * 60
@@ -225,6 +225,7 @@ class RunStore:
         run: Run,
         ticker: str,
         portfolio: PortfolioSummary | None,
+        held_closes: dict[str, list[float]] | None = None,
     ) -> StockAnalysis:
         key = self._cache_key(run, ticker, portfolio)
         cached = self.analysis_cache.get(key)
@@ -255,6 +256,7 @@ class RunStore:
                 outlook=run.outlook,
                 depth=run.depth,
                 run_id=run.run_id,
+                held_closes=held_closes,
             )
         )
         self.analysis_inflight[key] = task
@@ -270,14 +272,18 @@ class RunStore:
         try:
             semaphore = asyncio.Semaphore(settings.max_tickers)
             # One portfolio snapshot per run, shared by every ticker's manager
-            # prompt and risk gate (instead of one fetch per ticker).
+            # prompt and risk gate (instead of one fetch per ticker), plus one
+            # price-history fetch per held ticker for the concentration gate.
             portfolio_summary = await fetch_portfolio_summary()
+            held_closes = await fetch_held_closes(portfolio_summary)
 
             if not run.cancel_requested:
                 async def analyze_one(ticker: str) -> StockAnalysis:
                     async with semaphore:
                         try:
-                            result = await self._analyze_one(run, ticker, portfolio_summary)
+                            result = await self._analyze_one(
+                                run, ticker, portfolio_summary, held_closes
+                            )
                         except Exception as exc:  # noqa: BLE001 - last-resort guard
                             logger.error("[analysis] %s crashed: %s", ticker, exc)
                             result = StockAnalysis(ticker=ticker, error=str(exc)[:300])

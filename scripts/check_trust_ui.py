@@ -79,6 +79,7 @@ assert "content" not in dumped_reference
 legacy = StockAnalysis(ticker="MSFT", decision="HOLD")
 assert legacy.as_of == "" and legacy.providers == {} and legacy.source_references == []
 assert legacy.bull_rebuttal is None and legacy.bear_rebuttal is None
+assert legacy.concentration is None  # pre-P1.3 runs: never rendered as checked
 complete = StockAnalysis(
     ticker="MSFT",
     as_of="2026-01-02T10:00:00+00:00",
@@ -113,6 +114,9 @@ for token in ("localStorage", "?run", "aria-expanded", "aria-controls", "restore
         assert 'searchParams.set("run"' in js
     else:
         assert token in js
+# Concentration block (P1.3): rendered only for high/unknown, never for ok.
+assert "concentrationBlock" in js
+assert 'c.status === "ok"' in js
 assert "onclick=" not in js
 assert "type=\"module\"" in html  # ES module entry point, still no build step
 assert "prefers-reduced-motion" in css

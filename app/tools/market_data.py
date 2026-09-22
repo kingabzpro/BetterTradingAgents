@@ -127,6 +127,13 @@ async def get_stock_data(ticker: str) -> MarketData:
     return data
 
 
+async def get_closes(ticker: str) -> list[float]:
+    """Six months of daily closes, for the concentration gate's cross-ticker
+    correlation (app/risk.py). Raises on provider failure; callers decide the
+    fallback. """
+    return await asyncio.to_thread(lambda: _yf_history(ticker)["closes"])
+
+
 async def get_current_price(ticker: str) -> float | None:
     """Lightweight price lookup with a short cache (used by the portfolio)."""
     cached = _price_cache.get(ticker)

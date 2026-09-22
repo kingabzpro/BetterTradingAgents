@@ -287,8 +287,8 @@ module-by-module walkthrough in
 The detailed, research-backed plan lives in the wiki's
 [Roadmap](https://github.com/kingabzpro/BetterTradingAgents/wiki/Roadmap) page. Shipped so
 far: the decision brief with trust state, run controls, the accessibility pass, historical
-confidence calibration, and the honest experiment workflow. Next up: portfolio concentration
-risk, a watchlist with decision-change tracking, decision comparison with price context,
+confidence calibration, the honest experiment workflow, and portfolio concentration risk.
+Next up: a watchlist with decision-change tracking, decision comparison with price context,
 search and export, and Alpaca paper trading.
 
 ## Disclaimer

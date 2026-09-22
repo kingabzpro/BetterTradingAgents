@@ -139,6 +139,15 @@ function downgradeFlag(analysis) {
   return (analysis.risk_flags || []).find((flag) => String(flag).startsWith("downgraded")) || "";
 }
 
+// Correlated-exposure warning (roadmap P1.3): warning-only, so it renders as
+// context next to the risk flags; "ok" and un-checked runs show nothing.
+function concentrationBlock(analysis) {
+  const c = analysis.concentration;
+  if (!c || c.status === "ok") return "";
+  const title = c.status === "high" ? "Concentration warning" : "Concentration unknown";
+  return `<div class="risk-flags concentration"><strong>${title}</strong><span>⚠ ${escapeHtml(c.detail || "")}</span></div>`;
+}
+
 function forecastBandNote(analysis) {
   // Noise-band context so a red -2% forecast next to a BUY stops looking
   // contradictory: inside +/-1 sigma it is statistical noise, not a signal.
@@ -358,6 +367,7 @@ export function renderResultCard(analysis) {
       <div class="manager-conclusion"><span class="eyebrow">Manager conclusion</span><p class="thesis">${escapeHtml(analysis.summary || analysis.error || "No manager summary was returned.")}</p></div>
       ${conditions}
       ${analysis.error ? `<div class="risk-flags"><strong>Analysis unavailable</strong><span>⚠ ${escapeHtml(analysis.error)}</span></div>` : flags.length ? `<div class="risk-flags"><strong>Risk flags</strong>${flags.map((flag) => `<span>⚠ ${escapeHtml(flag)}</span>`).join("")}</div>` : '<div class="risk-clear"><span aria-hidden="true">✓</span> No risk rules were triggered.</div>'}
+      ${concentrationBlock(analysis)}
     </div>
     ${analysis.error ? "" : `
     <div class="chat-block">

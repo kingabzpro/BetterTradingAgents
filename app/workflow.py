@@ -499,6 +499,33 @@ async def fetch_portfolio_summary() -> PortfolioSummary | None:
         return None
 
 
+async def fetch_held_closes(
+    portfolio: PortfolioSummary | None,
+) -> dict[str, list[float]]:
+    """Daily closes for every held ticker, for the concentration gate (P1.3).
+
+    Best-effort like the portfolio itself: a ticker whose history cannot be
+    fetched is simply absent, and the gate then reports its correlation as
+    unknown instead of assuming independence. Multi-ticker runs fetch this
+    once and share it (see app.runs).
+    """
+    if portfolio is None or not portfolio.positions:
+        return {}
+    tickers = sorted({p.ticker for p in portfolio.positions})
+    from app.tools.market_data import get_closes
+
+    histories = await asyncio.gather(
+        *(get_closes(t) for t in tickers), return_exceptions=True
+    )
+    closes: dict[str, list[float]] = {}
+    for held, history in zip(tickers, histories):
+        if isinstance(history, BaseException):
+            logger.warning("[risk] %s price history failed: %s", held, history)
+        elif history:
+            closes[held] = history
+    return closes
+
+
 async def fetch_past_decisions(ticker: str) -> dict | None:
     """Graded past calls on this ticker + cross-ticker lessons; best-effort."""
     try:
@@ -589,6 +616,7 @@ async def analyze_ticker(
     market_data: MarketData | None = None,
     live_context: bool = True,
     exclude_analysts: tuple[str, ...] | list[str] = (),
+    held_closes: dict[str, list[float]] | None = None,
 ) -> StockAnalysis:
     """Full 3-stage workflow for one ticker.
 
@@ -605,6 +633,8 @@ async def analyze_ticker(
     information from after the replayed date. `exclude_analysts` drops
     researchers whose inputs have no point-in-time source (P1.2: the
     fundamental analyst in replays), from prompts, events, and coverage.
+    `held_closes` carries pre-fetched daily closes for the held tickers (the
+    concentration gate's correlation input); when omitted it is fetched here.
     """
     started = time.perf_counter()
     await emit("ticker_started", {"ticker": ticker})
@@ -956,6 +986,33 @@ async def analyze_ticker(
     else:
         risk_flags = ["portfolio manager failed - defaulted to HOLD"]
 
+    # Concentration check (ROADMAP P1.3): a surviving BUY with portfolio
+    # context warns when correlated holdings behave like one concentrated
+    # bet. Warning-only, and skipped when the caps could not run at all
+    # (their own flag already says the portfolio was unavailable).
+    concentration = None
+    if (
+        size_usd is not None
+        and portfolio_summ is not None
+        and portfolio_summ.total_equity
+    ):
+        if held_closes is None and portfolio_summ.positions:
+            held_closes = await fetch_held_closes(portfolio_summ)
+        concentration = risk.concentration_check(
+            ticker,
+            size_usd,
+            portfolio_summ,
+            held_closes=held_closes,
+            candidate_closes=market.closes,
+        )
+        if concentration.status != "ok":
+            prefix = (
+                "concentration warning"
+                if concentration.status == "high"
+                else "concentration unknown"
+            )
+            risk_flags.append(f"{prefix}: {concentration.detail}")
+
     analysis = StockAnalysis(
         ticker=ticker,
         company_name=market.company_name,
@@ -988,6 +1045,7 @@ async def analyze_ticker(
         duration_s=round(time.perf_counter() - started, 1),
         suggested_size_usd=size_usd,
         risk_flags=risk_flags,
+        concentration=concentration,
         past_decisions=past["past_decisions"] if past else [],
         token_usage=token_totals,
         cost_estimate=cost.estimate(

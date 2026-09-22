@@ -120,6 +120,25 @@ class DataQuality(BaseModel):
     provider_fallbacks: list[str] = Field(default_factory=list)  # degraded inputs, plain text
 
 
+class ConcentrationCheck(BaseModel):
+    """Deterministic correlated-exposure warning for a sized BUY (ROADMAP P1.3).
+
+    Warning-only: it never changes the decision. status: ok = within the
+    correlated-group cap; high = past it (before/after equity shares recorded);
+    unknown = a correlation could not be computed, which is reported rather
+    than silently read as independent. None on the analysis = not checked
+    (no surviving BUY, no portfolio, or a pre-P1.3 run).
+    """
+
+    status: Literal["ok", "high", "unknown"] = "unknown"
+    detail: str = ""
+    correlated: list[str] = Field(default_factory=list)  # holdings above the threshold
+    unverified: list[str] = Field(default_factory=list)  # holdings with no usable history
+    before_pct: float | None = None  # correlated-group share of equity before the BUY
+    after_pct: float | None = None  # group share after the suggested size is added
+    cap_pct: float | None = None  # the configured group cap, for display
+
+
 class StockAnalysis(BaseModel):
     """Everything we know about one ticker after a full run."""
 
@@ -159,6 +178,7 @@ class StockAnalysis(BaseModel):
     error: str | None = None
     suggested_size_usd: float | None = None
     risk_flags: list[str] = Field(default_factory=list)
+    concentration: ConcentrationCheck | None = None  # correlated-exposure warning (P1.3)
     past_decisions: list[dict] = Field(default_factory=list)  # graded prior calls on this ticker
     token_usage: dict = Field(default_factory=dict)  # summed LLM tokens for this ticker's run
     cost_estimate: dict = Field(default_factory=dict)  # app/cost.py estimate; {} = no tokens recorded

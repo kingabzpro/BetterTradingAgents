@@ -65,6 +65,11 @@ class Settings:
     max_position_pct: float = float(_env("MAX_POSITION_PCT", "0.10"))
     max_invested_pct: float = float(_env("MAX_INVESTED_PCT", "0.60"))
     min_cash_pct: float = float(_env("MIN_CASH_PCT", "0.10"))
+    # Correlated-group cap (wiki Roadmap P1.3): a BUY whose exposure, combined
+    # with holdings whose daily returns correlate at/above 0.7 (app/risk.py),
+    # would push the group past this share of equity raises a warning. It is
+    # warning-only; the caps above still block the trade.
+    max_correlated_pct: float = float(_env("MAX_CORRELATED_PCT", "0.25"))
 
     # Decision memory (wiki Roadmap 1.1): days a decision is held before its
     # outcome is final; LLM-written reflections are opt-in (off = deterministic).

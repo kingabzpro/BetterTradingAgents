@@ -111,6 +111,55 @@ d, c, s, f = risk.evaluate("SELL", 0.9, "NVDA", (A(), A(), A()), 44.9, flat_port
 assert d == "HOLD" and any("noise band" in fl for fl in f), f
 print("forecast SELL veto OK")
 
+# ---- concentration check (ROADMAP P1.3): correlated holdings = one bet ------
+from app.models import ConcentrationCheck  # noqa: E402
+
+# correlation helper: identical series -> ~1, mirrored -> ~-1, thin/flat -> None
+base = [100 + (i % 7) * 2 + (i * 13 % 5) for i in range(60)]
+assert risk.returns_correlation(base, list(base)) > 0.99
+assert risk.returns_correlation(base, [200 - x for x in base]) < -0.99
+assert risk.returns_correlation(base[:15], base[:15]) is None  # under MIN_RETURN_OBS
+assert risk.returns_correlation([100.0] * 60, base) is None  # flat series
+print("returns_correlation OK")
+
+# perfect correlation pulls MSFT into the group: 20k + 10k BUY = 30% > 25% cap
+pf = flat_portfolio(cash=80_000.0)
+pf.positions = [position("MSFT", 20_000.0)]
+conc = risk.concentration_check(
+    "AMD", 10_000.0, pf,
+    held_closes={"MSFT": base}, candidate_closes=base,
+)
+assert conc.status == "high" and conc.correlated == ["MSFT"], conc
+assert conc.before_pct == 20.0 and conc.after_pct == 30.0 and conc.cap_pct == 25.0
+assert "20.0%" in conc.detail and "30.0%" in conc.detail
+print("concentration high OK:", conc.detail)
+
+# same numbers but mirrored returns: MSFT is a hedge, group stays within cap
+conc = risk.concentration_check(
+    "AMD", 10_000.0, pf,
+    held_closes={"MSFT": [200 - x for x in base]}, candidate_closes=base,
+)
+assert conc.status == "ok" and conc.after_pct == 10.0, conc
+print("concentration ok OK")
+
+# missing history is never read as independent: reported unknown
+conc = risk.concentration_check("AMD", 10_000.0, pf, held_closes={}, candidate_closes=base)
+assert conc.status == "unknown" and conc.unverified == ["MSFT"], conc
+conc = risk.concentration_check("AMD", 10_000.0, pf, held_closes={"MSFT": base}, candidate_closes=base[:10])
+assert conc.status == "unknown", conc
+print("concentration unknown OK:", conc.detail)
+
+# existing stake in the same ticker joins the group; no positions -> ok
+pf = flat_portfolio(cash=80_000.0)
+pf.positions = [position("AMD", 20_000.0)]
+conc = risk.concentration_check("AMD", 10_000.0, pf, held_closes={}, candidate_closes=None)
+assert conc.status == "high" and conc.correlated == [], conc  # self-group needs no history
+conc = risk.concentration_check("AMD", 10_000.0, flat_portfolio(), held_closes={}, candidate_closes=base)
+assert conc.status == "ok", conc
+assert risk.concentration_check("AMD", 10_000.0, flat_portfolio(equity=0.0)).status == "unknown"
+assert ConcentrationCheck().status == "unknown"  # default is honest
+print("concentration edges OK")
+
 # ---- mock e2e: StockAnalysis carries size + flags -----------------------------
 from app.config import settings as _settings  # noqa: E402
 
@@ -120,6 +169,9 @@ from app.workflow import analyze_ticker  # noqa: E402
 import asyncio  # noqa: E402
 
 async def e2e():
+    from app import portfolio as portfolio_mod
+
+    await portfolio_mod.init()  # empty book, so the risk gate gets a real summary
     events = []
 
     async def emit(kind, payload):
@@ -135,7 +187,11 @@ async def e2e():
               % (result.forecast_band_pct, result.forecast_z))
     if result.decision == "BUY":
         assert result.suggested_size_usd and result.suggested_size_usd <= D * 1.5
-        print("e2e BUY OK: size", result.suggested_size_usd, "flags", result.risk_flags)
+        # Empty test portfolio: the concentration check always ran for a BUY.
+        assert result.concentration is not None
+        assert result.concentration.status in ("ok", "high", "unknown")
+        print("e2e BUY OK: size", result.suggested_size_usd,
+              "flags", result.risk_flags, "concentration", result.concentration.status)
     else:
         assert result.suggested_size_usd is None
         print("e2e OK:", result.decision, "flags", result.risk_flags)
