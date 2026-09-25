@@ -419,6 +419,17 @@
   padding-top: 18px; border-top: 1px solid rgba(255, 255, 255, 0.075);
 }
 .result-actions .add-row { flex: 1; margin: 0; padding: 0; border: 0; }
+.result-actions .watch-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  flex: 1;
+}
+.watch-btn { min-height: 36px; }
 .retry-btn { margin-left: auto; }
 .add-btn, .add-row input { min-height: 36px; }
 

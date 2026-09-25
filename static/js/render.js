@@ -7,6 +7,7 @@ import {
 import { activeAgents, depthProfile } from "./options.js";
 import { state } from "./state.js";
 import { addToPortfolio } from "./portfolio-actions.js";
+import { saveToWatchlist } from "./watchlist-actions.js";
 import { retryTicker } from "./tickers.js";
 import { sendChatMessage, setChatOpen, toggleChat } from "./chat.js";
 import {
@@ -390,7 +391,7 @@ export function renderResultCard(analysis) {
       <section class="result-block" aria-labelledby="evidence-title-${ticker}"><div class="block-heading"><h3 id="evidence-title-${ticker}">Analyst evidence</h3></div><div class="grid-3">${evidenceHtml}</div>${skippedResearch.length ? `<p class="hint">Skipped for speed: ${skippedResearch.map((key) => EVIDENCE_META[key].title).join(" · ")}</p>` : ""}</section>
       <section class="result-block sources-block" aria-labelledby="sources-title-${ticker}"><div class="block-heading"><h3 id="sources-title-${ticker}">Sources</h3><p>${escapeHtml(providerText(analysis.providers))}</p></div>${renderSources(analysis.source_references)}</section>
       ${renderTrackRecord(analysis, ticker)}
-      <div class="result-actions">${canAdd ? `<div class="add-row"><label for="qty-${ticker}">Shares</label><input id="qty-${ticker}" type="number" min="1" step="1" value="${defaultQty}"><button class="add-btn" id="add-${ticker}" type="button">Add to Demo Portfolio</button><span class="muted">suggests ${fmtUsd(positionSize)}</span><span class="added-note hidden" id="added-${ticker}" role="status"></span></div>` : '<span class="muted">Portfolio adds are offered on BUY calls.</span>'}<button class="secondary-btn retry-btn" type="button">Retry ${escapeHtml(ticker)}</button></div>
+      <div class="result-actions">${canAdd ? `<div class="add-row"><label for="qty-${ticker}">Shares</label><input id="qty-${ticker}" type="number" min="1" step="1" value="${defaultQty}"><button class="add-btn" id="add-${ticker}" type="button">Add to Demo Portfolio</button><span class="muted">suggests ${fmtUsd(positionSize)}</span><span class="added-note hidden" id="added-${ticker}" role="status"></span></div>` : '<span class="muted">Portfolio adds are offered on BUY calls.</span>'}<div class="add-row watch-row">${analysis.error ? '<span class="muted">Watchlist saves need a finished call.</span>' : `<button class="secondary-btn watch-btn" id="watch-${ticker}" type="button">Save to watchlist</button><span class="added-note hidden" id="watched-${ticker}" role="status"></span>`}<button class="secondary-btn retry-btn" type="button">Retry ${escapeHtml(ticker)}</button></div></div>
     </div>`;
 
   const existing = $(`result-${ticker}`);
@@ -413,6 +414,12 @@ export function renderResultCard(analysis) {
   });
   card.querySelector(".retry-btn").addEventListener("click", () => retryTicker(ticker));
   if (canAdd) $(`add-${ticker}`).addEventListener("click", () => addToPortfolio(ticker, Number(analysis.price)));
+  if (!analysis.error && $(`watch-${ticker}`)) {
+    $(`watch-${ticker}`).addEventListener("click", () => {
+      const runId = state.runId || "";
+      saveToWatchlist(ticker, runId);
+    });
+  }
   if (!analysis.error) {
     $(`chat-toggle-${ticker}`).addEventListener("click", () => toggleChat(ticker));
     $(`chat-form-${ticker}`).addEventListener("submit", (event) => {

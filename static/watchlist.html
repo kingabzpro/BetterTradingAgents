@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#05070d">
+  <title>Watchlist · BetterTradingAgents</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+  <link rel="icon" href="/static/favicon.ico?v=2" sizes="any">
+  <link rel="icon" type="image/png" href="/static/favicon.png?v=2">
+  <link rel="apple-touch-icon" href="/static/favicon.png?v=2">
+  <link rel="stylesheet" href="/static/css/base.css?v=3">
+  <link rel="stylesheet" href="/static/css/watchlist.css?v=1">
+</head>
+<body>
+  <a class="skip-link" href="#main-content">Skip to content</a>
+  <div class="container">
+    <header>
+      <div class="brand">
+        <a href="/" class="logo-home" aria-label="Go to BetterTradingAgents home">
+          <img src="/static/logo.png" alt="" class="logo-img">
+        </a>
+        <div>
+          <h1>Watchlist</h1>
+          <p class="tagline">Saved tickers · decision-change tracking</p>
+        </div>
+      </div>
+      <nav aria-label="Primary navigation">
+        <a href="/history" class="nav-link">Runs</a>
+        <a href="/portfolio" class="nav-link">Portfolio</a>
+        <a href="/" class="nav-link">Analysis</a>
+      </nav>
+    </header>
+
+    <main id="main-content" tabindex="-1">
+      <section class="watch-intro" aria-labelledby="watch-heading">
+        <div>
+          <span class="eyebrow">Manual refresh only</span>
+          <h2 id="watch-heading" tabindex="-1">Watched tickers</h2>
+          <p>Save a result to track its next call. Reanalyze when you want; this page never runs on a schedule.</p>
+        </div>
+        <div class="watch-toolbar">
+          <button id="refresh-watchlist" class="secondary-btn" type="button">Refresh</button>
+          <button id="clear-watchlist" class="danger-btn" type="button">Clear all</button>
+        </div>
+      </section>
+
+      <div class="card watch-add-card">
+        <label for="watch-ticker">Add a ticker</label>
+        <div class="watch-add-row">
+          <input id="watch-ticker" placeholder="e.g. NVDA" maxlength="10" autocomplete="off" spellcheck="false" aria-label="Ticker to watch">
+          <input id="watch-note" placeholder="Optional note" maxlength="500" aria-label="Optional note">
+          <button id="watch-add-btn" class="add-btn" type="button">Watch</button>
+        </div>
+        <p class="hint">Or use <strong>Save to watchlist</strong> on any finished result card.</p>
+      </div>
+
+      <div class="watch-actions card hidden" id="bulk-card">
+        <label class="watch-select-all">
+          <input type="checkbox" id="select-all">
+          <span>Select all</span>
+        </label>
+        <div class="watch-bulk-btns">
+          <button id="analyze-selected" class="add-btn" type="button">Analyze selected</button>
+          <button id="analyze-all" class="secondary-btn" type="button">Analyze all</button>
+        </div>
+        <p class="hint" id="bulk-hint"></p>
+      </div>
+
+      <p id="watch-status" class="watch-status" role="status" aria-live="polite">Loading watchlist…</p>
+      <section id="watch-list" class="watch-list" aria-label="Watched tickers"></section>
+      <div id="watch-empty" class="watch-empty hidden">
+        <strong>Nothing on the watchlist</strong>
+        <p>Save a result from an analysis, or add a ticker above.</p>
+        <a href="/" class="secondary-btn">Start an analysis</a>
+      </div>
+    </main>
+  </div>
+
+  <div id="toast" class="toast hidden" role="alert" aria-live="assertive" aria-atomic="true"></div>
+  <script src="/static/js/watchlist.js?v=1"></script>
+</body>
+</html>

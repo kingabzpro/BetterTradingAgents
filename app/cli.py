@@ -16,7 +16,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 
 # Fast, fully offline checks that exercise the core: indicators and
 # accounting, the cost estimate, durable history, and the setup wizard.
-FAST_CHECKS = ("quick_wins", "cost", "run_history", "setup_wizard")
+FAST_CHECKS = ("quick_wins", "cost", "run_history", "watchlist", "setup_wizard")
 
 
 def serve() -> int:

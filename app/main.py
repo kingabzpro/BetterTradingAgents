@@ -10,7 +10,7 @@ from fastapi import FastAPI, Header, HTTPException, Query
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
-from app import calibration, chat, memory, portfolio
+from app import calibration, chat, memory, portfolio, watchlist
 from app.config import settings
 from app.discovery import discover_stocks
 from app.models import (
@@ -27,6 +27,10 @@ from app.models import (
     PortfolioImportResponse,
     RunHistoryItem,
     RunStatus,
+    WatchlistAddRequest,
+    WatchlistAddResponse,
+    WatchlistItem,
+    WatchlistUpdateRequest,
 )
 from app.outlook import DEFAULT_OUTLOOK, Outlook
 from app.runs import store
@@ -54,7 +58,12 @@ async def revalidate_assets(request, call_next):
     """
     response = await call_next(request)
     path = request.url.path
-    if path.startswith(("/static/", "/api/")) or path in ("/", "/portfolio", "/history"):
+    if path.startswith(("/static/", "/api/")) or path in (
+        "/",
+        "/portfolio",
+        "/history",
+        "/watchlist",
+    ):
         response.headers["Cache-Control"] = "no-cache"
     return response
 
@@ -63,6 +72,7 @@ async def revalidate_assets(request, call_next):
 async def startup() -> None:
     await portfolio.init()
     await memory.init()
+    await watchlist.init()
     await store.init()
     mode = "mock (no LLM_API_KEY)" if not settings.llm_configured else settings.llm_model
     logger.info("[startup] BetterTradingAgents ready | llm=%s", mode)
@@ -81,6 +91,11 @@ async def portfolio_page():
 @app.get("/history")
 async def history_page():
     return FileResponse(STATIC_DIR / "history.html")
+
+
+@app.get("/watchlist")
+async def watchlist_page():
+    return FileResponse(STATIC_DIR / "watchlist.html")
 
 
 @app.get("/api/health")
@@ -314,3 +329,77 @@ async def close_position(request: PortfolioCloseRequest):
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     return position
+
+
+def _require_client(client_id: str | None) -> str:
+    if client_id is None or not CLIENT_ID_RE.match(client_id):
+        raise HTTPException(status_code=400, detail="invalid client id")
+    return client_id
+
+
+@app.get("/api/watchlist", response_model=list[WatchlistItem])
+async def get_watchlist(
+    client_id: str | None = Header(default=None, alias="X-Client-ID"),
+):
+    if client_id is None:
+        return []
+    owner = _require_client(client_id)
+    return await watchlist.list_watchlist(owner)
+
+
+@app.post("/api/watchlist", response_model=WatchlistAddResponse)
+async def add_watchlist(
+    request: WatchlistAddRequest,
+    client_id: str | None = Header(default=None, alias="X-Client-ID"),
+):
+    owner = _require_client(client_id)
+    try:
+        item, already = await watchlist.add_item(
+            owner,
+            request.ticker,
+            note=request.note,
+            outlook=request.outlook,
+            depth=request.depth,
+            run_id=request.run_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return WatchlistAddResponse(item=item, already_watched=already)
+
+
+@app.patch("/api/watchlist/{item_id}", response_model=WatchlistItem)
+async def update_watchlist_item(
+    item_id: int,
+    request: WatchlistUpdateRequest,
+    client_id: str | None = Header(default=None, alias="X-Client-ID"),
+):
+    owner = _require_client(client_id)
+    try:
+        return await watchlist.update_item(
+            owner, item_id, request.note, request.outlook, request.depth
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.delete("/api/watchlist/{item_id}")
+async def remove_watchlist_item(
+    item_id: int,
+    client_id: str | None = Header(default=None, alias="X-Client-ID"),
+):
+    owner = _require_client(client_id)
+    try:
+        ticker = await watchlist.remove_item(owner, item_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return {"ticker": ticker, "removed": 1}
+
+
+@app.delete("/api/watchlist")
+async def clear_watchlist(
+    client_id: str | None = Header(default=None, alias="X-Client-ID"),
+):
+    owner = _require_client(client_id)
+    return {"deleted": await watchlist.clear(owner)}
