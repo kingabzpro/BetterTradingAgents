@@ -9,7 +9,7 @@ from app.config import settings
 from app.depth import DEFAULT_DEPTH, normalize_depth
 from app.models import PortfolioSummary, RunHistoryItem, RunStatus, StockAnalysis
 from app.outlook import DEFAULT_OUTLOOK, normalize_outlook
-from app import run_history
+from app import changes, run_history
 from app.workflow import analyze_ticker, fetch_held_closes, fetch_portfolio_summary
 
 logger = logging.getLogger("analysis")
@@ -227,10 +227,16 @@ class RunStore:
         portfolio: PortfolioSummary | None,
         held_closes: dict[str, list[float]] | None = None,
     ) -> StockAnalysis:
+        # The comparison partner for `What changed` (P1.5), computed once per
+        # ticker and applied on every path (fresh, cache hit, inflight join).
+        previous = await changes.previous_call(
+            run.client_id, ticker, run.run_id, run.started_at
+        )
         key = self._cache_key(run, ticker, portfolio)
         cached = self.analysis_cache.get(key)
         if cached and time.monotonic() - cached[0] < ANALYSIS_CACHE_TTL_SECONDS:
             result = cached[1].model_copy(deep=True)
+            changes.attach(result, previous)
             logger.info("[analysis] %s cache hit", ticker)
             await self._emit_cached(run, result)
             return result
@@ -244,6 +250,7 @@ class RunStore:
                     result.model_copy(deep=True),
                 )
             result = result.model_copy(deep=True)
+            changes.attach(result, previous)
             logger.info("[analysis] %s joined cached in-flight analysis", ticker)
             await self._emit_cached(run, result)
             return result
@@ -257,6 +264,7 @@ class RunStore:
                 depth=run.depth,
                 run_id=run.run_id,
                 held_closes=held_closes,
+                previous=previous,
             )
         )
         self.analysis_inflight[key] = task

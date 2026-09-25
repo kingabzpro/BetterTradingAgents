@@ -14,6 +14,7 @@ the wiki Accessibility page.
 
 import asyncio
 from datetime import datetime, timezone
+import json
 import os
 from pathlib import Path
 import socket
@@ -28,6 +29,7 @@ os.environ["DB_PATH"] = str(_DB)
 
 import uvicorn  # noqa: E402
 
+from app import main as main_module  # noqa: E402
 from app import memory, runs  # noqa: E402
 from app.main import app  # noqa: E402
 from app.models import StockAnalysis  # noqa: E402
@@ -90,6 +92,11 @@ async def fake_analyze(ticker: str, emit, run_id: str = "", **_kwargs) -> StockA
 
 async def fake_portfolio_summary():
     return None
+
+
+async def fake_closes_between(ticker: str, start: str, end: str) -> dict[str, float]:
+    """Deterministic dated closes so the price-context chart renders offline."""
+    return {"2026-04-01": 95.0, "2026-06-01": 99.5, "2026-08-01": 102.0}
 
 
 def free_port() -> int:
@@ -252,6 +259,16 @@ def check_analysis_page(page) -> None:
         "document.activeElement.classList.contains('result-summary')"
     ), "View evidence should focus the result summary"
 
+    # Price context (P1.5): the chart loads with the panel and every mark is
+    # also stated as text outside the graphic.
+    page.wait_for_selector(".chart-summary", timeout=10_000)
+    summary = page.text_content(".chart-summary") or ""
+    assert "Six months to" in summary, f"chart summary missing range: {summary}"
+    assert "Analysis price $100.00" in summary, f"chart summary missing analysis mark: {summary}"
+    assert "Current $102.00" in summary, f"chart summary missing current price: {summary}"
+    assert page.locator("svg.price-chart[role='img']").count() == 1, \
+        "the chart must expose an accessible name"
+
     # BUY offers the demo-portfolio add; the confirmation note is a live region.
     page.click(f"#add-{TICKER}")
     page.wait_for_selector(f"#added-{TICKER}:not(.hidden)", timeout=10_000)
@@ -307,6 +324,70 @@ def check_history_page(page) -> None:
     )
 
 
+def check_compare_page(page) -> None:
+    # Two completed runs of the same ticker exist by now; the rerun was a
+    # cache hit whose result carries the deterministic `What changed` diff.
+    page.goto(f"{BASE_URL}/history", wait_until="networkidle")
+    client_id = page.evaluate("localStorage.getItem('bta:clientId')") or ""
+    request = urllib.request.Request(
+        f"{BASE_URL}/api/runs?limit=10", headers={"X-Client-ID": client_id}
+    )
+    with urllib.request.urlopen(request, timeout=10) as response:
+        history_runs = json.load(response)
+    assert len(history_runs) >= 2, "the smoke journey should leave at least two runs"
+    new_run, old_run = history_runs[0]["run_id"], history_runs[1]["run_id"]
+
+    page.goto(
+        f"{BASE_URL}/compare?items={new_run}:{TICKER},{old_run}:{TICKER}",
+        wait_until="networkidle",
+    )
+    page.wait_for_selector(".compare-col", timeout=10_000)
+    assert page.locator(".compare-col").count() == 2, "two items must render two columns"
+    content = page.content()
+    for label in ("Final call", "Manager call", "Evidence strength", "Analyst split",
+                  "Price", "5-day forecast", "Data age", "Risk flags", "Suggested size"):
+        assert label in content, f"comparison row missing: {label}"
+    assert "What changed" in content, "repeat analyses must lead with What changed"
+    assert "Decision unchanged" in content, "the repeat-run diff must be shown"
+    assert page.evaluate(
+        "[...document.querySelectorAll('button')].filter((b) => "
+        "!(b.getAttribute('aria-label') || b.textContent.trim())).length === 0"
+    ), "every button needs an accessible name"
+
+    # Keyboard reorder: move the second column left, the URL follows.
+    tab_until_focused(page, ".compare-col:nth-child(2) .move-btn")
+    page.keyboard.press("Enter")
+    assert page.evaluate("new URLSearchParams(location.search).get('items')") == \
+        f"{old_run}:{TICKER},{new_run}:{TICKER}", "reorder must update the shareable URL"
+    page.wait_for_function(
+        "(run) => document.querySelector('.compare-col')?.textContent.includes(run)",
+        arg=old_run,
+        timeout=10_000,
+    )
+
+    # Keyboard remove: one column left, still in the URL.
+    tab_until_focused(page, ".compare-col .remove-btn")
+    page.keyboard.press("Enter")
+    page.wait_for_function(
+        "document.querySelectorAll('.compare-col').length === 1", timeout=10_000
+    )
+    assert page.evaluate("new URLSearchParams(location.search).get('items')") == \
+        f"{new_run}:{TICKER}"
+
+    # Add the other run back through the form, keyboard-activated.
+    page.select_option("#add-run", old_run)
+    page.select_option("#add-ticker", TICKER)
+    tab_until_focused(page, "#add-compare")
+    page.keyboard.press("Enter")
+    page.wait_for_function(
+        "document.querySelectorAll('.compare-col').length === 2", timeout=10_000
+    )
+
+    assert_no_page_scroll(page, 1440, "compare page")
+    assert_no_page_scroll(page, 320, "compare page")
+    page.set_viewport_size({"width": 1280, "height": 900})
+
+
 def main() -> None:
     try:
         from playwright.sync_api import sync_playwright
@@ -319,8 +400,10 @@ def main() -> None:
     BASE_URL = f"http://127.0.0.1:{port}"
     original_analyze = runs.analyze_ticker
     original_portfolio = runs.fetch_portfolio_summary
+    original_closes = main_module.get_closes_between
     runs.analyze_ticker = fake_analyze
     runs.fetch_portfolio_summary = fake_portfolio_summary
+    main_module.get_closes_between = fake_closes_between
     try:
         with sync_playwright() as playwright:
             browser = None
@@ -342,11 +425,13 @@ def main() -> None:
                 check_analysis_page(page)
                 check_portfolio_page(page)
                 check_history_page(page)
+                check_compare_page(page)
             finally:
                 browser.close()
     finally:
         runs.analyze_ticker = original_analyze
         runs.fetch_portfolio_summary = original_portfolio
+        main_module.get_closes_between = original_closes
         server.should_exit = True
     print("BROWSER SMOKE CHECKS PASSED")
 

@@ -14,11 +14,17 @@ import re
 import time
 from typing import Any, Awaitable, Callable
 
-from app import cost, quality, risk
+from app import changes, cost, quality, risk
 from app.agents import bear, bull, forecast, fundamental, manager, news, sentiment, technical
 from app.config import settings
 from app.depth import DEFAULT_DEPTH, depth_profile
-from app.models import AgentResult, PortfolioSummary, SourceReference, StockAnalysis
+from app.models import (
+    AgentResult,
+    PortfolioSummary,
+    PreviousCall,
+    SourceReference,
+    StockAnalysis,
+)
 from app.outlook import DEFAULT_OUTLOOK, user_context
 from app.tools.indicators import compute_indicators, historical_forecast
 from app.tools.market_data import (
@@ -617,6 +623,7 @@ async def analyze_ticker(
     live_context: bool = True,
     exclude_analysts: tuple[str, ...] | list[str] = (),
     held_closes: dict[str, list[float]] | None = None,
+    previous: PreviousCall | None = None,
 ) -> StockAnalysis:
     """Full 3-stage workflow for one ticker.
 
@@ -635,6 +642,8 @@ async def analyze_ticker(
     fundamental analyst in replays), from prompts, events, and coverage.
     `held_closes` carries pre-fetched daily closes for the held tickers (the
     concentration gate's correlation input); when omitted it is fetched here.
+    `previous` is the earlier completed call this one is compared against for
+    the deterministic `What changed` summary (P1.5); backtests pass none.
     """
     started = time.perf_counter()
     await emit("ticker_started", {"ticker": ticker})
@@ -1073,6 +1082,7 @@ async def analyze_ticker(
     logger.info(
         "[analysis] %s completed in %.1fs (%s)", ticker, analysis.duration_s, decision
     )
+    changes.attach(analysis, previous)
     # Record the decision for future reflection (ROADMAP 1.1) with its
     # calibration provenance (P1.1). A failure here must never surface to the
     # user or block the result. Backtest replays never write - they are not

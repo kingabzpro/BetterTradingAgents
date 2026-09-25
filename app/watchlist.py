@@ -22,6 +22,7 @@ import sqlite3
 from datetime import datetime, timezone
 from typing import Literal
 
+from app.changes import evidence_bucket
 from app.config import settings
 from app.depth import DEFAULT_DEPTH, normalize_depth
 from app.models import StockAnalysis, WatchlistCall, WatchlistItem
@@ -70,18 +71,6 @@ def _init_db() -> None:
 
 async def init() -> None:
     await asyncio.to_thread(_init_db)
-
-
-def evidence_bucket(confidence: float | None) -> str:
-    """Match the UI's convictionLabel thresholds (P1.1)."""
-    if confidence is None:
-        return "unknown"
-    pct = round((confidence or 0) * 100)
-    if pct >= 70:
-        return "strong"
-    if pct >= 50:
-        return "moderate"
-    return "low"
 
 
 def _call_from_analysis(

@@ -4,6 +4,7 @@ import asyncio
 import json
 import logging
 import re
+from datetime import date, timedelta
 from pathlib import Path
 
 from fastapi import FastAPI, Header, HTTPException, Query
@@ -34,6 +35,7 @@ from app.models import (
 )
 from app.outlook import DEFAULT_OUTLOOK, Outlook
 from app.runs import store
+from app.tools.market_data import get_closes_between
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger("analysis")
@@ -63,6 +65,7 @@ async def revalidate_assets(request, call_next):
         "/portfolio",
         "/history",
         "/watchlist",
+        "/compare",
     ):
         response.headers["Cache-Control"] = "no-cache"
     return response
@@ -96,6 +99,11 @@ async def history_page():
 @app.get("/watchlist")
 async def watchlist_page():
     return FileResponse(STATIC_DIR / "watchlist.html")
+
+
+@app.get("/compare")
+async def compare_page():
+    return FileResponse(STATIC_DIR / "compare.html")
 
 
 @app.get("/api/health")
@@ -158,6 +166,22 @@ async def discover(outlook: Outlook = Query(default=DEFAULT_OUTLOOK)):
         return await discover_stocks(outlook, min(5, settings.max_tickers))
     except ValueError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@app.get("/api/price-history/{ticker}")
+async def price_history(ticker: str):
+    """Six months of daily closes for the price-context chart (P1.5).
+
+    Live market data only: an unavailable history returns empty lists and the
+    UI says so, it never draws invented points.
+    """
+    ticker = ticker.strip().upper()
+    if not TICKER_RE.match(ticker):
+        raise HTTPException(status_code=400, detail="invalid ticker symbol")
+    end = date.today() + timedelta(days=1)
+    start = end - timedelta(days=186)
+    closes = await get_closes_between(ticker, start.isoformat(), end.isoformat())
+    return {"ticker": ticker, "dates": list(closes), "closes": list(closes.values())}
 
 
 @app.post("/api/analyze", response_model=AnalysisResponse)

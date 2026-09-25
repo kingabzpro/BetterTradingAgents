@@ -432,6 +432,28 @@
 .watch-btn { min-height: 36px; }
 .retry-btn { margin-left: auto; }
 .add-btn, .add-row input { min-height: 36px; }
+.compare-btn { min-height: 36px; display: inline-flex; align-items: center; text-decoration: none; }
+
+/* ---------- what-changed lead (P1.5) ---------- */
+.what-changed {
+  margin: 0 0 14px; padding: 12px 14px;
+  border: 1px solid rgba(16, 201, 115, 0.28); border-radius: 12px;
+  background: rgba(16, 201, 115, 0.05);
+}
+.what-changed ul { margin: 8px 0 6px; padding-left: 18px; font-size: 13px; line-height: 1.7; }
+.what-changed li { color: var(--text); }
+
+/* ---------- price-context chart (P1.5) ---------- */
+.price-context .chart-holder { margin-top: 6px; }
+.price-chart { width: 100%; height: auto; display: block; }
+.chart-line { stroke: #6fda9e; stroke-width: 2; }
+.chart-current { stroke: rgba(255, 255, 255, 0.35); stroke-width: 1; stroke-dasharray: 5 4; }
+.chart-current-dot { fill: #e6eaf2; }
+.chart-analysis { fill: #ffc75e; }
+.chart-forecast { stroke: #8ab4ff; stroke-width: 2; stroke-dasharray: 5 4; fill: none; }
+.chart-forecast-dot { fill: #8ab4ff; }
+.chart-label { fill: var(--muted); font-size: 10px; font-family: var(--font); }
+.chart-summary { margin: 10px 0 0; color: var(--muted); font-size: 12px; line-height: 1.65; }
 
 /* ---------- per-ticker manager chat ---------- */
 .chat-block { padding: 0 20px 18px; }

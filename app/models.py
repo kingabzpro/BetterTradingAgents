@@ -139,6 +139,21 @@ class ConcentrationCheck(BaseModel):
     cap_pct: float | None = None  # the configured group cap, for display
 
 
+class PreviousCall(BaseModel):
+    """Snapshot of the earlier completed call a repeat analysis is compared
+    against for the deterministic `What changed` summary (ROADMAP P1.5)."""
+
+    run_id: str = ""
+    analyzed_at: float | None = None
+    decision: Decision | None = None
+    confidence: float | None = None  # evidence strength, never a profit probability
+    signals: dict[str, str] = Field(default_factory=dict)  # analyst key -> signal
+    forecast_price_5d: float | None = None
+    as_of: str = ""
+    stale: bool = False
+    risk_flags: list[str] = Field(default_factory=list)
+
+
 class StockAnalysis(BaseModel):
     """Everything we know about one ticker after a full run."""
 
@@ -180,6 +195,8 @@ class StockAnalysis(BaseModel):
     risk_flags: list[str] = Field(default_factory=list)
     concentration: ConcentrationCheck | None = None  # correlated-exposure warning (P1.3)
     past_decisions: list[dict] = Field(default_factory=list)  # graded prior calls on this ticker
+    previous: PreviousCall | None = None  # earlier completed call on this ticker (P1.5)
+    what_changed: list[str] = Field(default_factory=list)  # deterministic diff vs previous
     token_usage: dict = Field(default_factory=dict)  # summed LLM tokens for this ticker's run
     cost_estimate: dict = Field(default_factory=dict)  # app/cost.py estimate; {} = no tokens recorded
     as_of: str = ""

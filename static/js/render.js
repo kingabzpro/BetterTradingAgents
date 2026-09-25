@@ -8,6 +8,7 @@ import { activeAgents, depthProfile } from "./options.js";
 import { state } from "./state.js";
 import { addToPortfolio } from "./portfolio-actions.js";
 import { saveToWatchlist } from "./watchlist-actions.js";
+import { loadPriceChart } from "./price-chart.js";
 import { retryTicker } from "./tickers.js";
 import { sendChatMessage, setChatOpen, toggleChat } from "./chat.js";
 import {
@@ -359,10 +360,18 @@ export function renderResultCard(analysis) {
   const conditions = analysis.would_upgrade_if || analysis.would_downgrade_if
     ? `<div class="manager-conditions"><span class="eyebrow eyebrow-flat">Conditions for a different call - not alerts or price targets</span>${analysis.would_upgrade_if ? `<p><strong>Stronger call if:</strong> ${escapeHtml(analysis.would_upgrade_if)}</p>` : ""}${analysis.would_downgrade_if ? `<p><strong>Weaker call if:</strong> ${escapeHtml(analysis.would_downgrade_if)}</p>` : ""}</div>`
     : "";
+  // Repeat analyses lead with a deterministic `What changed` summary (P1.5).
+  const changed = analysis.what_changed?.length
+    ? `<div class="what-changed"><span class="eyebrow eyebrow-flat">What changed</span><ul>${analysis.what_changed.map((line) => `<li>${escapeHtml(line)}</li>`).join("")}</ul>${analysis.previous?.analyzed_at ? `<small class="muted">vs the call on ${escapeHtml(formatDateTime(analysis.previous.analyzed_at * 1000))}${analysis.previous.run_id ? ` · run ${escapeHtml(analysis.previous.run_id)}` : ""}</small>` : ""}</div>`
+    : "";
+  const compareLink = state.runId && !analysis.error
+    ? `<a class="secondary-btn compare-btn" href="/compare?items=${encodeURIComponent(`${state.runId}:${ticker}`)}">Compare</a>`
+    : "";
 
   card.innerHTML = `
     <button class="result-summary" type="button" aria-expanded="false" aria-controls="${detailId}"><span class="result-identity"><span class="tk">${escapeHtml(ticker)}</span><span class="company">${escapeHtml(analysis.company_name || "Company name unavailable")}</span></span>${decisionBadge(analysis)}${gated ? '<span class="gate-chip">risk-adjusted</span>' : ""}<span class="summary-action">Evidence &amp; sources <span class="caret" aria-hidden="true">▶</span></span></button>
     <div class="decision-brief">
+      ${changed}
       ${gated ? `<div class="gate-banner"><span class="gate-chip">risk-adjusted</span><span class="gate-line">${escapeHtml(gateLine(analysis))}</span>${downgradeFlag(analysis) ? `<small>⚠ ${escapeHtml(downgradeFlag(analysis))}</small>` : ""}</div>` : ""}
       <div class="decision-facts"><div><span>Current price</span><strong>${analysis.price != null ? `$${Number(analysis.price).toFixed(2)}` : "Unavailable"}</strong></div><div><span>5-day forecast</span><strong>${analysis.forecast_price_5d != null ? `$${Number(analysis.forecast_price_5d).toFixed(2)} (${Number(analysis.forecast_change_5d_pct) >= 0 ? "+" : ""}${Number(analysis.forecast_change_5d_pct).toFixed(2)}%)` : "Unavailable"}</strong><small>${analysis.forecast_method === "timegpt-1" ? "TimeGPT" : analysis.forecast_trend_r2 != null ? `Local fit R² ${Number(analysis.forecast_trend_r2).toFixed(2)}` : "Local"}${forecastBandNote(analysis)}</small></div><div><span>Data age</span><strong>${age.stale ? '<span class="flag-warn">' : ""}${ageLabel(age.hours)}${cachedRun ? " · cached" : ""}${age.stale ? " · stale</span>" : ""}</strong><small>${escapeHtml(asOf)}</small></div><div><span>Evidence strength</span><strong>${convictionLabel(analysis.confidence)} · ${confidencePct}%</strong><small id="track-record-${ticker}" class="track-record"></small></div><div><span>Horizon</span><strong>${OUTLOOK_LABELS[state.outlook] || state.outlook}</strong><small>${profile.label} depth</small></div><div><span>Analyst coverage</span><strong>${analysis.error ? "n/a" : `${cov.available}/${cov.expected} analysts`}</strong>${!analysis.error && cov.split.available ? `<small>${splitLabel(cov.split)}</small>` : ""}${fallbacks.length ? `<small class="flag-warn">${fallbacks.map(escapeHtml).join(" · ")}</small>` : ""}</div><div><span>Suggested size</span><strong>${analysis.suggested_size_usd ? fmtUsd(analysis.suggested_size_usd) : "No position"}</strong></div>${tokenFact}${costFact}</div>
       <div class="manager-conclusion"><span class="eyebrow">Manager conclusion</span><p class="thesis">${escapeHtml(analysis.summary || analysis.error || "No manager summary was returned.")}</p></div>
@@ -387,11 +396,12 @@ export function renderResultCard(analysis) {
       </div>
     </div>`}
     <div class="result-detail" id="${detailId}" hidden>
+      <section class="result-block price-context" aria-labelledby="price-title-${ticker}"><div class="block-heading"><h3 id="price-title-${ticker}">Price context</h3></div><div class="chart-holder" id="price-chart-${ticker}"><p class="hint">The six-month price chart loads when this panel opens.</p></div></section>
       <section class="result-block" aria-labelledby="debate-title-${ticker}"><div class="block-heading"><h3 id="debate-title-${ticker}">Bull vs bear</h3></div><div class="debate"><article class="debate-side bull-side"><div class="mc-title">▲ Bull case</div><div class="mc-score">${Math.round((analysis.bull?.confidence ?? 0) * 100)}% argument strength</div><p class="mc-sum">${escapeHtml(analysis.bull?.summary || analysis.bull_case || "No bull case was returned.")}</p></article><article class="debate-side bear-side"><div class="mc-title">▼ Bear case</div><div class="mc-score">${Math.round((analysis.bear?.confidence ?? 0) * 100)}% risk strength</div><p class="mc-sum">${escapeHtml(analysis.bear?.summary || analysis.bear_case || "No bear case was returned.")}</p></article></div></section>
       <section class="result-block" aria-labelledby="evidence-title-${ticker}"><div class="block-heading"><h3 id="evidence-title-${ticker}">Analyst evidence</h3></div><div class="grid-3">${evidenceHtml}</div>${skippedResearch.length ? `<p class="hint">Skipped for speed: ${skippedResearch.map((key) => EVIDENCE_META[key].title).join(" · ")}</p>` : ""}</section>
       <section class="result-block sources-block" aria-labelledby="sources-title-${ticker}"><div class="block-heading"><h3 id="sources-title-${ticker}">Sources</h3><p>${escapeHtml(providerText(analysis.providers))}</p></div>${renderSources(analysis.source_references)}</section>
       ${renderTrackRecord(analysis, ticker)}
-      <div class="result-actions">${canAdd ? `<div class="add-row"><label for="qty-${ticker}">Shares</label><input id="qty-${ticker}" type="number" min="1" step="1" value="${defaultQty}"><button class="add-btn" id="add-${ticker}" type="button">Add to Demo Portfolio</button><span class="muted">suggests ${fmtUsd(positionSize)}</span><span class="added-note hidden" id="added-${ticker}" role="status"></span></div>` : '<span class="muted">Portfolio adds are offered on BUY calls.</span>'}<div class="add-row watch-row">${analysis.error ? '<span class="muted">Watchlist saves need a finished call.</span>' : `<button class="secondary-btn watch-btn" id="watch-${ticker}" type="button">Save to watchlist</button><span class="added-note hidden" id="watched-${ticker}" role="status"></span>`}<button class="secondary-btn retry-btn" type="button">Retry ${escapeHtml(ticker)}</button></div></div>
+      <div class="result-actions">${canAdd ? `<div class="add-row"><label for="qty-${ticker}">Shares</label><input id="qty-${ticker}" type="number" min="1" step="1" value="${defaultQty}"><button class="add-btn" id="add-${ticker}" type="button">Add to Demo Portfolio</button><span class="muted">suggests ${fmtUsd(positionSize)}</span><span class="added-note hidden" id="added-${ticker}" role="status"></span></div>` : '<span class="muted">Portfolio adds are offered on BUY calls.</span>'}<div class="add-row watch-row">${analysis.error ? '<span class="muted">Watchlist saves need a finished call.</span>' : `<button class="secondary-btn watch-btn" id="watch-${ticker}" type="button">Save to watchlist</button><span class="added-note hidden" id="watched-${ticker}" role="status"></span>`}${compareLink}<button class="secondary-btn retry-btn" type="button">Retry ${escapeHtml(ticker)}</button></div></div>
     </div>`;
 
   const existing = $(`result-${ticker}`);
@@ -431,6 +441,7 @@ export function renderResultCard(analysis) {
   }
   const entry = state.tickers.get(ticker);
   if (entry) entry.analysis = analysis;
+  card._analysis = analysis;
   fetchTrackRecord(analysis);
 }
 
@@ -441,6 +452,10 @@ export function toggleResult(card, forceOpen = null) {
   summary.setAttribute("aria-expanded", String(open));
   detail.hidden = !open;
   card.classList.toggle("open", open);
+  // Price context fetches once, the first time the panel opens (P1.5).
+  if (open && card._analysis && !card._analysis.error) {
+    loadPriceChart(`price-chart-${card._analysis.ticker}`, card._analysis);
+  }
 }
 
 export function openResult(ticker) {
