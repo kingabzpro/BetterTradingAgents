@@ -14,6 +14,7 @@ we fall back to the next source.
 import asyncio
 import json
 import logging
+from copy import deepcopy
 from math import isfinite
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, timezone
@@ -34,6 +35,20 @@ TIMEGPT_FORECAST = "https://api.nixtla.io/v2/forecast"
 
 _price_cache: dict[str, tuple[float, float]] = {}  # ticker -> (price, fetched_at)
 _CACHE_TTL = 60.0
+
+# Snapshot reuse (perf): one ticker's merged snapshot is reused for 60s, which
+# collapses retries, watchlist/compare refreshes, and repeated runs onto a
+# single provider round. A reused snapshot keeps its original `as_of`, so the
+# trust UI reports the true age of what was served. Keys are ticker|want_social.
+_SNAPSHOT_TTL = 60.0
+_snapshot_cache: dict[str, tuple[float, object]] = {}
+_history_cache: dict[str, tuple[float, dict]] = {}  # six-month window -> get_closes too
+_CACHE_MAX = 200
+
+
+def _evict_if_full(cache: dict) -> None:
+    if len(cache) > _CACHE_MAX:
+        cache.pop(min(cache, key=lambda k: cache[k][0]), None)
 
 # Finnhub /stock/metric keys -> normalized fundamentals keys (all percents as numbers).
 FINNHUB_METRICS = {
@@ -70,16 +85,40 @@ class MarketData:
     as_of: str = ""
 
 
-async def get_stock_data(ticker: str) -> MarketData:
-    """Fetch everything the agents need for one ticker, concurrently."""
+async def get_stock_data(ticker: str, want_social: bool = True) -> MarketData:
+    """Fetch everything the agents need for one ticker, concurrently.
+
+    `want_social` skips the Olostep social search when no Sentiment
+    researcher will read it (fast depth). The merged snapshot is reused for
+    `_SNAPSHOT_TTL` seconds; a reuse keeps its original `as_of`.
+    """
+    key = f"{ticker}|{int(want_social)}"
+    hit = _snapshot_cache.get(key)
+    if hit is not None and monotonic() - hit[0] < _SNAPSHOT_TTL:
+        logger.info("[%s] market snapshot reused (%.0fs old)", ticker, monotonic() - hit[0])
+        return deepcopy(hit[1])
+
     yf_task = asyncio.create_task(_yf_all(ticker))
     fundamentals_task = asyncio.create_task(_finnhub_fundamentals(ticker))
-    news_task = asyncio.create_task(_finnhub_news(ticker))
-    social_task = asyncio.create_task(_olostep_social(ticker))
+    finnhub_news_task = asyncio.create_task(_finnhub_news(ticker))
+    # The Olostep search (slow: search + article scrapes) starts immediately
+    # so it overlaps everything else, but it is used ONLY if Finnhub has no
+    # news: a Finnhub hit cancels it, so it never adds latency.
+    olostep_news_task = asyncio.create_task(_olostep_news(ticker))
+    social_task = (
+        asyncio.create_task(_olostep_social(ticker))
+        if want_social
+        else asyncio.sleep(0, result=None)
+    )
 
     yf_data, finnhub_fund, finnhub_news, social = await asyncio.gather(
-        yf_task, fundamentals_task, news_task, social_task
+        yf_task, fundamentals_task, finnhub_news_task, social_task
     )
+    if finnhub_news:
+        olostep_news_task.cancel()
+        olostep_news: list[dict] = []
+    else:
+        olostep_news = await olostep_news_task
 
     data = MarketData(ticker=ticker)
     data.closes = yf_data["closes"]
@@ -101,17 +140,16 @@ async def get_stock_data(ticker: str) -> MarketData:
         "finnhub" if finnhub_fund else ("yfinance" if data.fundamentals else "none")
     )
 
-    # News: Finnhub -> Olostep search/scrape -> yfinance.
+    # News: Finnhub first, then the parallel Olostep search, then yfinance.
     if finnhub_news:
         data.news, data.sources["news"] = finnhub_news, "finnhub"
+    elif olostep_news:
+        data.news, data.sources["news"] = olostep_news, "olostep"
     else:
-        olostep_news = await _olostep_news(ticker, data.company_name)
-        if olostep_news:
-            data.news, data.sources["news"] = olostep_news, "olostep"
-        else:
-            data.news, data.sources["news"] = yf_data["news"], "yfinance"
+        data.news, data.sources["news"] = yf_data["news"], "yfinance"
     # Social sentiment posts (ROADMAP 3.1): Olostep site-restricted search.
-    data.social, data.sources["social"] = social, ("olostep" if social else "none")
+    data.social = social or []
+    data.sources["social"] = "olostep" if social else "none"
     data.sources["prices"] = "yfinance"
     data.as_of = datetime.now(timezone.utc).isoformat()
 
@@ -124,6 +162,9 @@ async def get_stock_data(ticker: str) -> MarketData:
         data.sources["social"],
         len(data.social),
     )
+    # Store a copy: workflow mutates market.sources (forecast provider labels).
+    _snapshot_cache[key] = (monotonic(), deepcopy(data))
+    _evict_if_full(_snapshot_cache)
     return data
 
 
@@ -269,6 +310,9 @@ async def _yf_all(ticker: str) -> dict:
 
 
 def _yf_history(ticker: str) -> dict:
+    hit = _history_cache.get(ticker)
+    if hit is not None and monotonic() - hit[0] < _SNAPSHOT_TTL:
+        return deepcopy(hit[1])
     out = {"closes": [], "highs": [], "lows": [], "volumes": [], "price": None}
     hist = yf.Ticker(ticker).history(period="6mo", interval="1d")
     if not hist.empty:
@@ -281,6 +325,8 @@ def _yf_history(ticker: str) -> dict:
             out["price"] = out["closes"][-1]
     if out["price"] is None:
         out["price"] = _yf_price(ticker)
+    _history_cache[ticker] = (monotonic(), deepcopy(out))
+    _evict_if_full(_history_cache)
     return out
 
 
@@ -470,11 +516,14 @@ async def _finnhub_news(
 # --------------------------------------------------------------------------
 
 
-async def _olostep_news(ticker: str, company_name: str) -> list[dict]:
+async def _olostep_news(ticker: str, company_name: str = "") -> list[dict]:
     if not settings.olostep_api_key:
         return []
     headers = {"Authorization": f"Bearer {settings.olostep_api_key}"}
-    query = f"{company_name or ticker} {ticker} stock news latest".strip()
+    # Ticker-only queries let the search start inside the parallel gather,
+    # before the profile is known; company_name stays optional.
+    prefix = f"{company_name} " if company_name else ""
+    query = f"{prefix}{ticker} stock news latest"
     try:
         async with httpx.AsyncClient(timeout=45) as client:
             response = await client.post(

@@ -656,13 +656,21 @@ async def analyze_ticker(
             return StockAnalysis(ticker=ticker, error="no price in snapshot")
     else:
         try:
-            market = await get_stock_data(ticker)
+            market = await get_stock_data(
+                ticker,
+                # Fast depth has no Sentiment researcher: skip the social search.
+                want_social="sentiment" in depth_profile(depth)["research"]
+                and "sentiment" not in exclude_analysts,
+            )
         except Exception as exc:  # noqa: BLE001
             logger.warning("[analysis] %s aborted: market data failed: %s", ticker, exc)
             await emit("ticker_failed", {"ticker": ticker, "error": str(exc)[:200]})
             return StockAnalysis(
                 ticker=ticker, error=f"market data failed: {exc}"[:300]
             )
+        logger.info(
+            "[%s] market data ready in %.1fs", ticker, time.perf_counter() - started
+        )
 
     indicators = compute_indicators(
         market.closes, market.highs, market.lows, market.volumes

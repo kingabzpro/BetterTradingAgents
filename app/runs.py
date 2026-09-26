@@ -10,7 +10,7 @@ from app.depth import DEFAULT_DEPTH, normalize_depth
 from app.models import PortfolioSummary, RunHistoryItem, RunStatus, StockAnalysis
 from app.outlook import DEFAULT_OUTLOOK, normalize_outlook
 from app import changes, run_history
-from app.workflow import analyze_ticker, fetch_held_closes, fetch_portfolio_summary
+from app.workflow import analyze_ticker, fetch_portfolio_summary
 
 logger = logging.getLogger("analysis")
 ANALYSIS_CACHE_TTL_SECONDS = 60 * 60
@@ -225,7 +225,6 @@ class RunStore:
         run: Run,
         ticker: str,
         portfolio: PortfolioSummary | None,
-        held_closes: dict[str, list[float]] | None = None,
     ) -> StockAnalysis:
         # The comparison partner for `What changed` (P1.5), computed once per
         # ticker and applied on every path (fresh, cache hit, inflight join).
@@ -263,7 +262,6 @@ class RunStore:
                 outlook=run.outlook,
                 depth=run.depth,
                 run_id=run.run_id,
-                held_closes=held_closes,
                 previous=previous,
             )
         )
@@ -280,17 +278,18 @@ class RunStore:
         try:
             semaphore = asyncio.Semaphore(settings.max_tickers)
             # One portfolio snapshot per run, shared by every ticker's manager
-            # prompt and risk gate (instead of one fetch per ticker), plus one
-            # price-history fetch per held ticker for the concentration gate.
+            # prompt and risk gate (instead of one fetch per ticker). Held
+            # closes are no longer prefetched here: the risk gate fetches them
+            # itself only when a sized BUY survives, so that fetch overlaps
+            # agent time instead of blocking every ticker's start (perf).
             portfolio_summary = await fetch_portfolio_summary()
-            held_closes = await fetch_held_closes(portfolio_summary)
 
             if not run.cancel_requested:
                 async def analyze_one(ticker: str) -> StockAnalysis:
                     async with semaphore:
                         try:
                             result = await self._analyze_one(
-                                run, ticker, portfolio_summary, held_closes
+                                run, ticker, portfolio_summary
                             )
                         except Exception as exc:  # noqa: BLE001 - last-resort guard
                             logger.error("[analysis] %s crashed: %s", ticker, exc)
