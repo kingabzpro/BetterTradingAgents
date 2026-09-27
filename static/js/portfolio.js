@@ -20,7 +20,15 @@ async function loadPortfolio() {
   }
 }
 
+let lastData = null;
+// Position search + sort state, mirrored to the URL (ROADMAP P1.6). Filtering
+// and sorting never touch the server. Each sort key has a natural default
+// direction that matches its option label ("Ticker (A to Z)", etc.).
+const posState = { q: "", sort: "value", dir: "desc" };
+const DEFAULT_DIR = { value: "desc", return: "desc", ticker: "asc", age: "asc" };
+
 function render(data) {
+  lastData = data;
   $("sc-start").textContent = fmt(data.starting_cash);
   $("sc-cash").textContent = fmt(data.cash);
   $("sc-value").textContent = fmt(data.positions_value);
@@ -36,11 +44,42 @@ function render(data) {
     ? `Live price unavailable for ${data.unpriced_count} position${data.unpriced_count === 1 ? "" : "s"}; totals exclude ${data.unpriced_count === 1 ? "it" : "them"}.`
     : "";
   note.classList.toggle("hidden", !data.unpriced_count);
+  renderPositions();
+}
+
+function visiblePositions() {
+  const positions = lastData ? lastData.positions : [];
+  const q = posState.q.trim().toUpperCase();
+  const rows = positions.filter((position) => !q || position.ticker.includes(q));
+  const dir = posState.dir === "asc" ? 1 : -1;
+  const num = (value) => (value == null ? -Infinity : Number(value));
+  const ageMs = (position) => {
+    const time = new Date(position.added_at || "").getTime();
+    return Number.isNaN(time) ? -Infinity : time;
+  };
+  const key = {
+    value: (position) => num(position.value),
+    return: (position) => num(position.pnl_pct),
+    ticker: (position) => position.ticker,
+    age: ageMs,
+  }[posState.sort] || (() => 0);
+  rows.sort((a, b) => {
+    const ka = key(a);
+    const kb = key(b);
+    return typeof ka === "string" ? dir * ka.localeCompare(kb) : dir * (ka - kb);
+  });
+  return rows;
+}
+
+function renderPositions() {
+  const rows = visiblePositions();
+  const total = lastData ? lastData.positions.length : 0;
+  $("empty-note").classList.toggle("hidden", total > 0);
+  $("pos-no-match").classList.toggle("hidden", total === 0 || rows.length > 0);
 
   const body = $("positions-body");
   body.innerHTML = "";
-  $("empty-note").classList.toggle("hidden", data.positions.length > 0);
-  for (const position of data.positions) {
+  for (const position of rows) {
     const pnlClass = position.pnl == null ? "" : position.pnl >= 0 ? "pnl-green" : "pnl-red";
     const tracked = position.external
       ? '<span class="src-tag" title="Tracked holding: added manually or imported; does not use demo cash">tracked</span>'
@@ -62,11 +101,12 @@ function render(data) {
   body.querySelectorAll("[data-close-id]").forEach((button) => {
     button.addEventListener("click", () => closePosition(Number(button.dataset.closeId), button.dataset.closeTicker));
   });
+  syncPosChips();
 
   const historyBody = $("history-body");
   historyBody.innerHTML = "";
-  $("history-card").classList.toggle("hidden", (data.history || []).length === 0);
-  for (const trade of data.history || []) {
+  $("history-card").classList.toggle("hidden", (lastData?.history || []).length === 0);
+  for (const trade of lastData?.history || []) {
     const pnlClass = trade.pnl == null ? "" : trade.pnl >= 0 ? "pnl-green" : "pnl-red";
     const row = document.createElement("tr");
     row.innerHTML = `
@@ -101,6 +141,85 @@ async function closePosition(id, ticker) {
   } catch (error) {
     showToast(`Could not close ${ticker}: ${error.message}`, true);
   }
+}
+
+/* ---------- position search, sort, chips, CSV export (P1.6) ---------- */
+
+function syncPosUrl() {
+  const url = new URL(window.location.href);
+  if (posState.q.trim()) url.searchParams.set("q", posState.q.trim());
+  else url.searchParams.delete("q");
+  if (posState.sort !== "value") url.searchParams.set("sort", posState.sort);
+  else url.searchParams.delete("sort");
+  if (posState.dir !== DEFAULT_DIR[posState.sort]) url.searchParams.set("dir", posState.dir);
+  else url.searchParams.delete("dir");
+  history.replaceState(null, "", url);
+}
+
+function syncPosChips() {
+  const has = Boolean(posState.q.trim());
+  const box = $("pos-filter-chips");
+  box.hidden = !has;
+  box.innerHTML = has
+    ? `<span class="filter-chip"><span class="filter-chip-label">Search: ${esc(posState.q.trim())}</span><button type="button" class="chip-remove" aria-label="Remove filter Search: ${esc(posState.q.trim())}">&times;<span class="sr-only"> remove</span></button></span>`
+    : "";
+  $("pos-filter-count").textContent = has ? "1" : "0";
+}
+
+function restorePosState() {
+  const params = new URLSearchParams(window.location.search);
+  posState.q = params.get("q") || "";
+  const sort = params.get("sort");
+  posState.sort = ["value", "return", "ticker", "age"].includes(sort) ? sort : "value";
+  posState.dir = params.get("dir") || DEFAULT_DIR[posState.sort];
+  $("pos-search").value = posState.q;
+  $("pos-sort").value = posState.sort;
+  updateSortDirButton();
+  syncPosChips();
+}
+
+function updateSortDirButton() {
+  const button = $("pos-sort-dir");
+  button.textContent = posState.dir === "asc" ? "↑" : "↓";
+  button.setAttribute("aria-label", `Sort direction ${posState.dir === "asc" ? "ascending" : "descending"}, activate to reverse`);
+}
+
+// CSV of the visible scope only: the rows currently shown after search and
+// sort, with raw values so the file can be re-imported or charted.
+function exportCsv() {
+  const rows = visiblePositions();
+  const lines = [
+    ["Ticker", "Quantity", "Entry price", "Current price", "Cost", "Value", "P&L", "P&L %", "Added"],
+    ...rows.map((position) => [
+      position.ticker,
+      position.quantity,
+      position.entry_price == null ? "" : position.entry_price,
+      position.current_price == null ? "" : position.current_price,
+      position.cost == null ? "" : position.cost,
+      position.value == null ? "" : position.value,
+      position.pnl == null ? "" : position.pnl,
+      position.pnl_pct == null ? "" : position.pnl_pct,
+      position.added_at || "",
+    ]),
+  ];
+  const csv = lines.map((line) => line.map(csvCell).join(",")).join("\r\n");
+  downloadFile("bta-portfolio-positions.csv", new Blob([csv], { type: "text/csv" }));
+}
+
+function csvCell(value) {
+  const text = value == null ? "" : String(value);
+  return /[",\n\r]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
+}
+
+function downloadFile(name, blob) {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = name;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 /* ---------- manual add ---------- */
@@ -289,5 +408,37 @@ document.addEventListener("DOMContentLoaded", () => {
   $("add-holding-btn").addEventListener("click", addHolding);
   $("csv-pick-btn").addEventListener("click", () => $("csv-file").click());
   $("csv-file").addEventListener("change", onCsvChosen);
+  restorePosState();
+  $("pos-search").addEventListener("input", () => {
+    posState.q = $("pos-search").value;
+    syncPosUrl();
+    renderPositions();
+  });
+  $("pos-sort").addEventListener("change", () => {
+    posState.sort = $("pos-sort").value;
+    posState.dir = DEFAULT_DIR[posState.sort];
+    updateSortDirButton();
+    syncPosUrl();
+    renderPositions();
+  });
+  $("pos-sort-dir").addEventListener("click", () => {
+    posState.dir = posState.dir === "asc" ? "desc" : "asc";
+    updateSortDirButton();
+    syncPosUrl();
+    renderPositions();
+  });
+  $("pos-filter-chips").addEventListener("click", (event) => {
+    if (!event.target.closest(".chip-remove")) return;
+    posState.q = "";
+    $("pos-search").value = "";
+    syncPosUrl();
+    renderPositions();
+    $("pos-search").focus();
+  });
+  $("export-csv").addEventListener("click", exportCsv);
+  const mobile = window.matchMedia("(max-width: 640px)");
+  const syncDrawer = () => { if (mobile.matches) $("pos-filter-drawer").open = false; };
+  syncDrawer();
+  mobile.addEventListener("change", syncDrawer);
   loadPortfolio();
 });

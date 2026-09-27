@@ -4,7 +4,8 @@ Drives the real FastAPI app and the real frontend in a system Chromium
 (Microsoft Edge, then Chrome; no browser download required) with the LLM and
 market-data layers swapped for deterministic fakes. Covers the keyboard-only
 journey, focus behavior, live-region setup, accessible names, and reflow at
-320 px / 640 px (200% zoom at a 1280 px screen).
+320 px / 640 px (200% zoom at a 1280 px screen), plus the P1.6 filter, sort,
+download, and print-brief behavior on the runs, portfolio, and analysis pages.
 
 Run: uv run python -m scripts.check_browser_smoke
 Skips with exit 0 when playwright or a system Chromium is unavailable; every
@@ -388,6 +389,200 @@ def check_compare_page(page) -> None:
     page.set_viewport_size({"width": 1280, "height": 900})
 
 
+def check_p1_6_filters_and_exports(page) -> None:
+    """Search, filters, sort, chips, downloads, and the print brief (P1.6)."""
+    # ---- runs page: instant client-side filtering -------------------------
+    page.goto(f"{BASE_URL}/history", wait_until="networkidle")
+    page.wait_for_selector(".history-run", timeout=10_000)
+    page.evaluate(
+        "window.__fetches = 0; window.__fetchArgs = []; const orig = window.fetch; "
+        "window.fetch = (...args) => { window.__fetches += 1; window.__fetchArgs.push(String(args[0])); return orig(...args); }; 'instrumented'"
+    )
+    total_runs = page.locator(".history-run").count()
+
+    # A search with no matches shows the no-match state, not the empty account.
+    page.fill("#run-search", "ZZZZ")
+    page.wait_for_selector("#history-no-match:not(.hidden)", timeout=5_000)
+    assert page.locator(".history-run").count() == 0, "no-match search must hide every card"
+    assert page.locator("#history-empty.hidden").count() == 1, \
+        "the no-saved-runs state must stay hidden while runs exist"
+    assert page.evaluate("new URLSearchParams(location.search).get('q')") == "ZZZZ", \
+        "filter state must live in the URL"
+    assert "Search: ZZZZ" in page.inner_text("#filter-chips"), "active filters must appear as chips"
+
+    # Filtering never round-trips to the server.
+    assert page.evaluate("window.__fetches") == 0, \
+        f"client-side filtering must not call fetch: {page.evaluate('window.__fetchArgs')}"
+
+    # Searching the smoke ticker keeps exactly the runs that contain it.
+    page.fill("#run-search", TICKER)
+    page.wait_for_function(
+        f"document.querySelectorAll('.history-run').length === {total_runs}", timeout=5_000
+    )
+    assert page.evaluate("window.__fetches") == 0
+
+    # Keyboard: removing the chip clears the filter and keeps focus in the bar.
+    tab_until_focused(page, ".chip-remove")
+    page.keyboard.press("Enter")
+    page.wait_for_function(
+        "new URLSearchParams(location.search).get('q') === null", timeout=5_000
+    )
+    assert page.locator(".chip-remove").count() == 0, "chip must disappear with its filter"
+    assert page.evaluate("document.activeElement.id") == "run-search", \
+        "removing the last chip must return focus to the search input"
+
+    # Sort flips the list order without a fetch.
+    first_newest = page.evaluate("document.querySelector('.history-run-id').textContent")
+    page.select_option("#run-sort", "oldest")
+    first_oldest = page.evaluate("document.querySelector('.history-run-id').textContent")
+    assert first_newest != first_oldest, "oldest-first sort must reorder the cards"
+    assert page.evaluate("new URLSearchParams(location.search).get('sort')") == "oldest"
+
+    # Named controls: chips and export buttons render dynamically.
+    assert page.evaluate(
+        "[...document.querySelectorAll('button')].filter((b) => "
+        "!(b.getAttribute('aria-label') || b.textContent.trim())).length === 0"
+    ), "every button needs an accessible name"
+
+    # Mobile: the toolbar collapses into a labeled disclosure that keeps the
+    # filter count visible.
+    page.set_viewport_size({"width": 320, "height": 800})
+    page.wait_for_timeout(150)
+    drawer = page.locator("#filter-drawer")
+    assert drawer.get_attribute("open") is None, "the filter drawer must collapse on mobile"
+    summary_text = page.inner_text("#filter-drawer summary")
+    assert "Filters" in summary_text and "0" in summary_text, \
+        f"collapsed drawer must show the filter count: {summary_text!r}"
+    assert_no_page_scroll(page, 320, "history page with filters")
+    page.set_viewport_size({"width": 1280, "height": 900})
+
+    # Download one run as JSON; the file must match the run detail API.
+    first_id = page.evaluate(
+        "document.querySelector('[data-export]').dataset.export"
+    )
+    with page.expect_download() as download_info:
+        page.locator("[data-export]").first.click()
+    download = download_info.value
+    assert download.suggested_filename == f"bta-run-{first_id}.json"
+    payload = json.loads(Path(download.path()).read_text(encoding="utf-8"))
+    assert payload["run_id"] == first_id, "the JSON download must match the run"
+
+    # ---- portfolio page: search, sort, direction, CSV ----------------------
+    page.goto(f"{BASE_URL}/portfolio", wait_until="networkidle")
+    page.wait_for_selector("#positions-body tr", timeout=10_000)
+
+    page.select_option("#pos-sort", "ticker")
+    tickers = page.evaluate(
+        "[...document.querySelectorAll('#positions-body strong')].map((n) => n.textContent)"
+    )
+    assert tickers == sorted(tickers), f"ticker sort must sort ascending: {tickers}"
+    assert page.evaluate("new URLSearchParams(location.search).get('sort')") == "ticker"
+    page.click("#pos-sort-dir")
+    tickers_desc = page.evaluate(
+        "[...document.querySelectorAll('#positions-body strong')].map((n) => n.textContent)"
+    )
+    assert tickers_desc == sorted(tickers, reverse=True), "direction toggle must reverse the order"
+    assert page.evaluate("new URLSearchParams(location.search).get('dir')") == "desc"
+
+    page.fill("#pos-search", MANUAL_TICKER)
+    page.wait_for_function(
+        f"[...document.querySelectorAll('#positions-body strong')].map((n) => n.textContent)"
+        f".every((t) => t === '{MANUAL_TICKER}') && "
+        f"document.querySelectorAll('#positions-body tr').length === 1",
+        timeout=5_000,
+    )
+    assert "Search: XOM" in page.inner_text("#pos-filter-chips"), "portfolio search must show a chip"
+
+    page.fill("#pos-search", "ZZZZ")
+    page.wait_for_selector("#pos-no-match:not(.hidden)", timeout=5_000)
+    assert page.locator("#positions-body tr").count() == 0
+
+    # The chip's remove button restores the full table, keyboard included.
+    tab_until_focused(page, "#pos-filter-chips .chip-remove")
+    page.keyboard.press("Enter")
+    page.wait_for_function(
+        f"document.querySelectorAll('#positions-body tr').length === {len(tickers)}",
+        timeout=5_000,
+    )
+    assert page.evaluate("document.activeElement.id") == "pos-search"
+
+    # CSV download matches the visible scope: header, rows, and values.
+    visible = page.evaluate(
+        "[...document.querySelectorAll('#positions-body tr')].map((tr) => "
+        "tr.querySelector('strong').textContent)"
+    )
+    with page.expect_download() as csv_info:
+        page.click("#export-csv")
+    csv_download = csv_info.value
+    assert csv_download.suggested_filename == "bta-portfolio-positions.csv"
+    lines = Path(csv_download.path()).read_text(encoding="utf-8").splitlines()
+    assert lines[0] == "Ticker,Quantity,Entry price,Current price,Cost,Value,P&L,P&L %,Added", \
+        f"unexpected CSV header: {lines[0]}"
+    assert [line.split(",")[0] for line in lines[1:]] == visible, \
+        "the CSV must contain exactly the visible rows"
+
+    # ---- analysis page: the print brief scopes to one card ------------------
+    # The runs API needs this browser's client id; read it from the page origin.
+    page.goto(f"{BASE_URL}/history", wait_until="networkidle")
+    client_id = page.evaluate("localStorage.getItem('bta:clientId')") or ""
+    request = urllib.request.Request(
+        f"{BASE_URL}/api/runs?limit=5", headers={"X-Client-ID": client_id}
+    )
+    with urllib.request.urlopen(request, timeout=10) as response:
+        runs = json.load(response)
+    target_run = runs[0]["run_id"]
+
+    page.goto(f"{BASE_URL}/?run={target_run}", wait_until="networkidle")
+    page.wait_for_selector(".result-card", timeout=10_000)
+    # The print action sits in the evidence panel; expand the card first.
+    page.click(".result-summary")
+    page.wait_for_selector(".result-detail:not([hidden])", timeout=5_000)
+    page.evaluate(
+        "window.__printState = null; window.print = () => { window.__printState = {"
+        "brief: document.body.classList.contains('printing-brief'), "
+        "target: !!document.querySelector('.result-card.print-target'), "
+        "detailOpen: !document.querySelector('.result-detail').hidden }; }; 'instrumented'"
+    )
+    page.click(".print-btn")
+    state = page.evaluate("window.__printState")
+    assert state and state["brief"] and state["target"] and state["detailOpen"], \
+        f"printing must scope to the open card: {state}"
+    assert not page.evaluate("document.body.classList.contains('printing-brief')"), \
+        "print classes must be cleaned up after printing"
+    assert page.locator(".print-stamp").count() == 0, "the print stamp is print-only"
+
+    # Print media emulation: navigation and controls drop out, the brief stays.
+    page.emulate_media(media="print")
+    assert page.evaluate("getComputedStyle(document.querySelector('header')).display") == "none"
+    assert page.evaluate(
+        "getComputedStyle(document.querySelector('.result-summary')).display"
+    ) != "none", "the ticker and call must lead the printed brief"
+    assert page.evaluate(
+        "getComputedStyle(document.querySelector('.result-summary .summary-action')).display"
+    ) == "none", "the collapse toggle chrome must not print"
+    assert page.evaluate(
+        "getComputedStyle(document.querySelector('.result-detail')).display"
+    ) == "block", "evidence must print even when the panel was closed"
+    assert page.evaluate(
+        "getComputedStyle(document.querySelector('.chat-block')).display"
+    ) == "none", "chat controls must not print"
+    page.evaluate(
+        "document.body.classList.add('printing-brief'); "
+        "document.querySelector('.result-card').classList.add('print-target')"
+    )
+    assert page.evaluate(
+        "getComputedStyle(document.querySelector('.search-card')).display"
+    ) == "none", "printing-brief must hide everything but the target card"
+    assert page.evaluate(
+        "getComputedStyle(document.querySelector('.print-target')).display"
+    ) != "none", "the target card must stay visible in print"
+    page.emulate_media(media="screen")
+    page.evaluate(
+        "document.body.classList.remove('printing-brief'); "
+        "document.querySelector('.result-card').classList.remove('print-target')"
+    )
+
+
 def main() -> None:
     try:
         from playwright.sync_api import sync_playwright
@@ -426,6 +621,7 @@ def main() -> None:
                 check_portfolio_page(page)
                 check_history_page(page)
                 check_compare_page(page)
+                check_p1_6_filters_and_exports(page)
             finally:
                 browser.close()
     finally:

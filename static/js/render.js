@@ -367,6 +367,7 @@ export function renderResultCard(analysis) {
   const compareLink = state.runId && !analysis.error
     ? `<a class="secondary-btn compare-btn" href="/compare?items=${encodeURIComponent(`${state.runId}:${ticker}`)}">Compare</a>`
     : "";
+  const printBtn = '<button class="secondary-btn print-btn" type="button">Print brief</button>';
 
   card.innerHTML = `
     <button class="result-summary" type="button" aria-expanded="false" aria-controls="${detailId}"><span class="result-identity"><span class="tk">${escapeHtml(ticker)}</span><span class="company">${escapeHtml(analysis.company_name || "Company name unavailable")}</span></span>${decisionBadge(analysis)}${gated ? '<span class="gate-chip">risk-adjusted</span>' : ""}<span class="summary-action">Evidence &amp; sources <span class="caret" aria-hidden="true">▶</span></span></button>
@@ -401,7 +402,7 @@ export function renderResultCard(analysis) {
       <section class="result-block" aria-labelledby="evidence-title-${ticker}"><div class="block-heading"><h3 id="evidence-title-${ticker}">Analyst evidence</h3></div><div class="grid-3">${evidenceHtml}</div>${skippedResearch.length ? `<p class="hint">Skipped for speed: ${skippedResearch.map((key) => EVIDENCE_META[key].title).join(" · ")}</p>` : ""}</section>
       <section class="result-block sources-block" aria-labelledby="sources-title-${ticker}"><div class="block-heading"><h3 id="sources-title-${ticker}">Sources</h3><p>${escapeHtml(providerText(analysis.providers))}</p></div>${renderSources(analysis.source_references)}</section>
       ${renderTrackRecord(analysis, ticker)}
-      <div class="result-actions">${canAdd ? `<div class="add-row"><label for="qty-${ticker}">Shares</label><input id="qty-${ticker}" type="number" min="1" step="1" value="${defaultQty}"><button class="add-btn" id="add-${ticker}" type="button">Add to Demo Portfolio</button><span class="muted">suggests ${fmtUsd(positionSize)}</span><span class="added-note hidden" id="added-${ticker}" role="status"></span></div>` : '<span class="muted">Portfolio adds are offered on BUY calls.</span>'}<div class="add-row watch-row">${analysis.error ? '<span class="muted">Watchlist saves need a finished call.</span>' : `<button class="secondary-btn watch-btn" id="watch-${ticker}" type="button">Save to watchlist</button><span class="added-note hidden" id="watched-${ticker}" role="status"></span>`}${compareLink}<button class="secondary-btn retry-btn" type="button">Retry ${escapeHtml(ticker)}</button></div></div>
+      <div class="result-actions">${canAdd ? `<div class="add-row"><label for="qty-${ticker}">Shares</label><input id="qty-${ticker}" type="number" min="1" step="1" value="${defaultQty}"><button class="add-btn" id="add-${ticker}" type="button">Add to Demo Portfolio</button><span class="muted">suggests ${fmtUsd(positionSize)}</span><span class="added-note hidden" id="added-${ticker}" role="status"></span></div>` : '<span class="muted">Portfolio adds are offered on BUY calls.</span>'}<div class="add-row watch-row">${analysis.error ? '<span class="muted">Watchlist saves need a finished call.</span>' : `<button class="secondary-btn watch-btn" id="watch-${ticker}" type="button">Save to watchlist</button><span class="added-note hidden" id="watched-${ticker}" role="status"></span>`}${compareLink}${printBtn}<button class="secondary-btn retry-btn" type="button">Retry ${escapeHtml(ticker)}</button></div></div>
     </div>`;
 
   const existing = $(`result-${ticker}`);
@@ -423,6 +424,7 @@ export function renderResultCard(analysis) {
     }
   });
   card.querySelector(".retry-btn").addEventListener("click", () => retryTicker(ticker));
+  card.querySelector(".print-btn").addEventListener("click", () => printBrief(card));
   if (canAdd) $(`add-${ticker}`).addEventListener("click", () => addToPortfolio(ticker, Number(analysis.price)));
   if (!analysis.error && $(`watch-${ticker}`)) {
     $(`watch-${ticker}`).addEventListener("click", () => {
@@ -456,6 +458,36 @@ export function toggleResult(card, forceOpen = null) {
   if (open && card._analysis && !card._analysis.error) {
     loadPriceChart(`price-chart-${card._analysis.ticker}`, card._analysis);
   }
+}
+
+// Print-friendly decision brief (P1.6): open the full detail so evidence,
+// conditions, and sources are included, scope printing to this one card via
+// body.printing-brief, and stamp run context plus the advice disclaimer onto
+// the page. Navigation and interactive controls are stripped by print CSS.
+function printBrief(card) {
+  const analysis = card._analysis || {};
+  toggleResult(card, true);
+  const stamp = document.createElement("p");
+  stamp.className = "print-stamp";
+  stamp.textContent = [
+    "BetterTradingAgents decision brief",
+    analysis.ticker || "",
+    `analyzed ${analysis.as_of ? formatDateTime(analysis.as_of) : "at an unknown time"}`,
+    `printed ${new Date().toLocaleString()}`,
+    "Educational research simulation, not investment advice.",
+  ].filter(Boolean).join(" · ");
+  card.appendChild(stamp);
+  card.classList.add("print-target");
+  document.body.classList.add("printing-brief");
+  const cleanup = () => {
+    card.classList.remove("print-target");
+    document.body.classList.remove("printing-brief");
+    stamp.remove();
+    window.removeEventListener("afterprint", cleanup);
+  };
+  window.addEventListener("afterprint", cleanup);
+  window.print();
+  cleanup();
 }
 
 export function openResult(ticker) {

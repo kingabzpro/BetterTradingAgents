@@ -201,6 +201,53 @@ footer { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wr
   overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
 }
 
+/* ---------- filter drawer, bar, and chips (runs + portfolio, P1.6) ---------- */
+.filter-drawer {
+  min-width: 0; border: 1px solid var(--border); border-radius: var(--radius);
+  background: var(--panel); box-shadow: var(--shadow);
+}
+.filter-drawer summary {
+  display: flex; align-items: center; gap: 9px; padding: 11px 14px; cursor: pointer;
+  color: var(--text); font-size: 12px; font-weight: 700; letter-spacing: 0.04em;
+  list-style: none;
+}
+.filter-drawer summary::-webkit-details-marker { display: none; }
+.filter-drawer summary::after { content: "▾"; margin-left: auto; color: var(--muted); }
+.filter-drawer[open] summary::after { content: "▴"; }
+.filter-count {
+  min-width: 20px; padding: 1px 7px; border-radius: 999px; text-align: center;
+  color: #75dda0; background: rgba(16, 201, 115, 0.12); font-size: 11px;
+}
+.filters-bar { display: flex; flex-wrap: wrap; gap: 8px; padding: 12px 14px; border-top: 1px dashed var(--border-strong); }
+.filters-bar input, .filters-bar select {
+  min-height: 36px; padding: 6px 10px; border: 1px solid var(--border-strong); border-radius: 9px;
+  color: var(--text); background: rgba(0, 0, 0, 0.38); font: 500 12.5px var(--font);
+}
+.filters-bar input:focus, .filters-bar select:focus { border-color: rgba(16, 201, 115, 0.65); outline: none; }
+.filter-date { display: inline-flex; align-items: center; gap: 7px; color: var(--muted); font-size: 12px; }
+.filter-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 0 14px 12px; }
+.filter-chip {
+  display: inline-flex; align-items: center; gap: 2px; padding: 4px 5px 4px 10px;
+  border: 1px solid rgba(16, 201, 115, 0.4); border-radius: 999px;
+  background: rgba(16, 201, 115, 0.08); font-size: 11.5px;
+}
+.chip-remove {
+  padding: 2px 8px; border: 0; border-radius: 999px; color: #75dda0; background: transparent;
+  font-size: 13px; line-height: 1; cursor: pointer;
+}
+.chip-remove:hover { color: #0b2b1a; background: #75dda0; }
+.chip-clear {
+  border: 0; background: none; color: var(--muted); font: 600 11.5px var(--font);
+  text-decoration: underline; text-underline-offset: 2px; cursor: pointer; padding: 4px 6px;
+}
+.chip-clear:hover { color: var(--text); }
+@media (max-width: 640px) {
+  .filters-bar input, .filters-bar select { min-height: 44px; flex: 1 1 140px; }
+  .filter-date { flex: 1 1 140px; }
+  .filter-date input { flex: 1; }
+  .filter-drawer summary { min-height: 44px; }
+}
+
 @keyframes card-in {
   from { opacity: 0; transform: translateY(8px) scale(0.99); }
   to { opacity: 1; transform: none; }

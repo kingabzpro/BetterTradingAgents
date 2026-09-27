@@ -607,3 +607,51 @@
   .option-row .chips-label { margin-bottom: 2px; }
   .seg-btn { width: 100%; }
 }
+
+/* ---------- print-friendly decision brief (P1.6) ---------- */
+/* Any print of the analysis page becomes a light, ink-friendly sheet that
+   keeps call, manager-to-risk change, evidence, conditions, sources, and
+   timestamps while dropping navigation and interactive controls. The
+   Print brief button additionally scopes the page to one result card via
+   body.printing-brief. */
+@media print {
+  @page { margin: 14mm; }
+  html { color-scheme: light; }
+  body {
+    background: #fff !important;
+    background-image: none !important;
+    color: #111;
+    font-size: 11.5px;
+  }
+  .skip-link, header, footer, #toast, .search-card, #how-section, #live-section,
+  .section-heading-row, .chat-block, .result-actions,
+  .price-context, button, input, select, .added-note { display: none !important; }
+  /* The summary row stays as a static header: ticker, company, and the call
+     must lead the printed brief; only its toggle chrome drops out. */
+  .result-summary { display: flex !important; cursor: default; }
+  .result-summary .summary-action, .result-summary .caret { display: none !important; }
+  /* Evidence, sources, and past calls print even if the panel was collapsed. */
+  .result-detail { display: block !important; }
+  .print-stamp { display: none; }
+
+  body.printing-brief main > *:not(#results-section),
+  body.printing-brief #results-section > *:not(#results-list),
+  body.printing-brief #results-list > .result-card:not(.print-target) { display: none !important; }
+
+  body.printing-brief .print-target .print-stamp {
+    display: block !important; margin: 14px 0 0; padding-top: 8px;
+    border-top: 1px solid #999; font-size: 10px;
+  }
+
+  body, .result-card, .result-card * {
+    background-color: transparent !important;
+    color: #111 !important;
+    border-color: #999 !important;
+    box-shadow: none !important;
+    text-shadow: none !important;
+  }
+  .result-card { border: 1px solid #999 !important; }
+  .result-block { border-top: 1px solid #999 !important; }
+  .decision-brief, .result-detail { border-top: 0 !important; }
+  .chart-summary { display: none !important; }
+}
