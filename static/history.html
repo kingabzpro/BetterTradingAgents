@@ -11,8 +11,8 @@
   <link rel="icon" href="/static/favicon.ico?v=2" sizes="any">
   <link rel="icon" type="image/png" href="/static/favicon.png?v=2">
   <link rel="apple-touch-icon" href="/static/favicon.png?v=2">
-  <link rel="stylesheet" href="/static/css/base.css?v=3">
-  <link rel="stylesheet" href="/static/css/history.css?v=2">
+  <link rel="stylesheet" href="/static/css/base.css?v=4">
+  <link rel="stylesheet" href="/static/css/history.css?v=3">
 </head>
 <body>
   <a class="skip-link" href="#main-content">Skip to content</a>
@@ -48,16 +48,65 @@
       </section>
 
       <p id="history-status" class="history-status" role="status" aria-live="polite">Loading run history…</p>
+
+      <details id="filter-drawer" class="filter-drawer" open>
+        <summary>
+          <span>Filters</span>
+          <span id="filter-count" class="filter-count" role="status" aria-label="Active filters: 0">0</span>
+        </summary>
+        <div class="filters-bar" id="filters-bar">
+          <input id="run-search" type="search" placeholder="Search ticker or run id" aria-label="Search runs by ticker or run id">
+          <select id="filter-status" aria-label="Filter by status">
+            <option value="">All statuses</option>
+            <option value="completed">Completed</option>
+            <option value="running">Running</option>
+            <option value="failed">Interrupted</option>
+            <option value="cancelled">Cancelled</option>
+          </select>
+          <select id="filter-outlook" aria-label="Filter by outlook">
+            <option value="">All outlooks</option>
+            <option value="day_trade">Day trading</option>
+            <option value="short_term">Short term</option>
+            <option value="long_term">Long term</option>
+          </select>
+          <select id="filter-depth" aria-label="Filter by depth">
+            <option value="">All depths</option>
+            <option value="fast">Fast</option>
+            <option value="medium">Medium</option>
+            <option value="expert">Expert</option>
+          </select>
+          <select id="filter-decision" aria-label="Filter by decision">
+            <option value="">All decisions</option>
+            <option value="BUY">BUY</option>
+            <option value="HOLD">HOLD</option>
+            <option value="SELL">SELL</option>
+            <option value="none">No decision</option>
+          </select>
+          <label class="filter-date" for="filter-from">From <input id="filter-from" type="date" aria-label="Runs from date"></label>
+          <label class="filter-date" for="filter-to">To <input id="filter-to" type="date" aria-label="Runs to date"></label>
+          <select id="run-sort" aria-label="Sort runs">
+            <option value="newest">Newest first</option>
+            <option value="oldest">Oldest first</option>
+          </select>
+        </div>
+        <div id="filter-chips" class="filter-chips" hidden></div>
+      </details>
+
       <section id="history-list" class="history-list" aria-label="Saved analysis runs"></section>
       <div id="history-empty" class="history-empty hidden">
         <strong>No saved runs yet</strong>
         <p>Your completed analyses will appear here automatically.</p>
         <a href="/" class="secondary-btn">Start an analysis</a>
       </div>
+      <div id="history-no-match" class="history-empty hidden">
+        <strong>No runs match the current filters</strong>
+        <p>Adjust or clear the filters above to see more runs.</p>
+        <button id="clear-filters-empty" class="secondary-btn" type="button">Clear filters</button>
+      </div>
     </main>
   </div>
 
   <div id="toast" class="toast hidden" role="alert" aria-live="assertive" aria-atomic="true"></div>
-  <script src="/static/js/history.js?v=6"></script>
+  <script src="/static/js/history.js?v=7"></script>
 </body>
 </html>

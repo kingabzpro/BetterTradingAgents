@@ -11,8 +11,8 @@
   <link rel="icon" href="/static/favicon.ico?v=2" sizes="any">
   <link rel="icon" type="image/png" href="/static/favicon.png?v=2">
   <link rel="apple-touch-icon" href="/static/favicon.png?v=2">
-  <link rel="stylesheet" href="/static/css/base.css?v=3">
-  <link rel="stylesheet" href="/static/css/portfolio.css?v=3">
+  <link rel="stylesheet" href="/static/css/base.css?v=4">
+  <link rel="stylesheet" href="/static/css/portfolio.css?v=4">
 </head>
 <body>
   <a class="skip-link" href="#main-content">Skip to content</a>
@@ -69,6 +69,27 @@
       <div class="csv-preview hidden" id="csv-preview"></div>
     </div>
 
+    <div class="portfolio-controls">
+      <details id="pos-filter-drawer" class="filter-drawer" open>
+        <summary>
+          <span>Filters</span>
+          <span id="pos-filter-count" class="filter-count">0</span>
+        </summary>
+        <div class="filters-bar" id="pos-filters-bar">
+          <input id="pos-search" type="search" placeholder="Search ticker" aria-label="Search positions by ticker">
+          <select id="pos-sort" aria-label="Sort positions by">
+            <option value="value">Value (high first)</option>
+            <option value="return">Return (best first)</option>
+            <option value="ticker">Ticker (A to Z)</option>
+            <option value="age">Age (longest held)</option>
+          </select>
+          <button id="pos-sort-dir" class="sort-dir-btn" type="button" aria-label="Reverse sort direction">↓</button>
+        </div>
+        <div id="pos-filter-chips" class="filter-chips" hidden></div>
+      </details>
+      <button id="export-csv" class="secondary-btn" type="button" aria-label="Download the visible positions as CSV">Download CSV</button>
+    </div>
+
     <div class="card table-wrap portfolio-table">
       <table id="positions-table">
         <caption>Open portfolio positions</caption>
@@ -91,6 +112,9 @@
       <p class="empty-note hidden" id="empty-note">
         No positions yet: add a holding, import a CSV, or use
         <strong>Add to Demo Portfolio</strong> on a BUY.
+      </p>
+      <p class="empty-note hidden" id="pos-no-match">
+        No positions match the current search. Clear the search to see every holding.
       </p>
     </div>
 
@@ -120,6 +144,6 @@
   </div>
 
   <div id="toast" class="toast hidden" role="status" aria-live="polite" aria-atomic="true"></div>
-  <script src="/static/js/portfolio.js?v=3"></script>
+  <script src="/static/js/portfolio.js?v=4"></script>
 </body>
 </html>

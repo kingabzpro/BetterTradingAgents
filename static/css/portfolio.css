@@ -49,6 +49,24 @@
 .pnl-red { color: #ff8296; }
 .empty-note { color: var(--muted); padding: 28px 0; text-align: center; }
 
+/* ---------- position search, sort, and CSV export (P1.6) ---------- */
+.portfolio-controls {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px;
+  align-items: start; margin-bottom: 18px;
+}
+.portfolio-controls .secondary-btn { min-height: 44px; }
+.sort-dir-btn {
+  min-height: 36px; min-width: 44px; padding: 6px 10px; border: 1px solid var(--border-strong);
+  border-radius: 9px; background: rgba(255, 255, 255, 0.035); color: var(--text);
+  font: 700 15px/1 var(--font); cursor: pointer; transition: background 0.15s, border-color 0.15s;
+}
+.sort-dir-btn:hover { background: var(--panel-2); border-color: rgba(16, 201, 115, 0.48); }
+
+@media (max-width: 640px) {
+  .portfolio-controls { grid-template-columns: 1fr; }
+  .sort-dir-btn { min-height: 44px; }
+}
+
 /* ---------- responsive: portfolio page ---------- */
 @media (max-width: 768px) {
   .summary-grid { grid-template-columns: repeat(2, 1fr); }

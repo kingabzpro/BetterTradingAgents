@@ -64,6 +64,14 @@
 }
 .history-rerun:hover { color: #e6eaf2; background: rgba(255, 255, 255, 0.04); }
 .history-open:hover { color: #a5f2c5; background: rgba(16, 201, 115, 0.09); }
+.history-export {
+  display: flex; align-items: center; justify-content: center; flex: 1; min-width: 126px;
+  padding: 16px; border: 0; border-top: 1px solid var(--border); color: var(--muted);
+  background: transparent; font: 700 12px var(--font); cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.history-export:hover { color: #e6eaf2; background: rgba(255, 255, 255, 0.04); }
+.history-export:disabled { opacity: 0.45; cursor: wait; }
 .history-empty {
   padding: 54px 20px; border: 1px dashed var(--border-strong); border-radius: var(--radius);
   color: var(--muted); text-align: center;
@@ -72,14 +80,22 @@
 .history-empty p { margin: 5px 0 18px; }
 .history-empty .secondary-btn { display: inline-flex; align-items: center; text-decoration: none; }
 
+/* Filter drawer, bar, and chip styles live in base.css (shared with the
+   portfolio page); only the runs-page search width is page-specific. */
+.filters-bar input#run-search { flex: 1 1 190px; }
+@media (max-width: 640px) {
+  .filters-bar input#run-search { flex: 1 1 100%; }
+}
+
 /* ---------- responsive: runs page ---------- */
 @media (max-width: 620px) {
   .secondary-btn, .danger-btn { min-height: 44px; }
   .history-intro { align-items: flex-start; }
   .history-run { grid-template-columns: 1fr; }
-  .history-run-actions { flex-direction: row; border-left: 0; border-top: 1px solid var(--border); }
+  .history-run-actions { flex-direction: row; flex-wrap: wrap; border-left: 0; border-top: 1px solid var(--border); }
   .history-rerun { border-bottom: 0; border-right: 1px solid var(--border); }
-  .history-rerun, .history-open { min-height: 48px; }
+  .history-export { border-top: 0; border-left: 1px solid var(--border); }
+  .history-rerun, .history-open, .history-export { flex: 1 1 33%; min-height: 48px; padding: 10px; }
 }
 
 @media (max-width: 420px) {
