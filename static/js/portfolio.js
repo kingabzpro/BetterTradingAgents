@@ -56,7 +56,7 @@ async function load() {
     renderOrders(orders);
     renderEquityCurve();
     renderPerformance();
-    $("download-csv").classList.toggle("hidden", false);
+    $("download-csv").classList.toggle("hidden", positions.length === 0);
   } catch (error) {
     setUnconfigured(error.message);
   }
