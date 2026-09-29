@@ -367,10 +367,14 @@ async def submit_order(run_id: str, ticker: str, side: str, notional: float) -> 
             "paper order submissions are disabled (ALPACA_TRADING_ENABLED)",
             status_code=403,
         )
-    if not (1 <= notional <= settings.alpaca_max_order_usd):
+    if notional <= 0:
+        raise BrokerRuleError("notional must be positive")
+    if notional > settings.alpaca_max_order_usd:
         raise BrokerRuleError(
-            f"notional must be between 1 and {settings.alpaca_max_order_usd:,.0f} USD"
+            f"notional must not exceed {settings.alpaca_max_order_usd:,.0f} USD"
         )
+    # Alpaca accepts at most 2 decimal places on notional (42210000).
+    notional = round(notional, 2)
 
     run = await run_history.get(run_id)
     if run is None:
@@ -390,6 +394,8 @@ async def submit_order(run_id: str, ticker: str, side: str, notional: float) -> 
         raise BrokerRuleError(
             f"the decision for {ticker} is {analysis.decision}, not a {side}"
         )
+    if side == "buy" and notional < 1:
+        raise BrokerRuleError("buy notional must be at least 1 USD")
     age = _age_hours(analysis.as_of)
     if age is None or age > settings.alpaca_max_decision_age_hours:
         raise BrokerRuleError(
@@ -413,7 +419,15 @@ async def submit_order(run_id: str, ticker: str, side: str, notional: float) -> 
         market_value = held.market_value or 0.0
         if market_value <= 0:
             raise BrokerRuleError(f"the {ticker} position has no value to sell")
-        notional = min(notional, market_value)
+        # A price tick between the position read and the POST can make an
+        # exact-value sell overshoot the holding (Alpaca 40310000), so every
+        # sell is haircut slightly: it can never short, but may leave dust.
+        # ponytail: fixed 0.5% haircut; per-tick precision if dust ever matters.
+        notional = round(min(notional, market_value * 0.995), 2)
+        if notional < 0.01:
+            raise BrokerRuleError(
+                f"the {ticker} position is worth less than a cent at the live price"
+            )
 
     if _has_active_order(run_id, ticker, side):
         raise BrokerRuleError(
@@ -663,10 +677,12 @@ async def equity(period: str = "1M") -> dict:
 
     stamps = list(history.timestamp or [])
     values = list(history.equity or [])
+    # New accounts get zero-padded history before creation: those marks are
+    # noise (a $0 baseline makes the change "+Infinity%"), so they are dropped.
     points = [
         (datetime.fromtimestamp(int(stamp), tz=timezone.utc).date().isoformat(), value)
         for stamp, value in zip(stamps, values)
-        if value is not None
+        if value is not None and value > 0
     ]
     return {
         "period": period,

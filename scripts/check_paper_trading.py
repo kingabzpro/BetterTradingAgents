@@ -293,9 +293,11 @@ async def checks() -> None:
     await _rejects("paperrun04", "MSFT", "buy", 100, 400, "HOLD is never traded")
     await _rejects("paperrun05", "AAPL", "sell", 100, 400, "no paper position")
     await _rejects("paperrun06", "TSLA", "buy", 100, 409, "research too old")
-    await _rejects("paperrun01", "AAPL", "buy", 20000, 400, "notional must be between")
+    await _rejects("paperrun01", "AAPL", "buy", 20000, 400, "must not exceed")
     await _rejects("paperrun01", "AAPL", "sell", 100, 400, "not a sell")
-    print("guard rails OK (HOLD, no position, stale, notional cap, side mismatch)")
+    await _rejects("paperrun01", "AAPL", "buy", 0.5, 400, "at least 1 USD")
+    print("guard rails OK (HOLD, no position, stale, caps, side mismatch)")
+
 
     # ---- kill switch and confirm are endpoint-level --------------------------
     settings.alpaca_trading_enabled = False
@@ -398,6 +400,31 @@ async def checks() -> None:
     assert status == "rejected", status
     fake.submit_error = None
     print("Alpaca 422 mapping + rejected row OK")
+    fake.on_submit = None
+
+    # ---- live-discovered edge cases (2026-09-29) -----------------------------
+    # Alpaca accepts at most 2 decimals on notional; buys are rounded.
+    captured = {}
+    fake.on_submit = lambda order_data: captured.update(notional=order_data.notional)
+    rounded = await broker.submit_order("paperrun01", "aapl", "buy", 5000.567)
+    assert captured["notional"] == 5000.57, captured["notional"]
+    assert rounded.notional == 5000.57
+    print("buy notional rounded to 2dp OK")
+
+    # A dust position (worth < $1) must still be closable: the sell floor is
+    # the position value after the anti-overshoot haircut, not $1.
+    dust = SimpleNamespace(
+        symbol="AAPL", qty="0.0013", avg_entry_price="764.72",
+        current_price="769.0", market_value="0.5",
+        unrealized_pl="0.003", unrealized_plpc="0.003",
+    )
+    fake.positions = [dust]
+    dust_order = await broker.submit_order("paperrun05", "AAPL", "sell", 100)
+    assert captured["notional"] == 0.5, captured["notional"]  # min(100, 0.4975) rounded
+    assert dust_order.status == "accepted"
+    fake.positions = []
+    fake.on_submit = None
+    print("dust-position sell below $1 OK")
 
     # ================= M3: orders list with reconcile-on-read =================
     # Rows are newest first; a non-terminal row reconciles from the remote
@@ -546,6 +573,15 @@ async def checks() -> None:
         )
         curve = await broker.equity("1M")
         assert curve["equity"] == [100000.0], "None marks must be dropped"
+        # Zero-padded history before account creation is noise, not a baseline.
+        fake.history = SimpleNamespace(
+            timestamp=[1_759_000_000, 1_759_086_400, 1_759_172_800, 1_759_259_200],
+            equity=[0.0, 0.0, 100000.0, 101000.0],
+            profit_loss=[0.0, 0.0, 0.0, 0.0],
+            profit_loss_pct=[0.0, 0.0, 0.0, 0.0],
+        )
+        curve = await broker.equity("1M")
+        assert curve["equity"] == [100000.0, 101000.0], "zero marks must be dropped"
         print("equity mapping OK")
 
         # ---- per-order return math and alpha vs SPY on fake closes ------------
@@ -573,7 +609,7 @@ async def checks() -> None:
         async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
             curve_response = await client.get("/api/broker/equity?period=1M")
             assert curve_response.status_code == 200
-            assert len(curve_response.json()["equity"]) == 1
+            assert len(curve_response.json()["equity"]) == 2
             perf_response = await client.get("/api/broker/performance")
             assert perf_response.status_code == 200 and perf_response.json()
             bad_period = await client.get("/api/broker/equity?period=2W")
