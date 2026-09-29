@@ -178,21 +178,15 @@ scaling. Your chosen outlook adjusts the formation weights; the top five candida
 straight into the ticker input and through the normal workflow. The screen is cached for an
 hour, and the ranking is a research starting point, not a promise.
 
-### Portfolio: your own holdings + paper trading
+### Portfolio: your Alpaca paper account
 
-The portfolio page tracks two kinds of positions in one SQLite-backed book:
+The paper account **is** the portfolio. Its cash, equity, open positions, and
+every order this app placed are fetched fresh from Alpaca whenever the page
+loads; nothing is tracked in a parallel local book. The manager sees the paper
+holdings when making its next call, and the risk gate's exposure caps use the
+paper equity. A **Download CSV** action exports the open positions.
 
-- **Tracked holdings**: shares you already own, added by ticker, quantity, and price paid
-  (or imported from CSV with a row-by-row preview). They are valued at live prices and roll
-  into P&L, but never touch the simulated cash balance.
-- **Demo trades**: after a **BUY** recommendation, add the stock to the simulated portfolio
-  in one click. Demo buys and closes move the simulated cash.
-
-The Portfolio Manager sees all open positions when making its next call, and the risk gate's
-exposure caps use the combined equity. With no paper account configured this ledger is the
-whole story: nothing is connected and no orders are placed anywhere.
-
-![Demo portfolio](static/screenshots/portfolio.png)
+### Paper trading with Alpaca (optional)
 
 ### Paper trading with Alpaca (optional)
 
@@ -205,9 +199,9 @@ to allow submissions) and restart. Three things change:
   Placement requires an explicit "I reviewed this order" checkbox; nothing ever auto-submits.
 - The **Portfolio** page becomes the paper cockpit: equity, cash, buying power, an equity
   curve, open positions, the orders this app placed with cancel actions, and per-order return
-  since fill with alpha vs SPY, all above the local ledger.
-- The demo ledger collapses into a clearly labeled "Local backup (demo, not traded)" section
-  whose open positions can be replayed into the paper account with one click.
+  since fill with alpha vs SPY. A **Download CSV** action exports the open positions.
+- Without keys the page shows exactly what to set; the demo portfolio has been retired, so
+  the paper account is the single source of truth for holdings.
 
 The adapter is paper-only by construction: the client is built with `paper=True` hardcoded,
 so no configuration can reach the live broker. Server-side caps apply to every submission

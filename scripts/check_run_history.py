@@ -11,13 +11,13 @@ os.environ["DB_PATH"] = str(history_db)
 
 import httpx  # noqa: E402
 
-from app import portfolio, run_history  # noqa: E402
+from app import broker, run_history  # noqa: E402
 from app.main import app  # noqa: E402
 from app.models import AgentResult, RunStatus, SourceReference, StockAnalysis  # noqa: E402
 
 
 async def checks() -> None:
-    await portfolio.init()
+    await broker.init()
     await run_history.init()
     analysis = StockAnalysis(
         ticker="TSLA",
@@ -123,7 +123,7 @@ async def checks() -> None:
                 "SELECT name FROM sqlite_schema WHERE type = 'table'"
             )
         }
-        assert {"positions", "analysis_runs"}.issubset(tables)
+        assert {"analysis_runs", "broker_orders"}.issubset(tables)
         assert "idx_analysis_runs_owner_started_at" in indexes
         plan = connection.execute(
             "EXPLAIN QUERY PLAN SELECT * FROM analysis_runs WHERE owner_id = ? "

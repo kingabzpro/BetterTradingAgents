@@ -169,9 +169,8 @@ from app.workflow import analyze_ticker  # noqa: E402
 import asyncio  # noqa: E402
 
 async def e2e():
-    from app import portfolio as portfolio_mod
-
-    await portfolio_mod.init()  # empty book, so the risk gate gets a real summary
+    # No paper account configured in checks: the manager weighs research
+    # without holdings, which is the honest unconfigured path.
     events = []
 
     async def emit(kind, payload):
@@ -187,11 +186,11 @@ async def e2e():
               % (result.forecast_band_pct, result.forecast_z))
     if result.decision == "BUY":
         assert result.suggested_size_usd and result.suggested_size_usd <= D * 1.5
-        # Empty test portfolio: the concentration check always ran for a BUY.
-        assert result.concentration is not None
-        assert result.concentration.status in ("ok", "high", "unknown")
+        # No paper account in checks: no portfolio, so the correlated-exposure
+        # gate is honestly "not checked" (None) rather than a fake clean pass.
+        assert result.concentration is None
         print("e2e BUY OK: size", result.suggested_size_usd,
-              "flags", result.risk_flags, "concentration", result.concentration.status)
+              "flags", result.risk_flags)
     else:
         assert result.suggested_size_usd is None
         print("e2e OK:", result.decision, "flags", result.risk_flags)

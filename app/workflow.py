@@ -20,6 +20,7 @@ from app.config import settings
 from app.depth import DEFAULT_DEPTH, depth_profile
 from app.models import (
     AgentResult,
+    PortfolioPosition,
     PortfolioSummary,
     PreviousCall,
     SourceReference,
@@ -491,17 +492,49 @@ async def _run_agent(
 
 
 async def fetch_portfolio_summary() -> PortfolioSummary | None:
-    """Fetch the portfolio for the manager prompt and the risk gate; best-effort.
+    """Paper-account holdings for the manager prompt and the risk gate.
 
-    Multi-ticker runs fetch this once and share it (see app.runs) instead of
-    re-fetching prices for every held position once per ticker.
+    The Alpaca paper account is the only portfolio: cash, equity, and open
+    positions come straight from the broker. Best-effort like any provider:
+    an unconfigured account (or a broker failure) yields None, and the manager
+    then weighs the research without a holdings section. Multi-ticker runs
+    fetch this once and share it (see app.runs) instead of re-fetching every
+    position once per ticker.
     """
     try:
-        from app import portfolio
+        from app import broker
 
-        return await portfolio.get_portfolio()
+        if not (await broker.status()).configured:
+            return None
+        account, held = await asyncio.gather(broker.account(), broker.positions())
+        positions = [
+            PortfolioPosition(
+                id=index,
+                ticker=position.symbol,
+                quantity=position.quantity,
+                entry_price=position.avg_entry_price,
+                current_price=position.current_price,
+                cost=round(position.avg_entry_price * position.quantity, 2),
+                value=position.market_value,
+                pnl=position.unrealized_pl,
+                pnl_pct=round(position.unrealized_plpc * 100, 2)
+                if position.unrealized_plpc is not None
+                else None,
+                external=True,
+            )
+            for index, position in enumerate(held, start=1)
+        ]
+        known_value = sum(p.value for p in positions if p.value is not None)
+        return PortfolioSummary(
+            cash=account.cash or 0.0,
+            positions_value=round(known_value, 2),
+            total_equity=account.equity,
+            total_pnl=round(sum(p.pnl or 0.0 for p in positions), 2),
+            unpriced_count=sum(1 for p in positions if p.value is None),
+            positions=positions,
+        )
     except Exception as exc:  # noqa: BLE001 - portfolio context is best-effort
-        logger.warning("[portfolio] summary failed: %s", exc)
+        logger.warning("[portfolio] paper summary failed: %s", exc)
         return None
 
 

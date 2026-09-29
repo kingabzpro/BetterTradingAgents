@@ -11,7 +11,7 @@ from fastapi import FastAPI, Header, HTTPException, Query
 from fastapi.responses import FileResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
-from app import broker, calibration, chat, memory, portfolio, watchlist
+from app import broker, calibration, chat, memory, watchlist
 from app.config import settings
 from app.discovery import discover_stocks
 from app.models import (
@@ -21,17 +21,12 @@ from app.models import (
     BrokerOrder,
     BrokerOrderRequest,
     BrokerPosition,
-    BrokerReplayRequest,
     BrokerStatus,
     CalibrationTrackRecord,
     CancelRunResponse,
     ClearHistoryResponse,
     ManagerChatRequest,
     ManagerChatResponse,
-    PortfolioAddRequest,
-    PortfolioCloseRequest,
-    PortfolioImportRequest,
-    PortfolioImportResponse,
     RunHistoryItem,
     RunStatus,
     WatchlistAddRequest,
@@ -79,7 +74,6 @@ async def revalidate_assets(request, call_next):
 
 @app.on_event("startup")
 async def startup() -> None:
-    await portfolio.init()
     await memory.init()
     await watchlist.init()
     await broker.init()
@@ -334,40 +328,6 @@ async def manager_chat(run_id: str, request: ManagerChatRequest):
     )
 
 
-@app.get("/api/portfolio")
-async def get_portfolio():
-    return await portfolio.get_portfolio()
-
-
-@app.post("/api/portfolio/add")
-async def add_position(request: PortfolioAddRequest):
-    try:
-        position = await portfolio.add_position(
-            request.ticker, request.quantity, request.entry_price
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return position
-
-
-@app.post("/api/portfolio/import", response_model=PortfolioImportResponse)
-async def import_positions(request: PortfolioImportRequest):
-    return await portfolio.import_positions(request.positions)
-
-
-@app.post("/api/portfolio/close")
-async def close_position(request: PortfolioCloseRequest):
-    try:
-        position = await portfolio.close_position(
-            request.position_id, request.exit_price
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except LookupError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    return position
-
-
 def _broker_http_error(exc: Exception) -> HTTPException:
     """Map broker-module exceptions to the repo's HTTPException conventions."""
     if isinstance(exc, broker.BrokerNotConfigured):
@@ -421,21 +381,6 @@ async def place_broker_order(request: BrokerOrderRequest):
 async def list_broker_orders(limit: int = Query(default=50, ge=1, le=100)):
     try:
         return await broker.list_orders(limit)
-    except (broker.BrokerNotConfigured, broker.BrokerRuleError) as exc:
-        raise _broker_http_error(exc) from exc
-
-
-@app.post("/api/broker/replay", response_model=BrokerOrder)
-async def replay_broker_position(request: BrokerReplayRequest):
-    """Replay one open local position into the paper account (origin=replay).
-
-    Idempotent per position: the deterministic client_order_id is persisted
-    before the POST, so repeated clicks or timeout retries never double-order.
-    Skipped positions come back as errors with the reason; the caller reports
-    them in a summary instead of dropping them silently.
-    """
-    try:
-        return await broker.replay_position(request.position_id)
     except (broker.BrokerNotConfigured, broker.BrokerRuleError) as exc:
         raise _broker_http_error(exc) from exc
 

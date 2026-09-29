@@ -44,7 +44,6 @@ from app.main import app  # noqa: E402
 from app.models import StockAnalysis  # noqa: E402
 
 TICKER = "SMKE"
-MANUAL_TICKER = "XOM"
 BASE_URL = ""  # set once the server is up
 
 
@@ -278,41 +277,10 @@ def check_analysis_page(page) -> None:
     assert page.locator("svg.price-chart[role='img']").count() == 1, \
         "the chart must expose an accessible name"
 
-    # BUY offers the demo-portfolio add; the confirmation note is a live region.
-    page.click(f"#add-{TICKER}")
-    page.wait_for_selector(f"#added-{TICKER}:not(.hidden)", timeout=10_000)
-    assert page.locator(f"#added-{TICKER}[role='status']").count() == 1
-
     assert not page_errors, f"page raised JS errors: {page_errors}"
     assert_no_page_scroll(page, 320, "analysis page")
     assert_no_page_scroll(page, 640, "analysis page")
     page.set_viewport_size({"width": 1280, "height": 900})
-
-
-def check_portfolio_page(page) -> None:
-    page.goto(f"{BASE_URL}/portfolio", wait_until="networkidle")
-    page.wait_for_selector("#positions-body tr", timeout=10_000)
-    tickers = page.evaluate(
-        "[...document.querySelectorAll('#positions-body strong')].map((n) => n.textContent)"
-    )
-    assert TICKER in tickers, "the demo position added from the results must appear"
-
-    # Manual add with an explicit price stays offline.
-    page.fill("#add-ticker", MANUAL_TICKER)
-    page.fill("#add-shares", "2")
-    page.fill("#add-price", "50")
-    page.click("#add-holding-btn")
-    page.wait_for_function(
-        f"[...document.querySelectorAll('#positions-body strong')].some((n) => n.textContent === '{MANUAL_TICKER}')",
-        timeout=10_000,
-    )
-    close_buttons = page.locator("#positions-body .close-btn")
-    assert close_buttons.count() == 2, "each position needs a Close action"
-    assert page.evaluate(
-        "[...document.querySelectorAll('button')].filter((b) => "
-        "!(b.getAttribute('aria-label') || b.textContent.trim())).length === 0"
-    ), "every button needs an accessible name"
-    assert_no_page_scroll(page, 320, "portfolio page")
 
 
 def check_history_page(page) -> None:
@@ -475,60 +443,6 @@ def check_p1_6_filters_and_exports(page) -> None:
     payload = json.loads(Path(download.path()).read_text(encoding="utf-8"))
     assert payload["run_id"] == first_id, "the JSON download must match the run"
 
-    # ---- portfolio page: search, sort, direction, CSV ----------------------
-    page.goto(f"{BASE_URL}/portfolio", wait_until="networkidle")
-    page.wait_for_selector("#positions-body tr", timeout=10_000)
-
-    page.select_option("#pos-sort", "ticker")
-    tickers = page.evaluate(
-        "[...document.querySelectorAll('#positions-body strong')].map((n) => n.textContent)"
-    )
-    assert tickers == sorted(tickers), f"ticker sort must sort ascending: {tickers}"
-    assert page.evaluate("new URLSearchParams(location.search).get('sort')") == "ticker"
-    page.click("#pos-sort-dir")
-    tickers_desc = page.evaluate(
-        "[...document.querySelectorAll('#positions-body strong')].map((n) => n.textContent)"
-    )
-    assert tickers_desc == sorted(tickers, reverse=True), "direction toggle must reverse the order"
-    assert page.evaluate("new URLSearchParams(location.search).get('dir')") == "desc"
-
-    page.fill("#pos-search", MANUAL_TICKER)
-    page.wait_for_function(
-        f"[...document.querySelectorAll('#positions-body strong')].map((n) => n.textContent)"
-        f".every((t) => t === '{MANUAL_TICKER}') && "
-        f"document.querySelectorAll('#positions-body tr').length === 1",
-        timeout=5_000,
-    )
-    assert "Search: XOM" in page.inner_text("#pos-filter-chips"), "portfolio search must show a chip"
-
-    page.fill("#pos-search", "ZZZZ")
-    page.wait_for_selector("#pos-no-match:not(.hidden)", timeout=5_000)
-    assert page.locator("#positions-body tr").count() == 0
-
-    # The chip's remove button restores the full table, keyboard included.
-    tab_until_focused(page, "#pos-filter-chips .chip-remove")
-    page.keyboard.press("Enter")
-    page.wait_for_function(
-        f"document.querySelectorAll('#positions-body tr').length === {len(tickers)}",
-        timeout=5_000,
-    )
-    assert page.evaluate("document.activeElement.id") == "pos-search"
-
-    # CSV download matches the visible scope: header, rows, and values.
-    visible = page.evaluate(
-        "[...document.querySelectorAll('#positions-body tr')].map((tr) => "
-        "tr.querySelector('strong').textContent)"
-    )
-    with page.expect_download() as csv_info:
-        page.click("#export-csv")
-    csv_download = csv_info.value
-    assert csv_download.suggested_filename == "bta-portfolio-positions.csv"
-    lines = Path(csv_download.path()).read_text(encoding="utf-8").splitlines()
-    assert lines[0] == "Ticker,Quantity,Entry price,Current price,Cost,Value,P&L,P&L %,Added", \
-        f"unexpected CSV header: {lines[0]}"
-    assert [line.split(",")[0] for line in lines[1:]] == visible, \
-        "the CSV must contain exactly the visible rows"
-
     # ---- analysis page: the print brief scopes to one card ------------------
     # The runs API needs this browser's client id; read it from the page origin.
     page.goto(f"{BASE_URL}/history", wait_until="networkidle")
@@ -599,13 +513,10 @@ def check_paper_portfolio(page) -> None:
 
     # ---- unconfigured: legacy view plus the connect hint ---------------------
     page.goto(f"{BASE_URL}/portfolio", wait_until="networkidle")
-    page.wait_for_selector("#positions-body tr", timeout=10_000)
     assert page.locator("#paper-takeover.hidden").count() == 1, \
         "no takeover banner while unconfigured"
-    assert page.locator("#backup-heading.hidden").count() == 1, \
-        "no backup label while unconfigured"
-    assert page.locator("#paper-connect-hint:not(.hidden)").count() == 1, \
-        "the connect hint must show while unconfigured"
+    assert page.locator("#paper-summary.hidden").count() == 1, \
+        "no paper summary while unconfigured"
     assert page.evaluate(
         "[...document.querySelectorAll('button')].filter((b) => "
         "!(b.getAttribute('aria-label') || b.textContent.trim())).length === 0"
@@ -692,13 +603,12 @@ def check_paper_portfolio(page) -> None:
         page.wait_for_selector("#paper-takeover:not(.hidden)", timeout=10_000)
         assert page.locator("#paper-connect-hint.hidden").count() == 1, \
             "the connect hint must hide while connected"
-        assert "$101,234.56" in page.inner_text("#sc-equity"), \
+        assert "$101,234.56" in page.inner_text("#pc-equity"), \
             "summary cards must show the paper equity"
         assert page.locator("#paper-killswitch.hidden").count() == 1, \
             "no kill-switch note while submissions are enabled"
         assert page.locator("#paper-positions-card:not(.hidden)").count() == 1
         assert page.locator("#paper-positions-body tr").count() == 1
-        assert page.locator("#backup-ledger.backup-mode").count() == 1
 
         assert page.locator("#orders-card:not(.hidden)").count() == 1, \
             "the merged page must show the order lifecycle"
@@ -811,33 +721,40 @@ def check_paper_portfolio(page) -> None:
     smoke_market_data.get_current_price = fake_smoke_price
     smoke_market_data.get_closes_between = fake_smoke_closes
     try:
+        # A filled order row so the performance card has data (no replay anymore).
+        broker_module._insert_order(
+            "bta-smoke-seed01", run_id, TICKER, "buy", 5000.0, "BUY", 0.6,
+            datetime.now(timezone.utc).isoformat(),
+        )
+        broker_module._update_from_remote_order(
+            "bta-smoke-seed01",
+            SimpleNamespace(
+                id=uuid.uuid4(), status=OrderStatus.FILLED, filled_qty="12",
+                filled_avg_price="100.00",
+            ),
+        )
         page.goto(f"{BASE_URL}/portfolio", wait_until="networkidle")
         page.wait_for_selector("#paper-takeover:not(.hidden)", timeout=10_000)
-        assert "$101,234.56" in page.inner_text("#sc-equity"), \
+        assert "$101,234.56" in page.inner_text("#pc-equity"), \
             "summary cards must show the paper equity"
-        assert "Local backup (demo, not traded)" in page.inner_text("#backup-heading")
         assert page.locator("#paper-positions-card:not(.hidden)").count() == 1
         assert page.locator("#paper-positions-body tr").count() == 1
-        assert page.locator("#backup-ledger.backup-mode").count() == 1
-        assert page.locator("#positions-body .replay-btn").count() == 2, \
-            "both open local positions offer a replay action"
-        page.click("#positions-body .replay-btn")
-        page.wait_for_function(
-            "document.querySelector('#replay-summary')?.textContent.includes('replayed')",
-            timeout=10_000,
-        )
-        assert "skipped" not in page.inner_text("#replay-summary")
-        page.wait_for_function(
-            "document.querySelectorAll('#positions-body .replay-btn').length === 1",
-            timeout=10_000,
-        )
-        assert "replayed" in page.inner_text("#positions-body").lower(), \
-            "the replayed position must carry its stamp"
         assert page.evaluate(
             "[...document.querySelectorAll('button')].filter((b) => "
             "!(b.getAttribute('aria-label') || b.textContent.trim())).length === 0"
         ), "every button needs an accessible name"
         assert_no_page_scroll(page, 320, "portfolio page paper view")
+
+        # ---- the paper portfolio downloads as CSV ------------------------------
+        with page.expect_download() as csv_info:
+            page.click("#download-csv")
+        csv_download = csv_info.value
+        assert csv_download.suggested_filename == "bta-paper-portfolio.csv", \
+            csv_download.suggested_filename
+        lines = Path(csv_download.path()).read_text(encoding="utf-8").splitlines()
+        assert lines[0] == "Ticker,Quantity,Avg entry price,Current price,Value,Unrealized P&L,P&L %", \
+            f"unexpected CSV header: {lines[0]}"
+        assert len(lines) == 2, f"one open position must export one row: {lines}"
 
         # ---- equity curve and per-order alpha on the same page ----------------
         page.wait_for_selector("#equity-card:not(.hidden)", timeout=10_000)
@@ -891,7 +808,6 @@ def main() -> None:
             try:
                 page = browser.new_page(viewport={"width": 1280, "height": 900})
                 check_analysis_page(page)
-                check_portfolio_page(page)
                 check_history_page(page)
                 check_compare_page(page)
                 check_p1_6_filters_and_exports(page)

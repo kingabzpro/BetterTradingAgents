@@ -96,26 +96,21 @@ async def checks() -> None:
             assert marker in text, f"runs page missing: {marker}"
         print("runs page filter bar OK")
 
-        # ---- portfolio page: search, sort keys, direction, CSV export ----
+        # ---- portfolio page: the paper view and its CSV export ----
         page = await client.get("/portfolio")
         assert page.status_code == 200, page.text
         text = page.text
         for marker in (
-            'id="pos-search"',
-            'id="pos-sort"',
-            'value="value"',
-            'value="return"',
-            'value="ticker"',
-            'value="age"',
-            'id="pos-sort-dir"',
-            'id="pos-filter-drawer"',
-            'id="pos-filter-count"',
-            'id="pos-no-match"',
-            'id="export-csv"',
+            'id="paper-connect-hint"',
+            'id="paper-takeover"',
+            'id="paper-positions-table"',
+            'id="orders-table"',
+            'id="perf-table"',
+            'id="download-csv"',
             "Download CSV",
         ):
             assert marker in text, f"portfolio page missing: {marker}"
-        print("portfolio page toolbar OK")
+        print("portfolio page paper view OK")
 
         # ---- decision-brief data the client renders is in the run payload ----
         detail = await client.get(f"/api/runs/{run_a.run_id}")
@@ -150,7 +145,7 @@ async def checks() -> None:
             ("/static/js/history.js", "visibleRuns"),
             ("/static/js/history.js", "Download JSON"),
             ("/static/js/history.js", "downloadFile"),
-            ("/static/js/portfolio.js", "exportCsv"),
+            ("/static/js/portfolio.js", "downloadCsv"),
             ("/static/js/render.js", "printBrief"),
         ):
             script = await client.get(asset)

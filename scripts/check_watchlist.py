@@ -19,7 +19,7 @@ os.environ["NIXTLA_API_KEY"] = ""
 
 import httpx  # noqa: E402
 
-from app import portfolio, run_history, watchlist  # noqa: E402
+from app import broker, run_history, watchlist  # noqa: E402
 from app.main import app  # noqa: E402
 from app.models import RunStatus, StockAnalysis  # noqa: E402
 
@@ -46,7 +46,7 @@ def _analysis(ticker: str, decision: str, confidence: float, price: float) -> St
 
 
 async def checks() -> None:
-    await portfolio.init()
+    await broker.init()
     await run_history.init()
     await watchlist.init()
 

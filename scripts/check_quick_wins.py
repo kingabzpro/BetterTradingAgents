@@ -3,7 +3,6 @@
 import asyncio
 import os
 import random
-import sqlite3
 import tempfile
 from pathlib import Path
 
@@ -157,87 +156,6 @@ _fc_weak = forecast_agent.mock("NVDA", {"timegpt_forecast": None,
                                         "trend_context": {"volatility_annualized_pct": 20.0}})
 assert _fc_weak["signal"] == "neutral" and "unusable" in _fc_weak["summary"], _fc_weak
 print("forecast mock OK:", _fc["signal"], _fc["confidence"])
-
-# ---- portfolio: cash guard, close, history ---------------------------------
-from app import portfolio as pf  # noqa: E402
-
-
-async def fake_price(_ticker):
-    return 110.0
-
-
-pf.get_current_price = fake_price  # keep the smoke test offline
-
-
-async def portfolio_checks():
-    await pf.init()
-    p1 = await pf.add_position("NVDA", 10, entry_price=100.0)
-    await pf.add_position("AMD", 5, entry_price=200.0)
-
-    try:
-        await pf.add_position("TSLA", 10000, entry_price=500.0)
-        raise AssertionError("cash guard did not trigger")
-    except ValueError as exc:
-        print("cash guard OK:", exc)
-
-    closed = await pf.close_position(p1.id, exit_price=150.0)
-    assert closed.pnl == 500.0 and closed.pnl_pct == 50.0 and closed.closed_at
-
-    for _ in range(2):
-        try:
-            await pf.close_position(p1.id, exit_price=150.0)
-            raise AssertionError("double close allowed")
-        except LookupError:
-            pass
-    print("double close OK")
-
-    try:
-        await pf.close_position(999, exit_price=1.0)
-        raise AssertionError("missing id allowed")
-    except LookupError:
-        print("missing id OK")
-
-    summary = await pf.get_portfolio()
-    # 100000 - 2000 (both buys) + 1500 (NVDA proceeds) = 99500
-    assert summary.cash == 99500, summary.cash
-    assert summary.realized_pnl == 500.0
-    assert [p.ticker for p in summary.positions] == ["AMD"]
-    assert [h.ticker for h in summary.history] == ["NVDA"]
-    # equity = cash + 5 * 110 (AMD at fake price) = 100050
-    # total P&L 50 = realized +500 on NVDA plus unrealized -450 on AMD
-    assert summary.total_equity == 100050, summary.total_equity
-    assert summary.total_pnl == 50
-    print("portfolio OK: cash=%s realized=%s equity=%s"
-          % (summary.cash, summary.realized_pnl, summary.total_equity))
-
-
-asyncio.run(portfolio_checks())
-
-# ---- schema migration from the pre-close DB layout -------------------------
-old_db = Path(tempfile.mkdtemp()) / "old_portfolio.db"
-con = sqlite3.connect(old_db)
-con.execute(
-    "CREATE TABLE positions (id INTEGER PRIMARY KEY AUTOINCREMENT, ticker TEXT NOT NULL, "
-    "quantity REAL NOT NULL, entry_price REAL NOT NULL, "
-    "added_at TEXT NOT NULL DEFAULT (datetime('now')))"
-)
-con.execute("INSERT INTO positions (ticker, quantity, entry_price) VALUES ('MSFT', 2, 300.0)")
-con.commit()
-con.close()
-
-pf.settings.db_path = old_db
-
-
-async def migration_checks():
-    await pf.init()  # ALTER TABLE adds exit_price / closed_at
-    summary = await pf.get_portfolio()
-    assert [p.ticker for p in summary.positions] == ["MSFT"]
-    closed = await pf.close_position(summary.positions[0].id, exit_price=400.0)
-    assert closed.pnl == 200.0
-    print("migration OK: old-schema DB upgraded and closeable")
-
-
-asyncio.run(migration_checks())
 
 # ---- workflow imports (catches syntax / import errors everywhere) ----------
 import app.main  # noqa: E402, F401

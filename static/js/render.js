@@ -6,7 +6,6 @@ import {
 } from "./constants.js";
 import { activeAgents, depthProfile } from "./options.js";
 import { state } from "./state.js";
-import { addToPortfolio } from "./portfolio-actions.js";
 import { saveToWatchlist } from "./watchlist-actions.js";
 import { attachPaperOrder } from "./broker-actions.js";
 import { loadPriceChart } from "./price-chart.js";
@@ -333,9 +332,7 @@ export function renderResultCard(analysis) {
     || (analysis.providers && !("social" in analysis.providers)
       ? { signal: "unknown", confidence: 0, summary: "This run predates the Sentiment analyst, so no social reading was recorded." }
       : null);
-  const canAdd = analysis.decision === "BUY" && analysis.price && !analysis.error;
   const positionSize = analysis.suggested_size_usd || 10000;
-  const defaultQty = analysis.price ? Math.max(1, Math.floor(positionSize / analysis.price)) : 0;
   const asOf = analysis.as_of ? formatDateTime(analysis.as_of) : "Timestamp unavailable";
   const age = staleInfo(analysis);
   const cov = coverageInfo(analysis);
@@ -403,7 +400,7 @@ export function renderResultCard(analysis) {
       <section class="result-block" aria-labelledby="evidence-title-${ticker}"><div class="block-heading"><h3 id="evidence-title-${ticker}">Analyst evidence</h3></div><div class="grid-3">${evidenceHtml}</div>${skippedResearch.length ? `<p class="hint">Skipped for speed: ${skippedResearch.map((key) => EVIDENCE_META[key].title).join(" · ")}</p>` : ""}</section>
       <section class="result-block sources-block" aria-labelledby="sources-title-${ticker}"><div class="block-heading"><h3 id="sources-title-${ticker}">Sources</h3><p>${escapeHtml(providerText(analysis.providers))}</p></div>${renderSources(analysis.source_references)}</section>
       ${renderTrackRecord(analysis, ticker)}
-      <div class="result-actions">${canAdd ? `<div class="add-row"><label for="qty-${ticker}">Shares</label><input id="qty-${ticker}" type="number" min="1" step="1" value="${defaultQty}"><button class="add-btn" id="add-${ticker}" type="button">Add to Demo Portfolio</button><span class="muted">suggests ${fmtUsd(positionSize)}</span><span class="added-note hidden" id="added-${ticker}" role="status"></span></div>` : '<span class="muted">Portfolio adds are offered on BUY calls.</span>'}<div class="add-row watch-row">${analysis.error ? '<span class="muted">Watchlist saves need a finished call.</span>' : `<button class="secondary-btn watch-btn" id="watch-${ticker}" type="button">Save to watchlist</button><span class="added-note hidden" id="watched-${ticker}" role="status"></span>`}${compareLink}${printBtn}<button class="secondary-btn retry-btn" type="button">Retry ${escapeHtml(ticker)}</button></div></div>
+      <div class="result-actions">${analysis.decision === "BUY" && analysis.price ? "" : '<span class="muted">Paper orders are offered on BUY calls with a live price.</span>'}<div class="add-row watch-row">${analysis.error ? '<span class="muted">Watchlist saves need a finished call.</span>' : `<button class="secondary-btn watch-btn" id="watch-${ticker}" type="button">Save to watchlist</button><span class="added-note hidden" id="watched-${ticker}" role="status"></span>`}${compareLink}${printBtn}<button class="secondary-btn retry-btn" type="button">Retry ${escapeHtml(ticker)}</button></div></div>
     </div>`;
 
   const existing = $(`result-${ticker}`);
@@ -426,7 +423,6 @@ export function renderResultCard(analysis) {
   });
   card.querySelector(".retry-btn").addEventListener("click", () => retryTicker(ticker));
   card.querySelector(".print-btn").addEventListener("click", () => printBrief(card));
-  if (canAdd) $(`add-${ticker}`).addEventListener("click", () => addToPortfolio(ticker, Number(analysis.price)));
   // Paper order review step (P2.1): offered on non-error BUY calls, and on
   // SELL when the paper account holds the ticker. Appends itself only then.
   if (!analysis.error) {
