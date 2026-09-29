@@ -45,8 +45,6 @@
   cursor: pointer; transition: background 0.15s, box-shadow 0.15s;
 }
 .close-btn:hover { background: rgba(255, 82, 82, 0.2); box-shadow: 0 0 16px rgba(255, 82, 82, 0.15); }
-.pnl-green { color: #6fe0a0; }
-.pnl-red { color: #ff8296; }
 .empty-note { color: var(--muted); padding: 28px 0; text-align: center; }
 
 /* ---------- position search, sort, and CSV export (P1.6) ---------- */

@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#05070d">
+  <title>Paper Trading · BetterTradingAgents</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+  <link rel="icon" href="/static/favicon.ico?v=2" sizes="any">
+  <link rel="icon" type="image/png" href="/static/favicon.png?v=2">
+  <link rel="apple-touch-icon" href="/static/favicon.png?v=2">
+  <link rel="stylesheet" href="/static/css/base.css?v=4">
+  <link rel="stylesheet" href="/static/css/trading.css?v=1">
+</head>
+<body>
+  <a class="skip-link" href="#main-content">Skip to content</a>
+  <div class="container">
+    <header>
+      <div class="brand">
+        <a href="/" class="logo-home" aria-label="Go to BetterTradingAgents home">
+          <img src="/static/logo.png" alt="" class="logo-img">
+        </a>
+        <div>
+          <h1>Paper trading</h1>
+          <p class="tagline">Alpaca paper account · orders placed from decisions</p>
+        </div>
+      </div>
+      <nav aria-label="Primary navigation">
+        <a href="/history" class="nav-link">Runs</a>
+        <a href="/watchlist" class="nav-link">Watchlist</a>
+        <a href="/portfolio" class="nav-link">Portfolio</a>
+        <a href="/" class="nav-link">Analysis</a>
+      </nav>
+    </header>
+
+    <main id="main-content" tabindex="-1">
+      <div class="paper-banner" role="note">
+        <strong>Paper trading via Alpaca.</strong>
+        <span>Simulated fills; not live-trading proof.
+          <a href="https://docs.alpaca.markets/us/docs/paper-trading" target="_blank" rel="noopener noreferrer">Limitations of paper fills<span aria-hidden="true"> ↗</span><span class="sr-only"> (opens in a new tab)</span></a>
+        </span>
+      </div>
+
+      <section id="setup-card" class="card setup-card hidden" aria-labelledby="setup-heading">
+        <h2 id="setup-heading" tabindex="-1">Connect your Alpaca paper account</h2>
+        <p>This page is dormant until the app can reach Alpaca. Set these variables
+           in the repo's <code>.env</code> and restart:</p>
+        <pre class="setup-vars">ALPACA_API_KEY_ID=...
+ALPACA_API_SECRET_KEY=...
+ALPACA_TRADING_ENABLED=1   # kill switch; leave 0 for read-only</pre>
+        <p class="hint">Keys are for the <strong>paper</strong> section of the Alpaca dashboard and stay
+           server-side; they are never sent to the browser.</p>
+        <button id="test-connection" class="secondary-btn" type="button">Test connection</button>
+        <p id="test-result" class="test-result" role="status" aria-live="polite"></p>
+      </section>
+
+      <section id="live-section" class="hidden">
+        <section class="card conn-card" aria-label="Connection status">
+          <div class="conn-row">
+            <span id="conn-status" class="conn-status"></span>
+            <span id="conn-killswitch" class="killswitch-note hidden" role="status">
+              Submissions are disabled (ALPACA_TRADING_ENABLED); account reads still work.
+            </span>
+            <button id="refresh-btn" class="secondary-btn" type="button">Refresh</button>
+            <button id="test-connection-2" class="secondary-btn" type="button">Test connection</button>
+          </div>
+        </section>
+
+        <section class="summary-grid" aria-label="Account summary">
+          <div class="summary-card"><span class="sc-label">Equity</span><span class="sc-value" id="acc-equity">n/a</span></div>
+          <div class="summary-card"><span class="sc-label">Cash</span><span class="sc-value" id="acc-cash">n/a</span></div>
+          <div class="summary-card"><span class="sc-label">Buying power</span><span class="sc-value" id="acc-bp">n/a</span></div>
+          <div class="summary-card"><span class="sc-label">Last equity</span><span class="sc-value" id="acc-last">n/a</span></div>
+        </section>
+
+        <section id="equity-card" class="card hidden" aria-labelledby="equity-heading">
+          <div class="block-heading"><h2 id="equity-heading">Equity, last month</h2><p id="equity-note"></p></div>
+          <div id="equity-chart" class="equity-chart"></div>
+          <details class="equity-table-holder"><summary>Equity values as text</summary><table id="equity-table"><thead><tr><th scope="col">Date</th><th scope="col" class="num">Equity</th></tr></thead><tbody></tbody></table></details>
+        </section>
+
+        <section class="card" aria-labelledby="positions-heading">
+          <div class="block-heading"><h2 id="positions-heading" tabindex="-1">Paper positions</h2><span class="muted" id="positions-count"></span></div>
+          <div class="table-wrap">
+            <table class="trading-table">
+              <caption class="sr-only">Open positions in the Alpaca paper account</caption>
+              <thead><tr><th scope="col">Ticker</th><th scope="col" class="num">Qty</th><th scope="col" class="num">Avg entry</th><th scope="col" class="num">Current</th><th scope="col" class="num">Value</th><th scope="col" class="num">Unrealized P&amp;L</th><th scope="col" class="num">P&amp;L %</th></tr></thead>
+              <tbody id="positions-body"></tbody>
+            </table>
+          </div>
+          <p id="positions-empty" class="empty-note hidden">No open paper positions yet. BUY decisions on the analysis page offer a paper order.</p>
+        </section>
+
+        <section class="card" aria-labelledby="orders-heading">
+          <div class="block-heading"><h2 id="orders-heading" tabindex="-1">Orders placed here</h2><span class="muted">Newest first · non-terminal rows reconcile on load</span></div>
+          <div class="table-wrap">
+            <table class="trading-table">
+              <caption class="sr-only">Orders this app placed with Alpaca</caption>
+              <thead><tr><th scope="col">Placed</th><th scope="col">Ticker</th><th scope="col">Side</th><th scope="col" class="num">Notional</th><th scope="col">Status</th><th scope="col" class="num">Filled avg price</th><th scope="col">Decision</th><th scope="col"><span class="sr-only">Action</span></th></tr></thead>
+              <tbody id="orders-body"></tbody>
+            </table>
+          </div>
+          <p id="orders-empty" class="empty-note hidden">No orders yet. Paper orders are placed from a finished decision's result card.</p>
+        </section>
+
+        <section id="perf-card" class="card hidden" aria-labelledby="perf-heading">
+          <div class="block-heading"><h2 id="perf-heading" tabindex="-1">Performance since fill</h2><span class="muted">Filled orders, graded like decisions</span></div>
+          <div class="table-wrap">
+            <table class="trading-table">
+              <caption class="sr-only">Return since fill and alpha versus SPY</caption>
+              <thead><tr><th scope="col">Ticker</th><th scope="col" class="num">Filled</th><th scope="col" class="num">Fill price</th><th scope="col" class="num">Now</th><th scope="col" class="num">Return</th><th scope="col" class="num">SPY</th><th scope="col" class="num">Alpha</th></tr></thead>
+              <tbody id="perf-body"></tbody>
+            </table>
+          </div>
+          <p id="perf-empty" class="empty-note hidden">No filled order has a measurable window yet.</p>
+        </section>
+      </section>
+
+      <p id="trading-status" class="page-status" role="status" aria-live="polite"></p>
+    </main>
+  </div>
+
+  <div id="toast" class="toast hidden" role="alert" aria-live="assertive" aria-atomic="true"></div>
+  <script src="/static/js/trading.js?v=1"></script>
+</body>
+</html>

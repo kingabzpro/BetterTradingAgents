@@ -512,6 +512,31 @@ async def refresh_order(client_order_id: str) -> BrokerOrder:
     return _row_to_order(row)  # type: ignore[arg-type]
 
 
+async def list_orders(limit: int = 50) -> list[BrokerOrder]:
+    """Local rows newest first. Non-terminal rows are reconciled by
+    client_order_id before they are returned; a page of 50 is well inside the
+    200 calls/min limit, and an unreachable Alpaca degrades to the local row
+    instead of blanking the history."""
+    def _rows():
+        with _connect() as connection:
+            return connection.execute(
+                "SELECT * FROM broker_orders ORDER BY created_at DESC, id DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+
+    rows = await asyncio.to_thread(_rows)
+    orders: list[BrokerOrder] = []
+    for row in rows:
+        if row["status"] not in TERMINAL_ORDER_STATUSES:
+            try:
+                orders.append(await refresh_order(row["client_order_id"]))
+                continue
+            except (BrokerRuleError, BrokerNotConfigured):
+                pass  # serve the local row; the next read reconciles again
+        orders.append(_row_to_order(row))
+    return orders
+
+
 async def cancel_order(client_order_id: str) -> BrokerOrder:
     """Cancel a non-terminal order; 422 passes through when Alpaca says it
     can no longer be canceled."""

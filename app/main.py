@@ -71,6 +71,7 @@ async def revalidate_assets(request, call_next):
         "/history",
         "/watchlist",
         "/compare",
+        "/trading",
     ):
         response.headers["Cache-Control"] = "no-cache"
     return response
@@ -110,6 +111,11 @@ async def watchlist_page():
 @app.get("/compare")
 async def compare_page():
     return FileResponse(STATIC_DIR / "compare.html")
+
+
+@app.get("/trading")
+async def trading_page():
+    return FileResponse(STATIC_DIR / "trading.html")
 
 
 @app.get("/api/health")
@@ -406,6 +412,14 @@ async def place_broker_order(request: BrokerOrderRequest):
         return await broker.submit_order(
             request.run_id, ticker, request.side, request.notional
         )
+    except (broker.BrokerNotConfigured, broker.BrokerRuleError) as exc:
+        raise _broker_http_error(exc) from exc
+
+
+@app.get("/api/broker/orders", response_model=list[BrokerOrder])
+async def list_broker_orders(limit: int = Query(default=50, ge=1, le=100)):
+    try:
+        return await broker.list_orders(limit)
     except (broker.BrokerNotConfigured, broker.BrokerRuleError) as exc:
         raise _broker_http_error(exc) from exc
 

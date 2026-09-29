@@ -23,6 +23,8 @@ os.environ["FINNHUB_API_KEY"] = ""
 os.environ["NIXTLA_API_KEY"] = ""
 os.environ["ALPACA_API_KEY_ID"] = ""
 os.environ["ALPACA_API_SECRET_KEY"] = ""
+os.environ["ALPACA_API_KEY"] = ""
+os.environ["ALPACA_SECRET_KEY"] = ""
 os.environ["ALPACA_TRADING_ENABLED"] = ""
 
 import httpx  # noqa: E402
@@ -58,9 +60,9 @@ class _FakeClient:
     """The smallest object that quacks like TradingClient for one scenario."""
 
     def __init__(self, account=None, positions=None, error=None):
-        self._account = account
-        self._positions = positions
-        self._error = error
+        self.account = account
+        self.positions = positions
+        self.error = error
         self.submit_calls = 0
         self.cancel_calls = 0
         self.submit_error = None
@@ -68,14 +70,14 @@ class _FakeClient:
         self.remote_order = None
 
     def get_account(self):
-        if self._error:
-            raise self._error
-        return self._account
+        if self.error:
+            raise self.error
+        return self.account
 
     def get_all_positions(self):
-        if self._error:
-            raise self._error
-        return self._positions
+        if self.error:
+            raise self.error
+        return self.positions
 
     def submit_order(self, order_data):
         self.submit_calls += 1
@@ -91,8 +93,8 @@ class _FakeClient:
         )
 
     def get_order_by_client_id(self, client_order_id):
-        if self._error:
-            raise self._error
+        if self.error:
+            raise self.error
         return self.remote_order
 
     def cancel_order_by_id(self, order_id):
@@ -390,6 +392,57 @@ async def checks() -> None:
     assert status == "rejected", status
     fake.submit_error = None
     print("Alpaca 422 mapping + rejected row OK")
+
+    # ================= M3: orders list with reconcile-on-read =================
+    # Rows are newest first; a non-terminal row reconciles from the remote
+    # order, and an unreachable Alpaca degrades to the local row.
+    stale_local = SimpleNamespace(
+        id=uuid4(), status=OrderStatus.FILLED, filled_qty="7", filled_avg_price="191.00",
+    )
+    fake.submit_error = None
+    await broker.submit_order("paperrun03", "AMD", "buy", 900.0)  # local row: accepted
+    fake.remote_order = None
+    fake.error = _api_error(503, 50310000, "temporarily down")
+    orders = await broker.list_orders(limit=10)
+    fake.error = None
+    assert orders[0].ticker == "AMD" and orders[0].status == "accepted", orders[0]
+    assert any(o.status == "rejected" for o in orders), "the 422 row must persist"
+    print("list_orders degrade-to-local OK")
+
+    fake.remote_order = stale_local
+    orders = await broker.list_orders(limit=10)
+    amd = next(o for o in orders if o.ticker == "AMD" and o.status == "filled")
+    assert amd.filled_qty == 7.0 and amd.filled_avg_price == 191.0
+    print("reconcile-on-read OK")
+
+    # ---- endpoint: list + cancel through the API -----------------------------
+    _use(fake)
+    try:
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+            listed = await client.get("/api/broker/orders?limit=5")
+            assert listed.status_code == 200 and len(listed.json()) <= 5
+
+            placed = await client.post(
+                "/api/broker/orders",
+                json={"run_id": "paperrun03", "ticker": "AMD", "side": "buy", "notional": 700, "confirm": True},
+            )
+            assert placed.status_code == 200, placed.text
+            fresh = placed.json()
+            assert fresh["status"] == "accepted"
+
+            fake.remote_order = SimpleNamespace(
+                id=uuid4(), status=OrderStatus.CANCELED, filled_qty=None, filled_avg_price=None,
+            )
+            canceled = await client.delete(f"/api/broker/orders/{fresh['client_order_id']}")
+            assert canceled.status_code == 200, canceled.text
+            assert canceled.json()["status"] == "canceled"
+
+            missing = await client.delete("/api/broker/orders/bta-nope")
+            assert missing.status_code == 404
+        print("orders endpoint OK")
+    finally:
+        _restore()
 
     _restore()
     settings.alpaca_api_key_id = ""

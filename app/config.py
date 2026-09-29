@@ -89,9 +89,11 @@ class Settings:
     # Alpaca paper trading (wiki Roadmap P2.1). Paper only: app/broker.py
     # constructs the SDK client with paper=True hardcoded, so no configuration
     # can point this feature at the live broker. The feature stays dormant
-    # until both key variables exist.
-    alpaca_api_key_id: str = _env("ALPACA_API_KEY_ID")
-    alpaca_api_secret_key: str = _env("ALPACA_API_SECRET_KEY")
+    # until both key variables exist. Both common spellings are accepted.
+    alpaca_api_key_id: str = _env("ALPACA_API_KEY_ID") or _env("ALPACA_API_KEY")
+    alpaca_api_secret_key: str = _env("ALPACA_API_SECRET_KEY") or _env(
+        "ALPACA_SECRET_KEY"
+    )
     # Kill switch: 0 = read-only, no order submissions.
     alpaca_trading_enabled: bool = _env("ALPACA_TRADING_ENABLED", "0").lower() in (
         "1",

@@ -284,3 +284,7 @@ footer { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wr
     animation-iteration-count: 1 !important; transition-duration: 0.01ms !important;
   }
 }
+
+/* Shared P&L coloring (portfolio + trading pages). */
+.pnl-green { color: #6fe0a0; }
+.pnl-red { color: #ff8296; }
