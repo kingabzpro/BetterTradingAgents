@@ -185,9 +185,32 @@ The portfolio page tracks two kinds of positions in one SQLite-backed book:
   in one click. Demo buys and closes move the simulated cash.
 
 The Portfolio Manager sees all open positions when making its next call, and the risk gate's
-exposure caps use the combined equity. No broker is connected and no real orders are placed.
+exposure caps use the combined equity. With no paper account configured this ledger is the
+whole story: nothing is connected and no orders are placed anywhere.
 
 ![Demo portfolio](static/screenshots/portfolio.png)
+
+### Paper trading with Alpaca (optional)
+
+Connect a free Alpaca **paper** account and it becomes the primary portfolio. Put the paper
+keys in `.env` (`ALPACA_API_KEY_ID`, `ALPACA_API_SECRET_KEY`, and `ALPACA_TRADING_ENABLED=1`
+to allow submissions) and restart. Three things change:
+
+- Every non-error **BUY** result card offers a **Paper order** review step: symbol, side,
+  notional prefilled from the risk gate's suggested size, buying power, and exposure after.
+  Placement requires an explicit "I reviewed this order" checkbox; nothing ever auto-submits.
+- The **Trading** page shows the paper account: equity, cash, buying power, an equity curve,
+  open positions, the orders this app placed with cancel actions, and per-order return since
+  fill with alpha vs SPY.
+- The **Portfolio** page switches to the paper numbers, and the local demo ledger collapses
+  into a clearly labeled "Local backup (demo, not traded)" section whose open positions can
+  be replayed into the paper account with one click.
+
+The adapter is paper-only by construction: the client is built with `paper=True` hardcoded,
+so no configuration can reach the live broker. Server-side caps apply to every submission
+(`ALPACA_MAX_ORDER_USD`, `ALPACA_MAX_ORDERS_PER_DAY`, and stale research older than
+`ALPACA_MAX_DECISION_AGE_HOURS` hours is refused). Paper fills are a simulation, never
+live-trading proof; see the disclosure on the Trading page.
 
 ### Run history
 
