@@ -591,25 +591,26 @@ def check_p1_6_filters_and_exports(page) -> None:
     )
 
 
-def check_trading_page(page) -> None:
-    """P2.1: the trading page is a first-class dormant view without keys and
-    the full lifecycle with faked broker functions."""
+def check_paper_portfolio(page) -> None:
+    """P2.1: the paper view lives on the portfolio page. Without keys it is a
+    slim connect hint over the exact legacy view; with faked broker functions
+    the full paper lifecycle renders on one page."""
     from app.models import BrokerAccount, BrokerOrder, BrokerPosition, BrokerStatus
 
-    # ---- unconfigured: setup card, banner, named controls, 320 px ------------
-    page.goto(f"{BASE_URL}/", wait_until="networkidle")
-    assert page.locator("header nav a[href='/trading']").count() == 1, \
-        "every page must offer the Trading nav link"
-    page.goto(f"{BASE_URL}/trading", wait_until="networkidle")
-    content = page.content()
-    assert "Simulated fills; not live-trading proof." in content, "banner must disclose paper fills"
-    assert page.locator("#setup-card:not(.hidden)").count() == 1, "setup card must lead when unconfigured"
-    assert page.locator("#live-section.hidden").count() == 1
+    # ---- unconfigured: legacy view plus the connect hint ---------------------
+    page.goto(f"{BASE_URL}/portfolio", wait_until="networkidle")
+    page.wait_for_selector("#positions-body tr", timeout=10_000)
+    assert page.locator("#paper-takeover.hidden").count() == 1, \
+        "no takeover banner while unconfigured"
+    assert page.locator("#backup-heading.hidden").count() == 1, \
+        "no backup label while unconfigured"
+    assert page.locator("#paper-connect-hint:not(.hidden)").count() == 1, \
+        "the connect hint must show while unconfigured"
     assert page.evaluate(
         "[...document.querySelectorAll('button')].filter((b) => "
         "!(b.getAttribute('aria-label') || b.textContent.trim())).length === 0"
     ), "every button needs an accessible name"
-    assert_no_page_scroll(page, 320, "trading page unconfigured")
+    assert_no_page_scroll(page, 320, "portfolio page unconfigured")
 
     # Result cards are unaffected: no paper order button without a connection.
     client_id = page.evaluate("localStorage.getItem('bta:clientId')") or ""
@@ -618,14 +619,6 @@ def check_trading_page(page) -> None:
     )
     with urllib.request.urlopen(request, timeout=10) as response:
         run_id = json.load(response)[0]["run_id"]
-
-    # Unconfigured portfolio page renders exactly the legacy view.
-    page.goto(f"{BASE_URL}/portfolio", wait_until="networkidle")
-    page.wait_for_selector("#positions-body tr", timeout=10_000)
-    assert page.locator("#paper-takeover.hidden").count() == 1, \
-        "no takeover banner while unconfigured"
-    assert page.locator("#backup-heading.hidden").count() == 1, \
-        "no backup label while unconfigured"
     page.goto(f"{BASE_URL}/?run={run_id}", wait_until="networkidle")
     page.wait_for_selector(".result-card", timeout=10_000)
     page.click(".result-summary")
@@ -634,7 +627,7 @@ def check_trading_page(page) -> None:
         "no paper order button may render while unconfigured"
     page.set_viewport_size({"width": 1280, "height": 900})
 
-    # ---- connected: broker functions faked, lifecycle end to end -------------
+    # ---- connected: banner, summary, orders lifecycle, review step ----------
     broker_module = main_module.broker
     orders = [
         BrokerOrder(
@@ -695,20 +688,26 @@ def check_trading_page(page) -> None:
     for name, fake in fakes.items():
         setattr(broker_module, name, fake)
     try:
-        page.goto(f"{BASE_URL}/trading", wait_until="networkidle")
-        page.wait_for_selector("#live-section:not(.hidden)", timeout=10_000)
-        assert "$101,234.56" in page.inner_text("#acc-equity"), "equity must render"
-        assert page.locator("#positions-body tr").count() == 1
+        page.goto(f"{BASE_URL}/portfolio", wait_until="networkidle")
+        page.wait_for_selector("#paper-takeover:not(.hidden)", timeout=10_000)
+        assert page.locator("#paper-connect-hint.hidden").count() == 1, \
+            "the connect hint must hide while connected"
+        assert "$101,234.56" in page.inner_text("#sc-equity"), \
+            "summary cards must show the paper equity"
+        assert page.locator("#paper-killswitch.hidden").count() == 1, \
+            "no kill-switch note while submissions are enabled"
+        assert page.locator("#paper-positions-card:not(.hidden)").count() == 1
+        assert page.locator("#paper-positions-body tr").count() == 1
+        assert page.locator("#backup-ledger.backup-mode").count() == 1
+
+        assert page.locator("#orders-card:not(.hidden)").count() == 1, \
+            "the merged page must show the order lifecycle"
         assert page.locator("#orders-body tr").count() == 2, "both orders must render"
         assert page.locator("#orders-body .status-chip.ok").count() == 1
         assert page.locator("#orders-body .cancel-btn").count() == 1, \
             "cancel only on the non-terminal row"
         link = page.locator("#orders-body a[href*='/?run=']").first
         assert run_id in (link.get_attribute("href") or ""), "decision link must resolve"
-        assert page.evaluate(
-            "[...document.querySelectorAll('button')].filter((b) => "
-            "!(b.getAttribute('aria-label') || b.textContent.trim())).length === 0"
-        ), "every button needs an accessible name"
 
         page.on("dialog", lambda dialog: dialog.accept())
         page.click("#orders-body .cancel-btn")
@@ -719,7 +718,7 @@ def check_trading_page(page) -> None:
         assert state["canceled"], "cancel must call the DELETE path"
         assert "canceled" in page.inner_text("#orders-body").lower()
 
-        # The BUY result card now offers the paper order review step (M2 UI).
+        # The BUY result card offers the paper order review step (M2 UI).
         page.goto(f"{BASE_URL}/?run={run_id}", wait_until="networkidle")
         page.wait_for_selector(".result-card", timeout=10_000)
         page.click(".result-summary")
@@ -738,14 +737,14 @@ def check_trading_page(page) -> None:
         )
         status_line = page.inner_text(f"#paper-status-{TICKER}")
         assert "accepted" in status_line, f"placement status must show: {status_line}"
-        assert "/trading" in page.content()
-        assert_no_page_scroll(page, 320, "trading page connected")
+        assert "/portfolio" in page.content(), "placement must link the portfolio page"
+        assert_no_page_scroll(page, 320, "analysis page with paper order")
         page.set_viewport_size({"width": 1280, "height": 900})
     finally:
         for name, original in originals.items():
             setattr(broker_module, name, original)
 
-    # ---- portfolio takeover driven through the real broker path --------------
+    # ---- real broker path: replay, equity curve, performance -----------------
     # The client seam and price fetch are faked, so replay exercises the real
     # guard rails, insert-before-POST, and position stamping, all offline.
     from app.tools import market_data as smoke_market_data
@@ -839,13 +838,16 @@ def check_trading_page(page) -> None:
             "!(b.getAttribute('aria-label') || b.textContent.trim())).length === 0"
         ), "every button needs an accessible name"
         assert_no_page_scroll(page, 320, "portfolio page paper view")
-        # ---- performance loop on the trading page: curve and alpha columns ----
-        page.goto(f"{BASE_URL}/trading", wait_until="networkidle")
+
+        # ---- equity curve and per-order alpha on the same page ----------------
         page.wait_for_selector("#equity-card:not(.hidden)", timeout=10_000)
-        assert page.locator("#equity-chart svg polyline").count() == 1, "the equity curve must render as an inline SVG"
-        assert page.locator("#equity-table tbody tr").count() == 2, "every equity mark must also be stated as text"
+        assert page.locator("#equity-chart svg polyline").count() == 1, \
+            "the equity curve must render as an inline SVG"
+        assert page.locator("#equity-table tbody tr").count() == 2, \
+            "every equity mark must also be stated as text"
         page.wait_for_selector("#perf-card:not(.hidden)", timeout=10_000)
-        assert page.locator("#perf-body tr").count() >= 1, "filled orders must show return since fill and alpha"
+        assert page.locator("#perf-body tr").count() >= 1, \
+            "filled orders must show return since fill and alpha"
     finally:
         broker_module.status = original_status
         broker_module._client = original_client
@@ -893,7 +895,7 @@ def main() -> None:
                 check_history_page(page)
                 check_compare_page(page)
                 check_p1_6_filters_and_exports(page)
-                check_trading_page(page)
+                check_paper_portfolio(page)
             finally:
                 browser.close()
     finally:

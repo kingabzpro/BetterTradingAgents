@@ -12,7 +12,7 @@
   <link rel="icon" type="image/png" href="/static/favicon.png?v=2">
   <link rel="apple-touch-icon" href="/static/favicon.png?v=2">
   <link rel="stylesheet" href="/static/css/base.css?v=4">
-  <link rel="stylesheet" href="/static/css/portfolio.css?v=5">
+  <link rel="stylesheet" href="/static/css/portfolio.css?v=6">
 </head>
 <body>
   <a class="skip-link" href="#main-content">Skip to content</a>
@@ -31,15 +31,22 @@
         <a href="/history" class="nav-link">Runs</a>
         <a href="/watchlist" class="nav-link">Watchlist</a>
         <a href="/" class="nav-link">Analysis</a>
-        <a href="/trading" class="nav-link">Trading</a>
       </nav>
     </header>
 
     <main id="main-content" tabindex="-1">
+    <p class="hint hidden" id="paper-connect-hint">
+      Optional: connect a free <strong>Alpaca paper</strong> account and your decisions become
+      tradeable simulated orders. Set <code>ALPACA_API_KEY_ID</code>, <code>ALPACA_API_SECRET_KEY</code>
+      (and <code>ALPACA_TRADING_ENABLED=1</code> to allow submissions) in <code>.env</code> and restart.
+    </p>
     <div class="paper-takeover hidden" id="paper-takeover" role="note">
       <strong>This portfolio now lives in your Alpaca paper account.</strong>
-      <span>The summary and open positions below are paper numbers.
-        <a href="/trading">Open the trading page</a> for orders, equity, and performance.</span>
+      <span>The summary, curve, positions, and orders below are paper numbers; paper fills are a
+        <a href="https://docs.alpaca.markets/us/docs/paper-trading" target="_blank" rel="noopener noreferrer">simulation, not live-trading proof<span aria-hidden="true"> ↗</span><span class="sr-only"> (opens in a new tab)</span></a>.</span>
+      <span id="paper-killswitch" class="killswitch-note hidden" role="status">
+        Submissions are disabled (ALPACA_TRADING_ENABLED); account reads still work.
+      </span>
     </div>
 
     <div class="summary-grid" id="summary-grid">
@@ -51,6 +58,18 @@
       <div class="summary-card" id="sc-realized-card" title="Profit or loss from closed positions only"><div class="sc-label">Realized P&L</div><div class="sc-value" id="sc-realized">…</div></div>
     </div>
     <p class="hint hidden" id="unpriced-note"></p>
+
+    <section id="equity-card" class="card hidden" aria-labelledby="equity-heading">
+      <div class="card-heading"><h2 id="equity-heading">Paper equity, last month</h2><span class="muted" id="equity-note"></span></div>
+      <div id="equity-chart" class="equity-chart"></div>
+      <details class="equity-table-holder"><summary>Equity values as text</summary>
+        <table id="equity-table">
+          <caption class="sr-only">Paper account equity by day</caption>
+          <thead><tr><th scope="col">Date</th><th scope="col" class="num">Equity</th></tr></thead>
+          <tbody id="equity-tbody"></tbody>
+        </table>
+      </details>
+    </section>
 
     <div class="card table-wrap portfolio-table hidden" id="paper-positions-card">
       <table id="paper-positions-table">
@@ -69,6 +88,45 @@
         <tbody id="paper-positions-body"></tbody>
       </table>
       <p class="empty-note hidden" id="paper-empty-note">No open paper positions yet. BUY decisions on the analysis page offer a paper order.</p>
+    </div>
+
+    <div class="card table-wrap portfolio-table hidden" id="orders-card">
+      <table id="orders-table">
+        <caption>Orders placed here (Alpaca paper)</caption>
+        <thead>
+          <tr>
+            <th>Placed</th>
+            <th>Ticker</th>
+            <th>Side</th>
+            <th class="num">Notional</th>
+            <th>Status</th>
+            <th class="num">Filled avg price</th>
+            <th>Decision</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody id="orders-body"></tbody>
+      </table>
+      <p class="empty-note hidden" id="orders-empty">No orders yet. Paper orders are placed from a finished decision's result card.</p>
+    </div>
+
+    <div class="card table-wrap portfolio-table hidden" id="perf-card">
+      <table id="perf-table">
+        <caption>Performance since fill (paper orders vs SPY)</caption>
+        <thead>
+          <tr>
+            <th>Ticker</th>
+            <th>Placed</th>
+            <th class="num">Fill price</th>
+            <th class="num">Now</th>
+            <th class="num">Return</th>
+            <th class="num">SPY</th>
+            <th class="num">Alpha</th>
+          </tr>
+        </thead>
+        <tbody id="perf-body"></tbody>
+      </table>
+      <p class="empty-note hidden" id="perf-empty">No filled order has a measurable window yet.</p>
     </div>
 
     <div id="backup-ledger">
@@ -181,6 +239,6 @@
   </div>
 
   <div id="toast" class="toast hidden" role="status" aria-live="polite" aria-atomic="true"></div>
-  <script src="/static/js/portfolio.js?v=5"></script>
+  <script src="/static/js/portfolio.js?v=6"></script>
 </body>
 </html>

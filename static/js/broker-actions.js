@@ -155,7 +155,7 @@ async function placePaperOrder(ticker, analysis, runId) {
       : "";
     statusEl.innerHTML =
       `Order ${escapeHtml(body.status)}${filled}. ` +
-      '<a href="/trading">Open the trading page</a>';
+      '<a href="/portfolio">Open your portfolio</a>';
     placeBtn.hidden = true;
   } catch (error) {
     statusEl.textContent = "Submission failed; check the trading page for its final state.";

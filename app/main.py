@@ -8,7 +8,7 @@ from datetime import date, timedelta
 from pathlib import Path
 
 from fastapi import FastAPI, Header, HTTPException, Query
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from app import broker, calibration, chat, memory, portfolio, watchlist
@@ -72,7 +72,6 @@ async def revalidate_assets(request, call_next):
         "/history",
         "/watchlist",
         "/compare",
-        "/trading",
     ):
         response.headers["Cache-Control"] = "no-cache"
     return response
@@ -116,7 +115,8 @@ async def compare_page():
 
 @app.get("/trading")
 async def trading_page():
-    return FileResponse(STATIC_DIR / "trading.html")
+    """The paper view merged into the portfolio page (P2.1); keep old links working."""
+    return RedirectResponse("/portfolio", status_code=307)
 
 
 @app.get("/api/health")

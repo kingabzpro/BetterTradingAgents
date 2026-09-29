@@ -199,12 +199,11 @@ to allow submissions) and restart. Three things change:
 - Every non-error **BUY** result card offers a **Paper order** review step: symbol, side,
   notional prefilled from the risk gate's suggested size, buying power, and exposure after.
   Placement requires an explicit "I reviewed this order" checkbox; nothing ever auto-submits.
-- The **Trading** page shows the paper account: equity, cash, buying power, an equity curve,
-  open positions, the orders this app placed with cancel actions, and per-order return since
-  fill with alpha vs SPY.
-- The **Portfolio** page switches to the paper numbers, and the local demo ledger collapses
-  into a clearly labeled "Local backup (demo, not traded)" section whose open positions can
-  be replayed into the paper account with one click.
+- The **Portfolio** page becomes the paper cockpit: equity, cash, buying power, an equity
+  curve, open positions, the orders this app placed with cancel actions, and per-order return
+  since fill with alpha vs SPY, all above the local ledger.
+- The demo ledger collapses into a clearly labeled "Local backup (demo, not traded)" section
+  whose open positions can be replayed into the paper account with one click.
 
 The adapter is paper-only by construction: the client is built with `paper=True` hardcoded,
 so no configuration can reach the live broker. Server-side caps apply to every submission
