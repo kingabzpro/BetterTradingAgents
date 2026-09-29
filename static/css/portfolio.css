@@ -1,5 +1,6 @@
-/* Portfolio page: summary cards, holding management, CSV import, positions
-   and closed-trade tables. Loads after base.css. */
+/* Portfolio page: the Alpaca paper account is the portfolio. Summary cards,
+   equity curve, open positions, order lifecycle, per-order performance.
+   Loads after base.css. */
 
 .summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 18px; }
 .summary-card {
@@ -12,65 +13,12 @@
 .sc-value.green { color: #6fe0a0; }
 .sc-value.red { color: #ff8296; }
 
-#unpriced-note { margin: -6px 0 14px; }
-.manage-card { margin-bottom: 18px; }
-.manage-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; }
-.manage-label { font-weight: 650; font-size: 13px; letter-spacing: 0.01em; margin-bottom: 10px; }
-.manage-card .add-row { border-top: none; padding-top: 0; }
-.manage-card .add-row input { width: 104px; }
-.manage-card .add-row input#add-ticker { width: 92px; text-transform: uppercase; }
-.manage-card .hint { margin-top: 10px; }
-.sample-link { color: var(--muted); text-decoration: underline; text-underline-offset: 2px; }
-.sample-link:hover { color: var(--text); }
-.manage-card code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 11.5px; color: #a6aec0; }
-.src-tag {
-  display: inline-block; margin-left: 7px; padding: 2px 8px; border-radius: 999px;
-  font-size: 10px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase;
-  border: 1px solid rgba(96, 165, 250, 0.35); background: rgba(96, 165, 250, 0.1); color: #8ab4f8;
-  vertical-align: 1px; cursor: help;
-}
-.csv-preview { margin-top: 16px; border-top: 1px dashed var(--border-strong); padding-top: 14px; }
-.preview-title { font-size: 12px; font-weight: 650; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 8px; }
-.preview-table { font-size: 12.5px; }
-.preview-table th, .preview-table td { padding: 7px 10px; }
-.preview-table .row-error td { color: #ff8296; }
-.preview-error { color: #ff8296; font-size: 13px; margin: 4px 0 0; }
-.preview-skip { color: var(--muted); font-size: 12.5px; margin: 8px 0 0; padding-left: 18px; }
-.preview-skip li { margin: 3px 0; }
-.preview-actions { display: flex; gap: 10px; margin-top: 12px; }
-
-.close-btn {
-  background: rgba(255, 82, 82, 0.12); color: #ff8296; border: 1px solid rgba(255, 82, 82, 0.4);
-  border-radius: 9px; padding: 5px 12px; font-size: 12px; font-weight: 600; font-family: var(--font);
-  cursor: pointer; transition: background 0.15s, box-shadow 0.15s;
-}
-.close-btn:hover { background: rgba(255, 82, 82, 0.2); box-shadow: 0 0 16px rgba(255, 82, 82, 0.15); }
-.pnl-green { color: #6fe0a0; }
-.pnl-red { color: #ff8296; }
 .empty-note { color: var(--muted); padding: 28px 0; text-align: center; }
-
-/* ---------- position search, sort, and CSV export (P1.6) ---------- */
-.portfolio-controls {
-  display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px;
-  align-items: start; margin-bottom: 18px;
-}
-.portfolio-controls .secondary-btn { min-height: 44px; }
-.sort-dir-btn {
-  min-height: 36px; min-width: 44px; padding: 6px 10px; border: 1px solid var(--border-strong);
-  border-radius: 9px; background: rgba(255, 255, 255, 0.035); color: var(--text);
-  font: 700 15px/1 var(--font); cursor: pointer; transition: background 0.15s, border-color 0.15s;
-}
-.sort-dir-btn:hover { background: var(--panel-2); border-color: rgba(16, 201, 115, 0.48); }
-
-@media (max-width: 640px) {
-  .portfolio-controls { grid-template-columns: 1fr; }
-  .sort-dir-btn { min-height: 44px; }
-}
+.page-status { min-height: 1.2em; color: var(--muted); font-size: 13px; }
 
 /* ---------- responsive: portfolio page ---------- */
 @media (max-width: 768px) {
   .summary-grid { grid-template-columns: repeat(2, 1fr); }
-  .manage-grid { grid-template-columns: 1fr; gap: 16px; }
   .portfolio-table { overflow: visible; padding: 0; background: transparent; border: 0; box-shadow: none; }
   .portfolio-table table, .portfolio-table tbody, .portfolio-table tr, .portfolio-table td { display: block; width: 100%; }
   .portfolio-table caption { padding: 4px 2px 9px; }
@@ -89,38 +37,55 @@
     content: attr(data-label); flex: none; color: var(--muted); font-size: 10px;
     font-weight: 700; letter-spacing: 0.065em; text-align: left; text-transform: uppercase;
   }
-  .portfolio-table .close-btn { min-height: 44px; min-width: 92px; }
-
-  /* CSV preview table reflows into labeled cards too (P0.3). */
-  .csv-preview .table-wrap { overflow: visible; }
-  .csv-preview .preview-table, .csv-preview .preview-table tbody,
-  .csv-preview .preview-table tr, .csv-preview .preview-table td { display: block; width: 100%; }
-  .csv-preview .preview-table thead { display: none; }
-  .csv-preview .preview-table tr {
-    margin-bottom: 10px; padding: 8px 12px; border: 1px solid var(--border);
-    border-radius: 10px; background: var(--panel);
-  }
-  .csv-preview .preview-table td {
-    display: flex; align-items: center; justify-content: space-between; gap: 12px;
-    min-height: 34px; padding: 6px 0; border-bottom: 1px solid rgba(255, 255, 255, 0.055);
-    white-space: normal; text-align: right;
-  }
-  .csv-preview .preview-table td:last-child { border-bottom: 0; }
-  .csv-preview .preview-table td::before {
-    content: attr(data-label); flex: none; color: var(--muted); font-size: 10px;
-    font-weight: 700; letter-spacing: 0.065em; text-transform: uppercase; text-align: left;
-  }
-}
-
-@media (max-width: 620px) {
-  .secondary-btn, .add-btn { min-height: 44px; }
 }
 
 @media (max-width: 560px) {
   .summary-grid { grid-template-columns: repeat(2, 1fr); gap: 10px; }
   .summary-card .sc-value { font-size: 16px; }
-  .manage-col:first-child .manage-row { display: grid; grid-template-columns: 1fr 1fr; }
-  .manage-col:first-child .manage-row input { width: 100%; min-height: 44px; }
-  .manage-col:first-child .manage-row #add-price,
-  .manage-col:first-child .manage-row .add-btn { grid-column: 1 / -1; width: 100%; }
 }
+
+/* Paper takeover banner (ROADMAP P2.1). */
+.paper-takeover {
+  display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: baseline;
+  margin-bottom: 16px; padding: 11px 14px;
+  border: 1px solid rgba(16, 201, 115, 0.4); border-radius: 10px;
+  background: rgba(16, 201, 115, 0.07); color: #6fe0a0; font-size: 13px; line-height: 1.5;
+}
+.paper-takeover a { color: #6fe0a0; text-decoration: underline; }
+
+.killswitch-note {
+  font-size: 12px; color: #f5c66b; border-left: 3px solid rgba(245, 198, 107, 0.65);
+  padding: 2px 10px;
+}
+
+/* Paper order lifecycle and equity curve (ROADMAP P2.1). */
+.card-heading { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; margin-bottom: 10px; }
+.card-heading h2 { font-size: 15px; margin: 0; }
+.card-heading .secondary-btn { min-height: 36px; }
+
+.status-chip {
+  display: inline-block; padding: 2px 8px; border-radius: 999px;
+  font-size: 10px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase;
+}
+.status-chip.ok { color: #6fe0a0; background: rgba(16, 201, 115, 0.12); border: 1px solid rgba(16, 201, 115, 0.35); }
+.status-chip.bad { color: #ff8296; background: rgba(244, 88, 107, 0.12); border: 1px solid rgba(244, 88, 107, 0.4); }
+.status-chip.live { color: #7ab8ff; background: rgba(90, 156, 255, 0.12); border: 1px solid rgba(90, 156, 255, 0.4); }
+.status-chip.muted { color: var(--muted); background: rgba(255, 255, 255, 0.04); border: 1px solid var(--border); }
+.order-error { display: block; margin-top: 3px; color: #f7a3b0; font-size: 11px; max-width: 260px; }
+
+.side-chip { font-weight: 700; font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; }
+.side-chip.buy { color: #6fe0a0; }
+.side-chip.sell { color: #ff8296; }
+
+.cancel-btn {
+  border: 1px solid rgba(244, 88, 107, 0.45); border-radius: 8px; cursor: pointer;
+  background: transparent; color: #ff8296; font-size: 12px; font-weight: 600; padding: 5px 11px;
+}
+.cancel-btn:hover { background: rgba(244, 88, 107, 0.1); }
+
+.equity-chart { margin: 4px 0 6px; }
+.equity-chart svg { display: block; width: 100%; height: 130px; }
+.equity-chart .poly { fill: none; stroke: #6fe0a0; stroke-width: 2; }
+.equity-chart .baseline { stroke: rgba(255, 255, 255, 0.14); stroke-width: 1; stroke-dasharray: 4 4; }
+.equity-table-holder summary { cursor: pointer; color: var(--muted); font-size: 12px; }
+.equity-table-holder table { margin-top: 8px; }

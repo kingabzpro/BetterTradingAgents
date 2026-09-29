@@ -14,7 +14,7 @@ os.environ["DB_PATH"] = str(history_db)
 
 import httpx  # noqa: E402
 
-from app import memory, portfolio, run_history, runs  # noqa: E402
+from app import broker, memory, run_history, runs  # noqa: E402
 from app.main import app  # noqa: E402
 from app.models import StockAnalysis  # noqa: E402
 
@@ -67,7 +67,7 @@ async def fake_portfolio_summary():
 
 
 async def checks() -> None:
-    await portfolio.init()
+    await broker.init()
     await run_history.init()
     await memory.init()
     runs.analyze_ticker = fake_analyze

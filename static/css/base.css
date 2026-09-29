@@ -174,7 +174,7 @@ button, input, summary { touch-action: manipulation; }
 .add-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
 /* ---------- shared tables (portfolio positions + csv preview) ---------- */
-.table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; position: relative; }
 .card.table-wrap { padding: 6px 4px; }
 table { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
 caption { padding: 10px 12px 4px; color: var(--muted); font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-align: left; text-transform: uppercase; }
@@ -261,7 +261,8 @@ footer { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wr
 @media (max-width: 560px) {
   body { font-size: 13.5px; }
   .container { padding: 10px 12px 44px; }
-  header { top: 6px; padding: 8px 10px; gap: 8px; }
+  header { top: 6px; padding: 8px 10px; gap: 8px; flex-wrap: wrap; }
+  nav { flex-wrap: wrap; flex: 1 1 auto; justify-content: flex-start; }
   .brand > div { min-width: 0; }
   header .chip { display: none; }
   .logo-img { width: 38px; height: 38px; }
@@ -284,3 +285,7 @@ footer { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wr
     animation-iteration-count: 1 !important; transition-duration: 0.01ms !important;
   }
 }
+
+/* Shared P&L coloring (portfolio + trading pages). */
+.pnl-green { color: #6fe0a0; }
+.pnl-red { color: #ff8296; }

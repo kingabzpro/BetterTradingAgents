@@ -304,7 +304,7 @@ class PortfolioPosition(BaseModel):
     added_at: str = ""
     exit_price: float | None = None
     closed_at: str | None = None
-    external: bool = False  # tracked holding (manual entry / CSV import), not demo cash
+    external: bool = False
 
 
 class PortfolioSummary(BaseModel):
@@ -317,32 +317,6 @@ class PortfolioSummary(BaseModel):
     unpriced_count: int = 0  # open positions without a live price, excluded from totals
     positions: list[PortfolioPosition] = []
     history: list[PortfolioPosition] = []
-
-
-class PortfolioAddRequest(BaseModel):
-    ticker: str
-    quantity: float = Field(gt=0)
-    entry_price: float | None = None
-
-
-class PortfolioCloseRequest(BaseModel):
-    position_id: int
-    exit_price: float | None = Field(default=None, gt=0)
-
-
-class PortfolioImportItem(BaseModel):
-    ticker: str
-    quantity: float = Field(gt=0)
-    entry_price: float | None = Field(default=None, gt=0)  # None = use the live price
-
-
-class PortfolioImportRequest(BaseModel):
-    positions: list[PortfolioImportItem] = Field(min_length=1, max_length=200)
-
-
-class PortfolioImportResponse(BaseModel):
-    imported: int
-    errors: list[str] = []
 
 
 class WatchlistCall(BaseModel):
@@ -397,3 +371,71 @@ class WatchlistUpdateRequest(BaseModel):
 class WatchlistAddResponse(BaseModel):
     item: WatchlistItem
     already_watched: bool = False
+
+
+class BrokerStatus(BaseModel):
+    """Whether the Alpaca paper connection exists and submissions are allowed.
+
+    Never carries credentials. enabled=False means the kill switch
+    (ALPACA_TRADING_ENABLED) is off: reads still work, orders do not.
+    """
+
+    configured: bool = False
+    enabled: bool = False
+    paper_url: str = "https://docs.alpaca.markets/us/docs/paper-trading"
+    max_order_usd: float = 0.0  # 0 = no cap recorded (unconfigured)
+
+
+class BrokerAccount(BaseModel):
+    """Mapped Alpaca paper account snapshot."""
+
+    account_number: str = ""
+    status: str = ""
+    equity: float | None = None
+    cash: float | None = None
+    buying_power: float | None = None
+    last_equity: float | None = None
+    trading_blocked: bool = False
+
+
+class BrokerPosition(BaseModel):
+    """Mapped open Alpaca paper position."""
+
+    symbol: str
+    quantity: float
+    avg_entry_price: float
+    current_price: float | None = None
+    market_value: float | None = None
+    unrealized_pl: float | None = None
+    unrealized_plpc: float | None = None
+
+
+class BrokerOrder(BaseModel):
+    """One order this app placed, from the local broker_orders row."""
+
+    client_order_id: str
+    alpaca_order_id: str | None = None
+    run_id: str
+    ticker: str
+    side: Literal["buy", "sell"]
+    notional: float
+    status: str  # pending_submit | unknown | an Alpaca order status
+    decision: str | None = None
+    confidence: float | None = None
+    decision_as_of: str | None = None
+    filled_qty: float | None = None
+    filled_avg_price: float | None = None
+    error: str | None = None
+    created_at: str = ""
+    updated_at: str = ""
+
+
+class BrokerOrderRequest(BaseModel):
+    """Body of POST /api/broker/orders; confirm must be explicitly true."""
+
+    run_id: str = Field(min_length=1, max_length=64)
+    ticker: str = Field(min_length=1, max_length=12)
+    side: Literal["buy", "sell"]
+    notional: float = Field(gt=0, le=1_000_000)
+    confirm: bool = False
+

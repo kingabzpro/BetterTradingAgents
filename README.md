@@ -86,6 +86,10 @@ flowchart LR
     PM --> RISK["🛡️ Risk gate<br/>vol-scaled size · exposure caps · forecast check"]
     RISK --> RESULT["✅ BUY · HOLD · SELL<br/>confidence + size + reasoning trail"]
     RESULT --> CHAT["💬 Chat with the manager<br/>grounded in this run, you decide"]
+    RESULT --> ORDER["🧾 Paper order<br/>review step, explicit confirm"]
+    ORDER --> BROKER["🛡️ Alpaca paper adapter<br/>server-side guards · client_order_id idempotency"]
+    BROKER --> PAPER["🟢 Alpaca paper account<br/>simulated fills, never live"]
+    PAPER --> PORT["📊 Portfolio page<br/>equity curve · order lifecycle<br/>return + alpha vs SPY"]
 ```
 
 The whole pipeline runs concurrently, tickers included, and ends in a conversation: the
@@ -174,20 +178,36 @@ scaling. Your chosen outlook adjusts the formation weights; the top five candida
 straight into the ticker input and through the normal workflow. The screen is cached for an
 hour, and the ranking is a research starting point, not a promise.
 
-### Portfolio: your own holdings + paper trading
+### Portfolio: your Alpaca paper account
 
-The portfolio page tracks two kinds of positions in one SQLite-backed book:
+The paper account **is** the portfolio. Its cash, equity, open positions, and
+every order this app placed are fetched fresh from Alpaca whenever the page
+loads; nothing is tracked in a parallel local book. The manager sees the paper
+holdings when making its next call, and the risk gate's exposure caps use the
+paper equity. A **Download CSV** action exports the open positions.
 
-- **Tracked holdings**: shares you already own, added by ticker, quantity, and price paid
-  (or imported from CSV with a row-by-row preview). They are valued at live prices and roll
-  into P&L, but never touch the simulated cash balance.
-- **Demo trades**: after a **BUY** recommendation, add the stock to the simulated portfolio
-  in one click. Demo buys and closes move the simulated cash.
+![Alpaca paper portfolio](static/screenshots/portfolio.png)
 
-The Portfolio Manager sees all open positions when making its next call, and the risk gate's
-exposure caps use the combined equity. No broker is connected and no real orders are placed.
+### Paper trading with Alpaca (optional)
 
-![Demo portfolio](static/screenshots/portfolio.png)
+Connect a free Alpaca **paper** account and it becomes the primary portfolio. Put the paper
+keys in `.env` (`ALPACA_API_KEY_ID`, `ALPACA_API_SECRET_KEY`, and `ALPACA_TRADING_ENABLED=1`
+to allow submissions) and restart. Three things change:
+
+- Every non-error **BUY** result card offers a **Paper order** review step: symbol, side,
+  notional prefilled from the risk gate's suggested size, buying power, and exposure after.
+  Placement requires an explicit "I reviewed this order" checkbox; nothing ever auto-submits.
+- The **Portfolio** page becomes the paper cockpit: equity, cash, buying power, an equity
+  curve, open positions, the orders this app placed with cancel actions, and per-order return
+  since fill with alpha vs SPY. A **Download CSV** action exports the open positions.
+- Without keys the page shows exactly what to set; there is no separate demo book, the
+  paper account is the single record of holdings.
+
+The adapter is paper-only by construction: the client is built with `paper=True` hardcoded,
+so no configuration can reach the live broker. Server-side caps apply to every submission
+(`ALPACA_MAX_ORDER_USD`, `ALPACA_MAX_ORDERS_PER_DAY`, and stale research older than
+`ALPACA_MAX_DECISION_AGE_HOURS` hours is refused). Paper fills are a simulation, never
+live-trading proof; the disclosure is on the Portfolio page.
 
 ### Run history
 
@@ -221,6 +241,9 @@ settings most people touch:
 | `NIXTLA_API_KEY` | Not set | Nixtla TimeGPT 5-day forecast; falls back to the local trend model |
 | `MAX_TICKERS` | `5` | Maximum tickers accepted in one analysis |
 | `STREAM_REASONING` | `0` | `1` streams agent tokens to the UI live (off by default) |
+| `ALPACA_API_KEY_ID` | Not set | Alpaca **paper** key; enables paper trading (feature is dormant without it) |
+| `ALPACA_API_SECRET_KEY` | Not set | Alpaca **paper** secret; stays server-side, never returned by an endpoint |
+| `ALPACA_TRADING_ENABLED` | `0` | Kill switch: `1` allows order submissions, `0` is read-only |
 
 Per-role model splits, cost-estimate overrides, risk-gate caps, decision memory, and
 backtest cache settings are documented in the wiki's
@@ -239,6 +262,8 @@ The core endpoints:
 | `POST` | `/api/runs/{run_id}/cancel` | Cancel a running analysis, keeping finished ticker results |
 | `POST` | `/api/runs/{run_id}/chat` | Ask the portfolio manager follow-up questions |
 | `GET` | `/api/portfolio` | List positions with live prices and profit/loss |
+| `GET` | `/api/broker/account` | Read the Alpaca paper account (equity, cash, buying power) |
+| `POST` | `/api/broker/orders` | Place one paper order from a decision (explicit `confirm`, server-side guards) |
 | `GET` | `/api/health` | Check configuration and provider status |
 
 ```bash

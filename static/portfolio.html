@@ -12,7 +12,7 @@
   <link rel="icon" type="image/png" href="/static/favicon.png?v=2">
   <link rel="apple-touch-icon" href="/static/favicon.png?v=2">
   <link rel="stylesheet" href="/static/css/base.css?v=4">
-  <link rel="stylesheet" href="/static/css/portfolio.css?v=4">
+  <link rel="stylesheet" href="/static/css/portfolio.css?v=6">
 </head>
 <body>
   <a class="skip-link" href="#main-content">Skip to content</a>
@@ -35,115 +35,106 @@
     </header>
 
     <main id="main-content" tabindex="-1">
-    <div class="summary-grid" id="summary-grid">
-      <div class="summary-card" title="The simulation's starting balance"><div class="sc-label">Starting cash</div><div class="sc-value" id="sc-start">…</div></div>
-      <div class="summary-card" title="Demo trading cash: starting cash − simulated buys + sell proceeds (tracked holdings excluded)"><div class="sc-label">Cash remaining</div><div class="sc-value" id="sc-cash">…</div></div>
-      <div class="summary-card" title="All open positions (tracked + demo) valued at live prices"><div class="sc-label">Positions value</div><div class="sc-value" id="sc-value">…</div></div>
-      <div class="summary-card" title="Cash remaining + positions value"><div class="sc-label">Total equity</div><div class="sc-value" id="sc-equity">…</div></div>
-      <div class="summary-card" title="Sum of per-position results: open (unrealized) + closed (realized)"><div class="sc-label">Total P&L</div><div class="sc-value" id="sc-pnl">…</div></div>
-      <div class="summary-card" title="Profit or loss from closed positions only"><div class="sc-label">Realized P&L</div><div class="sc-value" id="sc-realized">…</div></div>
-    </div>
-    <p class="hint hidden" id="unpriced-note"></p>
-
-    <div class="card manage-card">
-      <div class="manage-grid">
-        <div class="manage-col">
-          <div class="manage-label">Add a holding</div>
-          <div class="add-row manage-row">
-            <input id="add-ticker" placeholder="Ticker" maxlength="10" autocomplete="off" spellcheck="false" aria-label="Ticker">
-            <input id="add-shares" type="number" min="0" step="any" placeholder="Shares" aria-label="Shares">
-            <input id="add-price" type="number" min="0" step="any" placeholder="Buy price" aria-label="Buy price (blank for live price)">
-            <button class="add-btn" id="add-holding-btn" type="button">Add</button>
-          </div>
-          <p class="hint">Shares you already own. Blank price = live price; demo cash untouched.</p>
-        </div>
-        <div class="manage-col">
-          <div class="manage-label">Import from CSV</div>
-          <div class="add-row manage-row">
-            <input type="file" id="csv-file" accept=".csv,text/csv" class="hidden">
-            <button class="secondary-btn" id="csv-pick-btn" type="button">Choose CSV file…</button>
-          </div>
-          <p class="hint"><code>ticker, quantity, entry_price</code> · header auto-detected · <a class="sample-link" href="/static/sample-portfolio.csv" download>sample</a></p>
-        </div>
-      </div>
-      <div class="csv-preview hidden" id="csv-preview"></div>
+    <p class="hint hidden" id="paper-connect-hint">
+      Connect a free <strong>Alpaca paper</strong> account to make this page live: your decisions
+      become tradeable simulated orders, and this portfolio tracks what they actually did.
+      Set <code>ALPACA_API_KEY_ID</code>, <code>ALPACA_API_SECRET_KEY</code> (and
+      <code>ALPACA_TRADING_ENABLED=1</code> to allow submissions) in <code>.env</code> and restart.
+    </p>
+    <div class="paper-takeover hidden" id="paper-takeover" role="note">
+      <strong>This portfolio is your Alpaca paper account.</strong>
+      <span>The summary, curve, positions, and orders below are paper numbers; paper fills are a
+        <a href="https://docs.alpaca.markets/us/docs/paper-trading" target="_blank" rel="noopener noreferrer">simulation, not live-trading proof<span aria-hidden="true"> ↗</span><span class="sr-only"> (opens in a new tab)</span></a>.</span>
+      <span id="paper-killswitch" class="killswitch-note hidden" role="status">
+        Submissions are disabled (ALPACA_TRADING_ENABLED); account reads still work.
+      </span>
     </div>
 
-    <div class="portfolio-controls">
-      <details id="pos-filter-drawer" class="filter-drawer" open>
-        <summary>
-          <span>Filters</span>
-          <span id="pos-filter-count" class="filter-count">0</span>
-        </summary>
-        <div class="filters-bar" id="pos-filters-bar">
-          <input id="pos-search" type="search" placeholder="Search ticker" aria-label="Search positions by ticker">
-          <select id="pos-sort" aria-label="Sort positions by">
-            <option value="value">Value (high first)</option>
-            <option value="return">Return (best first)</option>
-            <option value="ticker">Ticker (A to Z)</option>
-            <option value="age">Age (longest held)</option>
-          </select>
-          <button id="pos-sort-dir" class="sort-dir-btn" type="button" aria-label="Reverse sort direction">↓</button>
-        </div>
-        <div id="pos-filter-chips" class="filter-chips" hidden></div>
+    <div class="summary-grid hidden" id="paper-summary">
+      <div class="summary-card" title="Cash in the Alpaca paper account"><div class="sc-label">Cash (paper)</div><div class="sc-value" id="pc-cash">…</div></div>
+      <div class="summary-card" title="Open paper positions at live prices"><div class="sc-label">Positions value</div><div class="sc-value" id="pc-value">…</div></div>
+      <div class="summary-card" title="Cash + positions value"><div class="sc-label">Equity</div><div class="sc-value" id="pc-equity">…</div></div>
+      <div class="summary-card" title="Equity change since the previous close"><div class="sc-label">Last P&L</div><div class="sc-value" id="pc-pnl">…</div></div>
+    </div>
+    <p id="paper-status" class="page-status hidden" role="status" aria-live="polite"></p>
+
+    <section id="equity-card" class="card hidden" aria-labelledby="equity-heading">
+      <div class="card-heading"><h2 id="equity-heading">Paper equity, last month</h2><span class="muted" id="equity-note"></span></div>
+      <div id="equity-chart" class="equity-chart"></div>
+      <details class="equity-table-holder"><summary>Equity values as text</summary>
+        <table id="equity-table">
+          <caption class="sr-only">Paper account equity by day</caption>
+          <thead><tr><th scope="col">Date</th><th scope="col" class="num">Equity</th></tr></thead>
+          <tbody id="equity-tbody"></tbody>
+        </table>
       </details>
-      <button id="export-csv" class="secondary-btn" type="button" aria-label="Download the visible positions as CSV">Download CSV</button>
-    </div>
+    </section>
 
-    <div class="card table-wrap portfolio-table">
-      <table id="positions-table">
-        <caption>Open portfolio positions</caption>
+    <div class="card table-wrap portfolio-table hidden" id="paper-positions-card">
+      <div class="card-heading">
+        <h2>Open paper positions</h2>
+        <button id="download-csv" class="secondary-btn hidden" type="button" aria-label="Download the paper positions as CSV">Download CSV</button>
+      </div>
+      <table id="paper-positions-table">
+        <caption class="sr-only">Open paper positions in the Alpaca paper account</caption>
         <thead>
           <tr>
             <th>Ticker</th>
             <th class="num">Qty</th>
-            <th class="num">Entry</th>
+            <th class="num">Avg entry</th>
             <th class="num">Current</th>
-            <th class="num">Cost</th>
             <th class="num">Value</th>
-            <th class="num">P&L</th>
+            <th class="num">Unrealized P&L</th>
             <th class="num">P&L %</th>
-            <th class="col-added">Added</th>
+          </tr>
+        </thead>
+        <tbody id="paper-positions-body"></tbody>
+      </table>
+      <p class="empty-note hidden" id="paper-empty-note">No open paper positions yet. BUY decisions on the analysis page offer a paper order.</p>
+    </div>
+
+    <div class="card table-wrap portfolio-table hidden" id="orders-card">
+      <table id="orders-table">
+        <caption>Orders placed here (Alpaca paper)</caption>
+        <thead>
+          <tr>
+            <th>Placed</th>
+            <th>Ticker</th>
+            <th>Side</th>
+            <th class="num">Notional</th>
+            <th>Status</th>
+            <th class="num">Filled avg price</th>
+            <th>Decision</th>
             <th>Actions</th>
           </tr>
         </thead>
-        <tbody id="positions-body"></tbody>
+        <tbody id="orders-body"></tbody>
       </table>
-      <p class="empty-note hidden" id="empty-note">
-        No positions yet: add a holding, import a CSV, or use
-        <strong>Add to Demo Portfolio</strong> on a BUY.
-      </p>
-      <p class="empty-note hidden" id="pos-no-match">
-        No positions match the current search. Clear the search to see every holding.
-      </p>
+      <p class="empty-note hidden" id="orders-empty">No orders yet. Paper orders are placed from a finished decision's result card.</p>
     </div>
 
-    <div class="card table-wrap portfolio-table" id="history-card">
-      <table id="history-table">
-        <caption>Closed portfolio positions</caption>
+    <div class="card table-wrap portfolio-table hidden" id="perf-card">
+      <table id="perf-table">
+        <caption>Performance since fill (paper orders vs SPY)</caption>
         <thead>
           <tr>
             <th>Ticker</th>
-            <th class="num">Qty</th>
-            <th class="num">Entry</th>
-            <th class="num">Exit</th>
-            <th class="num">Cost</th>
-            <th class="num">Proceeds</th>
-            <th class="num">Realized P&L</th>
-            <th class="num">P&L %</th>
-            <th class="col-added">Closed</th>
+            <th>Placed</th>
+            <th class="num">Fill price</th>
+            <th class="num">Now</th>
+            <th class="num">Return</th>
+            <th class="num">SPY</th>
+            <th class="num">Alpha</th>
           </tr>
         </thead>
-        <tbody id="history-body"></tbody>
+        <tbody id="perf-body"></tbody>
       </table>
-      <p class="empty-note hidden" id="history-empty">
-        No closed trades yet. Close an open position to see realized P&L here.
-      </p>
+      <p class="empty-note hidden" id="perf-empty">No filled order has a measurable window yet.</p>
     </div>
     </main>
   </div>
 
   <div id="toast" class="toast hidden" role="status" aria-live="polite" aria-atomic="true"></div>
-  <script src="/static/js/portfolio.js?v=4"></script>
+  <script src="/static/js/portfolio.js?v=7"></script>
 </body>
 </html>

@@ -8,24 +8,25 @@ from datetime import date, timedelta
 from pathlib import Path
 
 from fastapi import FastAPI, Header, HTTPException, Query
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
-from app import calibration, chat, memory, portfolio, watchlist
+from app import broker, calibration, chat, memory, watchlist
 from app.config import settings
 from app.discovery import discover_stocks
 from app.models import (
     AnalysisRequest,
     AnalysisResponse,
+    BrokerAccount,
+    BrokerOrder,
+    BrokerOrderRequest,
+    BrokerPosition,
+    BrokerStatus,
     CalibrationTrackRecord,
     CancelRunResponse,
     ClearHistoryResponse,
     ManagerChatRequest,
     ManagerChatResponse,
-    PortfolioAddRequest,
-    PortfolioCloseRequest,
-    PortfolioImportRequest,
-    PortfolioImportResponse,
     RunHistoryItem,
     RunStatus,
     WatchlistAddRequest,
@@ -73,9 +74,9 @@ async def revalidate_assets(request, call_next):
 
 @app.on_event("startup")
 async def startup() -> None:
-    await portfolio.init()
     await memory.init()
     await watchlist.init()
+    await broker.init()
     await store.init()
     mode = "mock (no LLM_API_KEY)" if not settings.llm_configured else settings.llm_model
     logger.info("[startup] BetterTradingAgents ready | llm=%s", mode)
@@ -104,6 +105,12 @@ async def watchlist_page():
 @app.get("/compare")
 async def compare_page():
     return FileResponse(STATIC_DIR / "compare.html")
+
+
+@app.get("/trading")
+async def trading_page():
+    """The paper view merged into the portfolio page (P2.1); keep old links working."""
+    return RedirectResponse("/portfolio", status_code=307)
 
 
 @app.get("/api/health")
@@ -321,38 +328,86 @@ async def manager_chat(run_id: str, request: ManagerChatRequest):
     )
 
 
-@app.get("/api/portfolio")
-async def get_portfolio():
-    return await portfolio.get_portfolio()
+def _broker_http_error(exc: Exception) -> HTTPException:
+    """Map broker-module exceptions to the repo's HTTPException conventions."""
+    if isinstance(exc, broker.BrokerNotConfigured):
+        return HTTPException(status_code=503, detail=str(exc))
+    if isinstance(exc, broker.BrokerRuleError):
+        return HTTPException(status_code=exc.status_code, detail=str(exc))
+    return HTTPException(status_code=503, detail=f"paper trading unavailable: {exc}")
 
 
-@app.post("/api/portfolio/add")
-async def add_position(request: PortfolioAddRequest):
+@app.get("/api/broker/status", response_model=BrokerStatus)
+async def broker_status():
+    return await broker.status()
+
+
+@app.get("/api/broker/account", response_model=BrokerAccount)
+async def broker_account():
     try:
-        position = await portfolio.add_position(
-            request.ticker, request.quantity, request.entry_price
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return position
+        return await broker.account()
+    except (broker.BrokerNotConfigured, broker.BrokerRuleError) as exc:
+        raise _broker_http_error(exc) from exc
 
 
-@app.post("/api/portfolio/import", response_model=PortfolioImportResponse)
-async def import_positions(request: PortfolioImportRequest):
-    return await portfolio.import_positions(request.positions)
-
-
-@app.post("/api/portfolio/close")
-async def close_position(request: PortfolioCloseRequest):
+@app.get("/api/broker/positions", response_model=list[BrokerPosition])
+async def broker_positions():
     try:
-        position = await portfolio.close_position(
-            request.position_id, request.exit_price
+        return await broker.positions()
+    except (broker.BrokerNotConfigured, broker.BrokerRuleError) as exc:
+        raise _broker_http_error(exc) from exc
+
+
+@app.post("/api/broker/orders", response_model=BrokerOrder)
+async def place_broker_order(request: BrokerOrderRequest):
+    """Place one paper order. A recommendation never auto-submits: confirm
+    must be explicitly true, and every guard rail runs server-side."""
+    ticker = request.ticker.strip().upper()
+    if not TICKER_RE.match(ticker):
+        raise HTTPException(status_code=400, detail="invalid ticker symbol")
+    if not request.confirm:
+        raise HTTPException(
+            status_code=400, detail="order not confirmed; set confirm to true"
         )
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except LookupError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    return position
+    try:
+        return await broker.submit_order(
+            request.run_id, ticker, request.side, request.notional
+        )
+    except (broker.BrokerNotConfigured, broker.BrokerRuleError) as exc:
+        raise _broker_http_error(exc) from exc
+
+
+@app.get("/api/broker/orders", response_model=list[BrokerOrder])
+async def list_broker_orders(limit: int = Query(default=50, ge=1, le=100)):
+    try:
+        return await broker.list_orders(limit)
+    except (broker.BrokerNotConfigured, broker.BrokerRuleError) as exc:
+        raise _broker_http_error(exc) from exc
+
+
+@app.get("/api/broker/equity")
+async def broker_equity(period: str = Query(default="1M", pattern="^(1W|1M|3M|1A)$")):
+    try:
+        return await broker.equity(period)
+    except (broker.BrokerNotConfigured, broker.BrokerRuleError) as exc:
+        raise _broker_http_error(exc) from exc
+
+
+@app.get("/api/broker/performance")
+async def broker_performance(limit: int = Query(default=50, ge=1, le=100)):
+    """Per filled paper order: return since fill and alpha vs SPY (P2.1 M5)."""
+    try:
+        return await broker.order_performance(limit)
+    except (broker.BrokerNotConfigured, broker.BrokerRuleError) as exc:
+        raise _broker_http_error(exc) from exc
+
+
+@app.delete("/api/broker/orders/{client_order_id}", response_model=BrokerOrder)
+async def cancel_broker_order(client_order_id: str):
+    try:
+        return await broker.cancel_order(client_order_id)
+    except (broker.BrokerNotConfigured, broker.BrokerRuleError) as exc:
+        raise _broker_http_error(exc) from exc
 
 
 def _require_client(client_id: str | None) -> str:

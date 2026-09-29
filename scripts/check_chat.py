@@ -19,7 +19,7 @@ os.environ["NIXTLA_API_KEY"] = ""
 
 import httpx  # noqa: E402
 
-from app import chat, memory, portfolio, run_history, workflow  # noqa: E402
+from app import broker, chat, memory, run_history, workflow  # noqa: E402
 from app.main import app  # noqa: E402
 from app.models import StockAnalysis  # noqa: E402
 from app.runs import Run, store  # noqa: E402
@@ -97,7 +97,7 @@ def snapshot(ticker: str) -> MarketData:
 
 
 async def e2e():
-    await portfolio.init()
+    await broker.init()
     await memory.init()
     await run_history.init()
 

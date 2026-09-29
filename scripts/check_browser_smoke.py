@@ -22,11 +22,19 @@ import socket
 import tempfile
 import threading
 import time
+from types import SimpleNamespace
 import urllib.request
+import uuid
 
-# Isolate state before app modules read their configuration.
+from alpaca.trading.enums import OrderStatus
+
+# Isolate state before app modules read their configuration. Alpaca keys are
+# cleared too: the smoke must never reach the broker, even when a developer's
+# .env carries real paper keys.
 _DB = Path(tempfile.mkdtemp()) / "browser_smoke_test.db"
 os.environ["DB_PATH"] = str(_DB)
+for _var in ("ALPACA_API_KEY_ID", "ALPACA_API_SECRET_KEY", "ALPACA_API_KEY", "ALPACA_SECRET_KEY", "ALPACA_TRADING_ENABLED"):
+    os.environ[_var] = ""
 
 import uvicorn  # noqa: E402
 
@@ -36,7 +44,6 @@ from app.main import app  # noqa: E402
 from app.models import StockAnalysis  # noqa: E402
 
 TICKER = "SMKE"
-MANUAL_TICKER = "XOM"
 BASE_URL = ""  # set once the server is up
 
 
@@ -270,41 +277,10 @@ def check_analysis_page(page) -> None:
     assert page.locator("svg.price-chart[role='img']").count() == 1, \
         "the chart must expose an accessible name"
 
-    # BUY offers the demo-portfolio add; the confirmation note is a live region.
-    page.click(f"#add-{TICKER}")
-    page.wait_for_selector(f"#added-{TICKER}:not(.hidden)", timeout=10_000)
-    assert page.locator(f"#added-{TICKER}[role='status']").count() == 1
-
     assert not page_errors, f"page raised JS errors: {page_errors}"
     assert_no_page_scroll(page, 320, "analysis page")
     assert_no_page_scroll(page, 640, "analysis page")
     page.set_viewport_size({"width": 1280, "height": 900})
-
-
-def check_portfolio_page(page) -> None:
-    page.goto(f"{BASE_URL}/portfolio", wait_until="networkidle")
-    page.wait_for_selector("#positions-body tr", timeout=10_000)
-    tickers = page.evaluate(
-        "[...document.querySelectorAll('#positions-body strong')].map((n) => n.textContent)"
-    )
-    assert TICKER in tickers, "the demo position added from the results must appear"
-
-    # Manual add with an explicit price stays offline.
-    page.fill("#add-ticker", MANUAL_TICKER)
-    page.fill("#add-shares", "2")
-    page.fill("#add-price", "50")
-    page.click("#add-holding-btn")
-    page.wait_for_function(
-        f"[...document.querySelectorAll('#positions-body strong')].some((n) => n.textContent === '{MANUAL_TICKER}')",
-        timeout=10_000,
-    )
-    close_buttons = page.locator("#positions-body .close-btn")
-    assert close_buttons.count() == 2, "each position needs a Close action"
-    assert page.evaluate(
-        "[...document.querySelectorAll('button')].filter((b) => "
-        "!(b.getAttribute('aria-label') || b.textContent.trim())).length === 0"
-    ), "every button needs an accessible name"
-    assert_no_page_scroll(page, 320, "portfolio page")
 
 
 def check_history_page(page) -> None:
@@ -467,60 +443,6 @@ def check_p1_6_filters_and_exports(page) -> None:
     payload = json.loads(Path(download.path()).read_text(encoding="utf-8"))
     assert payload["run_id"] == first_id, "the JSON download must match the run"
 
-    # ---- portfolio page: search, sort, direction, CSV ----------------------
-    page.goto(f"{BASE_URL}/portfolio", wait_until="networkidle")
-    page.wait_for_selector("#positions-body tr", timeout=10_000)
-
-    page.select_option("#pos-sort", "ticker")
-    tickers = page.evaluate(
-        "[...document.querySelectorAll('#positions-body strong')].map((n) => n.textContent)"
-    )
-    assert tickers == sorted(tickers), f"ticker sort must sort ascending: {tickers}"
-    assert page.evaluate("new URLSearchParams(location.search).get('sort')") == "ticker"
-    page.click("#pos-sort-dir")
-    tickers_desc = page.evaluate(
-        "[...document.querySelectorAll('#positions-body strong')].map((n) => n.textContent)"
-    )
-    assert tickers_desc == sorted(tickers, reverse=True), "direction toggle must reverse the order"
-    assert page.evaluate("new URLSearchParams(location.search).get('dir')") == "desc"
-
-    page.fill("#pos-search", MANUAL_TICKER)
-    page.wait_for_function(
-        f"[...document.querySelectorAll('#positions-body strong')].map((n) => n.textContent)"
-        f".every((t) => t === '{MANUAL_TICKER}') && "
-        f"document.querySelectorAll('#positions-body tr').length === 1",
-        timeout=5_000,
-    )
-    assert "Search: XOM" in page.inner_text("#pos-filter-chips"), "portfolio search must show a chip"
-
-    page.fill("#pos-search", "ZZZZ")
-    page.wait_for_selector("#pos-no-match:not(.hidden)", timeout=5_000)
-    assert page.locator("#positions-body tr").count() == 0
-
-    # The chip's remove button restores the full table, keyboard included.
-    tab_until_focused(page, "#pos-filter-chips .chip-remove")
-    page.keyboard.press("Enter")
-    page.wait_for_function(
-        f"document.querySelectorAll('#positions-body tr').length === {len(tickers)}",
-        timeout=5_000,
-    )
-    assert page.evaluate("document.activeElement.id") == "pos-search"
-
-    # CSV download matches the visible scope: header, rows, and values.
-    visible = page.evaluate(
-        "[...document.querySelectorAll('#positions-body tr')].map((tr) => "
-        "tr.querySelector('strong').textContent)"
-    )
-    with page.expect_download() as csv_info:
-        page.click("#export-csv")
-    csv_download = csv_info.value
-    assert csv_download.suggested_filename == "bta-portfolio-positions.csv"
-    lines = Path(csv_download.path()).read_text(encoding="utf-8").splitlines()
-    assert lines[0] == "Ticker,Quantity,Entry price,Current price,Cost,Value,P&L,P&L %,Added", \
-        f"unexpected CSV header: {lines[0]}"
-    assert [line.split(",")[0] for line in lines[1:]] == visible, \
-        "the CSV must contain exactly the visible rows"
-
     # ---- analysis page: the print brief scopes to one card ------------------
     # The runs API needs this browser's client id; read it from the page origin.
     page.goto(f"{BASE_URL}/history", wait_until="networkidle")
@@ -583,6 +505,274 @@ def check_p1_6_filters_and_exports(page) -> None:
     )
 
 
+def check_paper_portfolio(page) -> None:
+    """P2.1: the paper view lives on the portfolio page. Without keys it is a
+    slim connect hint over the exact legacy view; with faked broker functions
+    the full paper lifecycle renders on one page."""
+    from app.models import BrokerAccount, BrokerOrder, BrokerPosition, BrokerStatus
+
+    # ---- unconfigured: legacy view plus the connect hint ---------------------
+    page.goto(f"{BASE_URL}/portfolio", wait_until="networkidle")
+    assert page.locator("#paper-takeover.hidden").count() == 1, \
+        "no takeover banner while unconfigured"
+    assert page.locator("#paper-summary.hidden").count() == 1, \
+        "no paper summary while unconfigured"
+    assert page.evaluate(
+        "[...document.querySelectorAll('button')].filter((b) => "
+        "!(b.getAttribute('aria-label') || b.textContent.trim())).length === 0"
+    ), "every button needs an accessible name"
+    assert_no_page_scroll(page, 320, "portfolio page unconfigured")
+
+    # Result cards are unaffected: no paper order button without a connection.
+    client_id = page.evaluate("localStorage.getItem('bta:clientId')") or ""
+    request = urllib.request.Request(
+        f"{BASE_URL}/api/runs?limit=5", headers={"X-Client-ID": client_id}
+    )
+    with urllib.request.urlopen(request, timeout=10) as response:
+        run_id = json.load(response)[0]["run_id"]
+    page.goto(f"{BASE_URL}/?run={run_id}", wait_until="networkidle")
+    page.wait_for_selector(".result-card", timeout=10_000)
+    page.click(".result-summary")
+    page.wait_for_selector(".result-detail:not([hidden])", timeout=5_000)
+    assert page.locator(".paper-open-btn").count() == 0, \
+        "no paper order button may render while unconfigured"
+    page.set_viewport_size({"width": 1280, "height": 900})
+
+    # ---- connected: banner, summary, orders lifecycle, review step ----------
+    broker_module = main_module.broker
+    orders = [
+        BrokerOrder(
+            client_order_id="bta-smoke-open0001", run_id=run_id, ticker=TICKER,
+            side="buy", notional=5000.0, status="accepted",
+        ),
+        BrokerOrder(
+            client_order_id="bta-smoke-filled01", run_id=run_id, ticker=TICKER,
+            side="buy", notional=5000.0, status="filled",
+            filled_qty=12.0, filled_avg_price=95.0,
+        ),
+    ]
+    state = {"canceled": False}
+
+    async def fake_status():
+        return BrokerStatus(configured=True, enabled=True, max_order_usd=10000)
+
+    async def fake_account():
+        return BrokerAccount(
+            account_number="PA-SMOKE", status="ACTIVE", equity=101234.56,
+            cash=51234.56, buying_power=202469.12, last_equity=100000.0,
+        )
+
+    async def fake_positions():
+        return [
+            BrokerPosition(
+                symbol=TICKER, quantity=12, avg_entry_price=95.0, current_price=100.0,
+                market_value=1200.0, unrealized_pl=60.0, unrealized_plpc=0.05,
+            )
+        ]
+
+    async def fake_list_orders(limit: int = 50):
+        return list(orders)
+
+    async def fake_cancel_order(client_order_id: str):
+        state["canceled"] = True
+        for index, order in enumerate(orders):
+            if order.client_order_id == client_order_id:
+                orders[index] = order.model_copy(update={"status": "canceled"})
+                return orders[index]
+        raise broker_module.BrokerRuleError("no order", status_code=404)
+
+    async def fake_submit_order(run_id_arg, ticker, side, notional):
+        return BrokerOrder(
+            client_order_id="bta-smoke-submit01", run_id=run_id_arg, ticker=ticker,
+            side=side, notional=notional, status="accepted",
+        )
+
+    fakes = {
+        "status": fake_status,
+        "account": fake_account,
+        "positions": fake_positions,
+        "list_orders": fake_list_orders,
+        "cancel_order": fake_cancel_order,
+        "submit_order": fake_submit_order,
+    }
+    originals = {name: getattr(broker_module, name) for name in fakes}
+    for name, fake in fakes.items():
+        setattr(broker_module, name, fake)
+    try:
+        page.goto(f"{BASE_URL}/portfolio", wait_until="networkidle")
+        page.wait_for_selector("#paper-takeover:not(.hidden)", timeout=10_000)
+        assert page.locator("#paper-connect-hint.hidden").count() == 1, \
+            "the connect hint must hide while connected"
+        assert "$101,234.56" in page.inner_text("#pc-equity"), \
+            "summary cards must show the paper equity"
+        assert page.locator("#paper-killswitch.hidden").count() == 1, \
+            "no kill-switch note while submissions are enabled"
+        assert page.locator("#paper-positions-card:not(.hidden)").count() == 1
+        assert page.locator("#paper-positions-body tr").count() == 1
+
+        assert page.locator("#orders-card:not(.hidden)").count() == 1, \
+            "the merged page must show the order lifecycle"
+        assert page.locator("#orders-body tr").count() == 2, "both orders must render"
+        assert page.locator("#orders-body .status-chip.ok").count() == 1
+        assert page.locator("#orders-body .cancel-btn").count() == 1, \
+            "cancel only on the non-terminal row"
+        link = page.locator("#orders-body a[href*='/?run=']").first
+        assert run_id in (link.get_attribute("href") or ""), "decision link must resolve"
+
+        page.on("dialog", lambda dialog: dialog.accept())
+        page.click("#orders-body .cancel-btn")
+        page.wait_for_function(
+            "document.querySelectorAll('#orders-body .cancel-btn').length === 0",
+            timeout=10_000,
+        )
+        assert state["canceled"], "cancel must call the DELETE path"
+        assert "canceled" in page.inner_text("#orders-body").lower()
+
+        # The BUY result card offers the paper order review step (M2 UI).
+        page.goto(f"{BASE_URL}/?run={run_id}", wait_until="networkidle")
+        page.wait_for_selector(".result-card", timeout=10_000)
+        page.click(".result-summary")
+        page.wait_for_selector(".paper-open-btn", timeout=10_000)
+        page.click(".paper-open-btn")
+        page.wait_for_selector(f"#paper-review-{TICKER}:not(.hidden)", timeout=10_000)
+        assert page.is_disabled(f"#paper-place-{TICKER}"), \
+            "place must stay disabled until the review checkbox is checked"
+        page.check(f"#paper-confirm-{TICKER}")
+        assert not page.is_disabled(f"#paper-place-{TICKER}")
+        page.click(f"#paper-place-{TICKER}")
+        page.wait_for_function(
+            "(ticker) => document.querySelector(`#paper-status-${ticker}`)?.textContent.includes('accepted')",
+            arg=TICKER,
+            timeout=10_000,
+        )
+        status_line = page.inner_text(f"#paper-status-{TICKER}")
+        assert "accepted" in status_line, f"placement status must show: {status_line}"
+        assert "/portfolio" in page.content(), "placement must link the portfolio page"
+        assert_no_page_scroll(page, 320, "analysis page with paper order")
+        page.set_viewport_size({"width": 1280, "height": 900})
+    finally:
+        for name, original in originals.items():
+            setattr(broker_module, name, original)
+
+    # ---- real broker path: replay, equity curve, performance -----------------
+    # The client seam and price fetch are faked, so replay exercises the real
+    # guard rails, insert-before-POST, and position stamping, all offline.
+    from app.tools import market_data as smoke_market_data
+
+    class _SmokeBrokerClient:
+        def get_account(self):
+            return SimpleNamespace(
+                account_number="PA-SMOKE", status="ACTIVE", equity="101234.56",
+                cash="51234.56", buying_power="202469.12", last_equity="100000.00",
+                trading_blocked=False,
+            )
+
+        def get_all_positions(self):
+            return [
+                SimpleNamespace(
+                    symbol=TICKER, qty="12", avg_entry_price="95.00",
+                    current_price="100.00", market_value="1200.00",
+                    unrealized_pl="60.00", unrealized_plpc="0.05",
+                )
+            ]
+
+        def submit_order(self, order_data):
+            # Paper market orders fill immediately: the replay lands as filled.
+            return SimpleNamespace(
+                id=uuid.uuid4(), status=OrderStatus.FILLED,
+                filled_qty="12", filled_avg_price="100.00",
+            )
+
+        def get_order_by_client_id(self, client_order_id):
+            return SimpleNamespace(
+                id=uuid.uuid4(), status=OrderStatus.FILLED,
+                filled_qty="12", filled_avg_price="100.00",
+            )
+
+        def get_portfolio_history(self, history_filter=None):
+            return SimpleNamespace(
+                timestamp=[0, 86400], equity=[100000.0, 101000.0],
+                profit_loss=[0.0, 1000.0], profit_loss_pct=[0.0, 0.01],
+            )
+
+    async def fake_smoke_price(ticker: str):
+        return 100.0
+
+    async def fake_smoke_closes(ticker: str, start: str, end: str):
+        return {"2026-01-01": 100.0, "2099-01-01": 101.0}
+
+    # The real guard rails read settings directly, so the smoke configures the
+    # feature with throwaway values; the client seam keeps every HTTP call off.
+    smoke_settings = main_module.settings
+    original_keys = (smoke_settings.alpaca_api_key_id, smoke_settings.alpaca_api_secret_key, smoke_settings.alpaca_trading_enabled)
+    smoke_settings.alpaca_api_key_id = "PKSMOKEKEY"
+    smoke_settings.alpaca_api_secret_key = "smoke-secret-value"
+    smoke_settings.alpaca_trading_enabled = True
+    original_status = broker_module.status
+    original_client = broker_module._client
+    original_price = smoke_market_data.get_current_price
+    original_closes = smoke_market_data.get_closes_between
+
+    async def fake_smoke_status():
+        return BrokerStatus(configured=True, enabled=True, max_order_usd=10000)
+
+    broker_module.status = fake_smoke_status
+    broker_module._client = lambda: _SmokeBrokerClient()
+    smoke_market_data.get_current_price = fake_smoke_price
+    smoke_market_data.get_closes_between = fake_smoke_closes
+    try:
+        # A filled order row so the performance card has data (no replay anymore).
+        broker_module._insert_order(
+            "bta-smoke-seed01", run_id, TICKER, "buy", 5000.0, "BUY", 0.6,
+            datetime.now(timezone.utc).isoformat(),
+        )
+        broker_module._update_from_remote_order(
+            "bta-smoke-seed01",
+            SimpleNamespace(
+                id=uuid.uuid4(), status=OrderStatus.FILLED, filled_qty="12",
+                filled_avg_price="100.00",
+            ),
+        )
+        page.goto(f"{BASE_URL}/portfolio", wait_until="networkidle")
+        page.wait_for_selector("#paper-takeover:not(.hidden)", timeout=10_000)
+        assert "$101,234.56" in page.inner_text("#pc-equity"), \
+            "summary cards must show the paper equity"
+        assert page.locator("#paper-positions-card:not(.hidden)").count() == 1
+        assert page.locator("#paper-positions-body tr").count() == 1
+        assert page.evaluate(
+            "[...document.querySelectorAll('button')].filter((b) => "
+            "!(b.getAttribute('aria-label') || b.textContent.trim())).length === 0"
+        ), "every button needs an accessible name"
+        assert_no_page_scroll(page, 320, "portfolio page paper view")
+
+        # ---- the paper portfolio downloads as CSV ------------------------------
+        with page.expect_download() as csv_info:
+            page.click("#download-csv")
+        csv_download = csv_info.value
+        assert csv_download.suggested_filename == "bta-paper-portfolio.csv", \
+            csv_download.suggested_filename
+        lines = Path(csv_download.path()).read_text(encoding="utf-8").splitlines()
+        assert lines[0] == "Ticker,Quantity,Avg entry price,Current price,Value,Unrealized P&L,P&L %", \
+            f"unexpected CSV header: {lines[0]}"
+        assert len(lines) == 2, f"one open position must export one row: {lines}"
+
+        # ---- equity curve and per-order alpha on the same page ----------------
+        page.wait_for_selector("#equity-card:not(.hidden)", timeout=10_000)
+        assert page.locator("#equity-chart svg polyline").count() == 1, \
+            "the equity curve must render as an inline SVG"
+        assert page.locator("#equity-table tbody tr").count() == 2, \
+            "every equity mark must also be stated as text"
+        page.wait_for_selector("#perf-card:not(.hidden)", timeout=10_000)
+        assert page.locator("#perf-body tr").count() >= 1, \
+            "filled orders must show return since fill and alpha"
+    finally:
+        broker_module.status = original_status
+        broker_module._client = original_client
+        smoke_market_data.get_current_price = original_price
+        smoke_market_data.get_closes_between = original_closes
+        smoke_settings.alpaca_api_key_id, smoke_settings.alpaca_api_secret_key, smoke_settings.alpaca_trading_enabled = original_keys
+
+
 def main() -> None:
     try:
         from playwright.sync_api import sync_playwright
@@ -618,10 +808,10 @@ def main() -> None:
             try:
                 page = browser.new_page(viewport={"width": 1280, "height": 900})
                 check_analysis_page(page)
-                check_portfolio_page(page)
                 check_history_page(page)
                 check_compare_page(page)
                 check_p1_6_filters_and_exports(page)
+                check_paper_portfolio(page)
             finally:
                 browser.close()
     finally:
