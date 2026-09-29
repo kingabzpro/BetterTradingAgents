@@ -86,6 +86,10 @@ flowchart LR
     PM --> RISK["🛡️ Risk gate<br/>vol-scaled size · exposure caps · forecast check"]
     RISK --> RESULT["✅ BUY · HOLD · SELL<br/>confidence + size + reasoning trail"]
     RESULT --> CHAT["💬 Chat with the manager<br/>grounded in this run, you decide"]
+    RESULT --> ORDER["🧾 Paper order<br/>review step, explicit confirm"]
+    ORDER --> BROKER["🛡️ Alpaca paper adapter<br/>server-side guards · client_order_id idempotency"]
+    BROKER --> PAPER["🟢 Alpaca paper account<br/>simulated fills, never live"]
+    PAPER --> PORT["📊 Portfolio page<br/>equity curve · order lifecycle<br/>return + alpha vs SPY"]
 ```
 
 The whole pipeline runs concurrently, tickers included, and ends in a conversation: the
@@ -243,6 +247,9 @@ settings most people touch:
 | `NIXTLA_API_KEY` | Not set | Nixtla TimeGPT 5-day forecast; falls back to the local trend model |
 | `MAX_TICKERS` | `5` | Maximum tickers accepted in one analysis |
 | `STREAM_REASONING` | `0` | `1` streams agent tokens to the UI live (off by default) |
+| `ALPACA_API_KEY_ID` | Not set | Alpaca **paper** key; enables paper trading (feature is dormant without it) |
+| `ALPACA_API_SECRET_KEY` | Not set | Alpaca **paper** secret; stays server-side, never returned by an endpoint |
+| `ALPACA_TRADING_ENABLED` | `0` | Kill switch: `1` allows order submissions, `0` is read-only |
 
 Per-role model splits, cost-estimate overrides, risk-gate caps, decision memory, and
 backtest cache settings are documented in the wiki's
@@ -261,6 +268,8 @@ The core endpoints:
 | `POST` | `/api/runs/{run_id}/cancel` | Cancel a running analysis, keeping finished ticker results |
 | `POST` | `/api/runs/{run_id}/chat` | Ask the portfolio manager follow-up questions |
 | `GET` | `/api/portfolio` | List positions with live prices and profit/loss |
+| `GET` | `/api/broker/account` | Read the Alpaca paper account (equity, cash, buying power) |
+| `POST` | `/api/broker/orders` | Place one paper order from a decision (explicit `confirm`, server-side guards) |
 | `GET` | `/api/health` | Check configuration and provider status |
 
 ```bash
