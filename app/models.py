@@ -409,6 +409,7 @@ class BrokerStatus(BaseModel):
     configured: bool = False
     enabled: bool = False
     paper_url: str = "https://docs.alpaca.markets/us/docs/paper-trading"
+    max_order_usd: float = 0.0  # 0 = no cap recorded (unconfigured)
 
 
 class BrokerAccount(BaseModel):

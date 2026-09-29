@@ -18,6 +18,8 @@ from app.models import (
     AnalysisRequest,
     AnalysisResponse,
     BrokerAccount,
+    BrokerOrder,
+    BrokerOrderRequest,
     BrokerPosition,
     BrokerStatus,
     CalibrationTrackRecord,
@@ -385,6 +387,33 @@ async def broker_account():
 async def broker_positions():
     try:
         return await broker.positions()
+    except (broker.BrokerNotConfigured, broker.BrokerRuleError) as exc:
+        raise _broker_http_error(exc) from exc
+
+
+@app.post("/api/broker/orders", response_model=BrokerOrder)
+async def place_broker_order(request: BrokerOrderRequest):
+    """Place one paper order. A recommendation never auto-submits: confirm
+    must be explicitly true, and every guard rail runs server-side."""
+    ticker = request.ticker.strip().upper()
+    if not TICKER_RE.match(ticker):
+        raise HTTPException(status_code=400, detail="invalid ticker symbol")
+    if not request.confirm:
+        raise HTTPException(
+            status_code=400, detail="order not confirmed; set confirm to true"
+        )
+    try:
+        return await broker.submit_order(
+            request.run_id, ticker, request.side, request.notional
+        )
+    except (broker.BrokerNotConfigured, broker.BrokerRuleError) as exc:
+        raise _broker_http_error(exc) from exc
+
+
+@app.delete("/api/broker/orders/{client_order_id}", response_model=BrokerOrder)
+async def cancel_broker_order(client_order_id: str):
+    try:
+        return await broker.cancel_order(client_order_id)
     except (broker.BrokerNotConfigured, broker.BrokerRuleError) as exc:
         raise _broker_http_error(exc) from exc
 

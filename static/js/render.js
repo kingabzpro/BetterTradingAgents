@@ -8,6 +8,7 @@ import { activeAgents, depthProfile } from "./options.js";
 import { state } from "./state.js";
 import { addToPortfolio } from "./portfolio-actions.js";
 import { saveToWatchlist } from "./watchlist-actions.js";
+import { attachPaperOrder } from "./broker-actions.js";
 import { loadPriceChart } from "./price-chart.js";
 import { retryTicker } from "./tickers.js";
 import { sendChatMessage, setChatOpen, toggleChat } from "./chat.js";
@@ -426,6 +427,11 @@ export function renderResultCard(analysis) {
   card.querySelector(".retry-btn").addEventListener("click", () => retryTicker(ticker));
   card.querySelector(".print-btn").addEventListener("click", () => printBrief(card));
   if (canAdd) $(`add-${ticker}`).addEventListener("click", () => addToPortfolio(ticker, Number(analysis.price)));
+  // Paper order review step (P2.1): offered on non-error BUY calls, and on
+  // SELL when the paper account holds the ticker. Appends itself only then.
+  if (!analysis.error) {
+    attachPaperOrder(card.querySelector(".result-actions"), analysis, state.runId || "");
+  }
   if (!analysis.error && $(`watch-${ticker}`)) {
     $(`watch-${ticker}`).addEventListener("click", () => {
       const runId = state.runId || "";

@@ -655,3 +655,28 @@
   .decision-brief, .result-detail { border-top: 0 !important; }
   .chart-summary { display: none !important; }
 }
+
+/* Paper order review step (ROADMAP P2.1): inline, between review and place. */
+.paper-order { width: 100%; margin-top: 10px; }
+.paper-order .paper-row { align-items: center; }
+.paper-review {
+  margin-top: 10px; padding: 14px 16px;
+  border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 10px;
+  background: rgba(255, 255, 255, 0.02);
+  display: flex; flex-direction: column; gap: 12px;
+}
+.paper-review[hidden], .paper-review.hidden { display: none; }
+.paper-facts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+.paper-facts span, .paper-facts small {
+  display: block; color: var(--muted); font-size: 10px; line-height: 1.45;
+}
+.paper-facts span { margin-bottom: 3px; text-transform: uppercase; font-weight: 700; letter-spacing: 0.07em; }
+.paper-facts strong { display: block; color: #edf1f8; font-size: 13px; line-height: 1.4; overflow-wrap: anywhere; }
+.paper-facts small { margin-top: 3px; }
+.paper-confirm { display: flex; align-items: center; gap: 8px; font-size: 13px; color: #b9c1d0; cursor: pointer; }
+.paper-confirm input { width: 16px; height: 16px; accent-color: #10c973; }
+.paper-status { margin: 0; font-size: 13px; color: #6fe0a0; }
+.paper-status:empty { display: none; }
+@media (max-width: 620px) {
+  .paper-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
