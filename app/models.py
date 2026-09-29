@@ -305,6 +305,7 @@ class PortfolioPosition(BaseModel):
     exit_price: float | None = None
     closed_at: str | None = None
     external: bool = False  # tracked holding (manual entry / CSV import), not demo cash
+    replay_client_order_id: str | None = None  # set once replayed into the paper account
 
 
 class PortfolioSummary(BaseModel):

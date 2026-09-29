@@ -14,21 +14,56 @@ async function loadPortfolio() {
     const response = await fetch("/api/portfolio");
     if (!response.ok) throw new Error(`failed (${response.status})`);
     const data = await response.json();
-    render(data);
+    // Paper takeover (P2.1): once an Alpaca paper account is configured it
+    // becomes the primary record; a broker read failure keeps the legacy view.
+    let paper = null;
+    try {
+      const status = await fetch("/api/broker/status").then((r) => (r.ok ? r.json() : null));
+      if (status && status.configured) {
+        const [account, positions] = await Promise.all([
+          fetch("/api/broker/account").then((r) => (r.ok ? r.json() : null)),
+          fetch("/api/broker/positions").then((r) => (r.ok ? r.json() : [])),
+        ]);
+        if (account) paper = { status, account, positions: positions || [] };
+      }
+    } catch (_) {
+      paper = null;
+    }
+    paperMode = Boolean(paper);
+    render(data, paper);
   } catch (error) {
     showToast(`Could not load portfolio: ${error.message}`, true);
   }
 }
 
 let lastData = null;
+let paperMode = false;
 // Position search + sort state, mirrored to the URL (ROADMAP P1.6). Filtering
 // and sorting never touch the server. Each sort key has a natural default
 // direction that matches its option label ("Ticker (A to Z)", etc.).
 const posState = { q: "", sort: "value", dir: "desc" };
 const DEFAULT_DIR = { value: "desc", return: "desc", ticker: "asc", age: "asc" };
 
-function render(data) {
-  lastData = data;
+const DEMO_LABELS = {
+  "sc-cash-card": "Cash remaining",
+  "sc-value-card": "Positions value",
+  "sc-equity-card": "Total equity",
+  "sc-pnl-card": "Total P&L",
+};
+
+function setLabel(cardId, text) {
+  const card = $(cardId);
+  if (card) card.querySelector(".sc-label").textContent = text;
+}
+
+function renderDemoSummary(data) {
+  $("paper-takeover").classList.add("hidden");
+  $("paper-positions-card").classList.add("hidden");
+  $("backup-heading").classList.add("hidden");
+  $("backup-ledger").classList.remove("backup-mode");
+  $("sc-start-card").classList.remove("hidden");
+  $("sc-realized-card").classList.remove("hidden");
+  for (const [id, label] of Object.entries(DEMO_LABELS)) setLabel(id, label);
   $("sc-start").textContent = fmt(data.starting_cash);
   $("sc-cash").textContent = fmt(data.cash);
   $("sc-value").textContent = fmt(data.positions_value);
@@ -44,6 +79,59 @@ function render(data) {
     ? `Live price unavailable for ${data.unpriced_count} position${data.unpriced_count === 1 ? "" : "s"}; totals exclude ${data.unpriced_count === 1 ? "it" : "them"}.`
     : "";
   note.classList.toggle("hidden", !data.unpriced_count);
+}
+
+// Paper numbers take over the summary cards; the demo-only cards drop out.
+function renderPaperSummary(paper) {
+  $("paper-takeover").classList.remove("hidden");
+  $("paper-positions-card").classList.remove("hidden");
+  $("backup-heading").classList.remove("hidden");
+  $("backup-ledger").classList.add("backup-mode");
+  $("sc-start-card").classList.add("hidden");
+  $("sc-realized-card").classList.add("hidden");
+  setLabel("sc-cash-card", "Cash (paper)");
+  setLabel("sc-value-card", "Positions value (paper)");
+  setLabel("sc-equity-card", "Equity (paper)");
+  setLabel("sc-pnl-card", "Last P&L (paper)");
+  const { account, positions } = paper;
+  $("sc-cash").textContent = fmt(account.cash);
+  const knownValue = positions.reduce((sum, position) => sum + Number(position.market_value || 0), 0);
+  $("sc-value").textContent = fmt(knownValue);
+  $("sc-equity").textContent = fmt(account.equity);
+  const lastPnl = account.equity != null && account.last_equity != null
+    ? account.equity - account.last_equity
+    : null;
+  const pnl = $("sc-pnl");
+  pnl.textContent = fmt(lastPnl);
+  pnl.className = `sc-value ${lastPnl == null ? "" : lastPnl >= 0 ? "green" : "red"}`;
+  $("unpriced-note").classList.add("hidden");
+  $("replay-all-btn").classList.toggle("hidden", !paper.status.enabled);
+  renderPaperPositions(positions);
+}
+
+function renderPaperPositions(positions) {
+  const body = $("paper-positions-body");
+  body.innerHTML = "";
+  $("paper-empty-note").classList.toggle("hidden", positions.length > 0);
+  for (const position of positions) {
+    const pnlClass = position.unrealized_pl == null ? "" : position.unrealized_pl >= 0 ? "pnl-green" : "pnl-red";
+    const row = document.createElement("tr");
+    row.innerHTML = `
+      <td data-label="Ticker"><strong>${esc(position.symbol)}</strong></td>
+      <td class="num" data-label="Qty">${position.quantity % 1 === 0 ? position.quantity : position.quantity.toFixed(4)}</td>
+      <td class="num" data-label="Avg entry">${fmt(position.avg_entry_price)}</td>
+      <td class="num" data-label="Current">${fmt(position.current_price)}</td>
+      <td class="num" data-label="Value">${fmt(position.market_value)}</td>
+      <td class="num ${pnlClass}" data-label="Unrealized P&amp;L">${fmt(position.unrealized_pl)}</td>
+      <td class="num ${pnlClass}" data-label="P&amp;L %">${position.unrealized_plpc == null ? "n/a" : `${position.unrealized_plpc >= 0 ? "+" : ""}${(Number(position.unrealized_plpc) * 100).toFixed(2)}%`}</td>`;
+    body.appendChild(row);
+  }
+}
+
+function render(data, paper = null) {
+  lastData = data;
+  if (paper) renderPaperSummary(paper);
+  else renderDemoSummary(data);
   renderPositions();
 }
 
@@ -84,9 +172,16 @@ function renderPositions() {
     const tracked = position.external
       ? '<span class="src-tag" title="Tracked holding: added manually or imported; does not use demo cash">tracked</span>'
       : "";
+    // Replay actions only exist while a paper account is the primary view.
+    const replay = paperMode && !position.replay_client_order_id
+      ? `<button class="replay-btn" type="button" title="Place a paper BUY at this position's current live value" data-replay-id="${position.id}" data-replay-ticker="${esc(position.ticker)}">Replay</button>`
+      : "";
+    const replayed = position.replay_client_order_id
+      ? '<span class="src-tag" title="Replayed into the Alpaca paper account">replayed</span>'
+      : "";
     const row = document.createElement("tr");
     row.innerHTML = `
-      <td data-label="Ticker"><strong>${esc(position.ticker)}</strong>${tracked}</td>
+      <td data-label="Ticker"><strong>${esc(position.ticker)}</strong>${tracked}${replayed}</td>
       <td class="num" data-label="Quantity">${position.quantity % 1 === 0 ? position.quantity : position.quantity.toFixed(4)}</td>
       <td class="num" data-label="Entry">${fmt(position.entry_price)}</td>
       <td class="num" data-label="Current">${fmt(position.current_price)}</td>
@@ -95,11 +190,14 @@ function renderPositions() {
       <td class="num ${pnlClass}" data-label="P&amp;L">${fmt(position.pnl)}</td>
       <td class="num ${pnlClass}" data-label="P&amp;L %">${position.pnl_pct == null ? "n/a" : `${position.pnl_pct >= 0 ? "+" : ""}${position.pnl_pct}%`}</td>
       <td class="muted col-added" data-label="Added">${esc(position.added_at || "")}</td>
-      <td data-label="Action"><button class="close-btn" type="button" title="Close the entire position at the live price" data-close-id="${position.id}" data-close-ticker="${esc(position.ticker)}">Close</button></td>`;
+      <td data-label="Action">${replay}<button class="close-btn" type="button" title="Close the entire position at the live price" data-close-id="${position.id}" data-close-ticker="${esc(position.ticker)}">Close</button></td>`;
     body.appendChild(row);
   }
   body.querySelectorAll("[data-close-id]").forEach((button) => {
     button.addEventListener("click", () => closePosition(Number(button.dataset.closeId), button.dataset.closeTicker));
+  });
+  body.querySelectorAll("[data-replay-id]").forEach((button) => {
+    button.addEventListener("click", () => replayPosition(Number(button.dataset.replayId), button.dataset.replayTicker));
   });
   syncPosChips();
 
@@ -220,6 +318,54 @@ function downloadFile(name, blob) {
   link.click();
   link.remove();
   window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+/* ---------- replay into the paper account (P2.1) ---------- */
+
+const REPLAY_DISCLOSURE =
+  "A market BUY is placed at the live simulated price, so the paper cost basis will differ from the local entry price. " +
+  "Demo cash is not transferable: the paper account keeps its own starting balance, and only open long positions replay.";
+
+async function replayOne(position) {
+  try {
+    const response = await fetch("/api/broker/replay", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ position_id: position.id }),
+    });
+    const body = await response.json().catch(() => null);
+    if (!response.ok) throw new Error(body?.detail || `failed (${response.status})`);
+    return `${position.ticker}: replayed (order ${body.status})`;
+  } catch (error) {
+    return `${position.ticker}: skipped, ${error.message}`;
+  }
+}
+
+function showReplaySummary(lines) {
+  const box = $("replay-summary");
+  box.classList.remove("hidden");
+  box.innerHTML = `<strong>Replay result</strong><ul>${lines.map((line) => `<li>${esc(line)}</li>`).join("")}</ul>`;
+}
+
+async function replayPosition(id, ticker) {
+  if (!window.confirm(`Replay the ${ticker} position into the paper account?\n\n${REPLAY_DISCLOSURE}`)) return;
+  const row = lastData.positions.find((position) => position.id === id);
+  if (!row) return;
+  showReplaySummary([await replayOne(row)]);
+  loadPortfolio();
+}
+
+async function replayAll() {
+  const pending = lastData.positions.filter((position) => !position.replay_client_order_id);
+  if (!pending.length) {
+    showToast("Every open position is already replayed.");
+    return;
+  }
+  if (!window.confirm(`Replay ${pending.length} open position${pending.length === 1 ? "" : "s"} into the paper account?\n\n${REPLAY_DISCLOSURE}`)) return;
+  const lines = [];
+  for (const row of pending) lines.push(await replayOne(row));
+  showReplaySummary(lines);
+  loadPortfolio();
 }
 
 /* ---------- manual add ---------- */
@@ -406,6 +552,7 @@ function showToast(message, isError = false) {
 
 document.addEventListener("DOMContentLoaded", () => {
   $("add-holding-btn").addEventListener("click", addHolding);
+  $("replay-all-btn").addEventListener("click", replayAll);
   $("csv-pick-btn").addEventListener("click", () => $("csv-file").click());
   $("csv-file").addEventListener("change", onCsvChosen);
   restorePosState();

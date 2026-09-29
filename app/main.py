@@ -21,6 +21,7 @@ from app.models import (
     BrokerOrder,
     BrokerOrderRequest,
     BrokerPosition,
+    BrokerReplayRequest,
     BrokerStatus,
     CalibrationTrackRecord,
     CancelRunResponse,
@@ -420,6 +421,21 @@ async def place_broker_order(request: BrokerOrderRequest):
 async def list_broker_orders(limit: int = Query(default=50, ge=1, le=100)):
     try:
         return await broker.list_orders(limit)
+    except (broker.BrokerNotConfigured, broker.BrokerRuleError) as exc:
+        raise _broker_http_error(exc) from exc
+
+
+@app.post("/api/broker/replay", response_model=BrokerOrder)
+async def replay_broker_position(request: BrokerReplayRequest):
+    """Replay one open local position into the paper account (origin=replay).
+
+    Idempotent per position: the deterministic client_order_id is persisted
+    before the POST, so repeated clicks or timeout retries never double-order.
+    Skipped positions come back as errors with the reason; the caller reports
+    them in a summary instead of dropping them silently.
+    """
+    try:
+        return await broker.replay_position(request.position_id)
     except (broker.BrokerNotConfigured, broker.BrokerRuleError) as exc:
         raise _broker_http_error(exc) from exc
 

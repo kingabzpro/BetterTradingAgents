@@ -122,3 +122,37 @@
   .manage-col:first-child .manage-row #add-price,
   .manage-col:first-child .manage-row .add-btn { grid-column: 1 / -1; width: 100%; }
 }
+
+/* Paper takeover and local replay (ROADMAP P2.1). */
+.paper-takeover {
+  display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: baseline;
+  margin-bottom: 16px; padding: 11px 14px;
+  border: 1px solid rgba(16, 201, 115, 0.4); border-radius: 10px;
+  background: rgba(16, 201, 115, 0.07); color: #6fe0a0; font-size: 13px; line-height: 1.5;
+}
+.paper-takeover a { color: #6fe0a0; text-decoration: underline; }
+
+.backup-heading {
+  display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center;
+  justify-content: space-between; margin: 6px 0 14px;
+}
+.backup-heading strong { display: block; font-size: 14px; }
+.backup-heading span { display: block; color: var(--muted); font-size: 12px; }
+.backup-ledger.backup-mode {
+  border: 1px dashed var(--border-strong, rgba(255, 255, 255, 0.18));
+  border-radius: 12px; padding: 14px 14px 6px; margin-bottom: 18px;
+}
+.backup-ledger.backup-mode .backup-heading.hidden { display: none; }
+
+.replay-btn {
+  border: 1px solid rgba(16, 201, 115, 0.45); border-radius: 8px; cursor: pointer;
+  background: transparent; color: #6fe0a0; font-size: 12px; font-weight: 600; padding: 5px 11px;
+  margin-right: 6px;
+}
+.replay-btn:hover { background: rgba(16, 201, 115, 0.1); }
+
+.replay-summary {
+  margin: 0 0 14px; padding: 10px 14px; font-size: 13px; line-height: 1.6;
+  border: 1px solid var(--border); border-radius: 10px; background: rgba(255, 255, 255, 0.02);
+}
+.replay-summary ul { margin: 6px 0 0; padding-left: 18px; }

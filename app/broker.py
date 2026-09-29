@@ -235,6 +235,13 @@ def _get_order_row(client_order_id: str) -> sqlite3.Row | None:
         ).fetchone()
 
 
+def _delete_order_row(client_order_id: str) -> None:
+    with _connect() as connection:
+        connection.execute(
+            "DELETE FROM broker_orders WHERE client_order_id = ?", (client_order_id,)
+        )
+
+
 def _has_active_order(run_id: str, ticker: str, side: str) -> bool:
     with _connect() as connection:
         row = connection.execute(
@@ -429,6 +436,14 @@ async def submit_order(run_id: str, ticker: str, side: str, notional: float) -> 
         analysis.confidence,
         analysis.as_of,
     )
+    return await _submit_market_order(client_order_id, ticker, side, notional)
+
+
+async def _submit_market_order(
+    client_order_id: str, ticker: str, side: str, notional: float
+) -> BrokerOrder:
+    """POST one market/day notional order and settle the local row from the
+    response. The caller must have inserted the row before this runs."""
 
     def _submit():
         return _client().submit_order(
@@ -464,6 +479,100 @@ async def submit_order(run_id: str, ticker: str, side: str, notional: float) -> 
     await asyncio.to_thread(_update_from_remote_order, client_order_id, order)
     row = await asyncio.to_thread(_get_order_row, client_order_id)
     return _row_to_order(row)  # type: ignore[arg-type]
+
+
+async def replay_position(position_id: int) -> BrokerOrder:
+    """Replay one open local demo position into the paper account.
+
+    Places a market/day notional BUY at the position's current live value,
+    with origin='replay' and a deterministic client_order_id persisted before
+    the POST, so a repeated click or a timeout retry cannot double-order.
+    Skips are raised as BrokerRuleError so the caller can report the reason;
+    the local history is never erased.
+    """
+    from app import portfolio as demo_portfolio
+    from app.tools.market_data import get_current_price
+
+    if not settings.alpaca_configured:
+        raise BrokerNotConfigured(
+            "Alpaca paper trading is not configured; set ALPACA_API_KEY_ID "
+            "and ALPACA_API_SECRET_KEY in .env and restart"
+        )
+    if not settings.alpaca_trading_enabled:
+        raise BrokerRuleError(
+            "paper order submissions are disabled (ALPACA_TRADING_ENABLED)",
+            status_code=403,
+        )
+
+    row = await asyncio.to_thread(demo_portfolio._select_open_row, position_id)
+    if row is None:
+        raise BrokerRuleError(
+            f"no open local position with id {position_id}", status_code=404
+        )
+    ticker = row["ticker"]
+    client_order_id = f"bta-replay-{position_id}"
+    if row["replay_client_order_id"]:
+        raise BrokerRuleError(
+            f"{ticker} has already been replayed into the paper account",
+            status_code=409,
+        )
+
+    snapshot = await account()
+    if snapshot.status != "ACTIVE" or snapshot.trading_blocked:
+        raise BrokerRuleError(
+            "the paper account is not open for trading", status_code=403
+        )
+
+    existing = await asyncio.to_thread(_get_order_row, client_order_id)
+    if existing is not None:
+        if existing["status"] == "rejected":
+            # A rejected replay may be retried; the failed row is replaced.
+            await asyncio.to_thread(_delete_order_row, client_order_id)
+        else:
+            # The POST already happened (or is in flight); heal the stamp and
+            # never issue a second order for the same position.
+            await asyncio.to_thread(
+                demo_portfolio.stamp_replayed, position_id, client_order_id
+            )
+            raise BrokerRuleError(
+                f"{ticker} has already been replayed into the paper account",
+                status_code=409,
+            )
+
+    live = await get_current_price(ticker)
+    if live is None or live <= 0:
+        raise BrokerRuleError(f"no valid price available for '{ticker}'")
+    notional = round(row["quantity"] * live, 2)
+    if notional > settings.alpaca_max_order_usd:
+        raise BrokerRuleError(
+            f"position value {notional:,.2f} USD is over the per-order cap "
+            f"({settings.alpaca_max_order_usd:,.0f}); skipped, not scaled down"
+        )
+    if _non_rejected_orders_today() >= settings.alpaca_max_orders_per_day:
+        raise BrokerRuleError(
+            f"daily paper order cap reached ({settings.alpaca_max_orders_per_day})",
+            status_code=429,
+        )
+
+    await asyncio.to_thread(
+        _insert_order,
+        client_order_id,
+        "",  # no originating run: a replay of a local position
+        ticker,
+        "buy",
+        notional,
+        "",
+        None,
+        "",
+        origin="replay",
+        local_position_id=position_id,
+    )
+    order = await _submit_market_order(client_order_id, ticker, "buy", notional)
+    if order.status != "rejected":
+        await asyncio.to_thread(
+            demo_portfolio.stamp_replayed, position_id, client_order_id
+        )
+    return order
 
 
 def _update_from_remote_order(client_order_id: str, order) -> None:

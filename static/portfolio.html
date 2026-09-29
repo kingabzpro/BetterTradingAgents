@@ -12,7 +12,7 @@
   <link rel="icon" type="image/png" href="/static/favicon.png?v=2">
   <link rel="apple-touch-icon" href="/static/favicon.png?v=2">
   <link rel="stylesheet" href="/static/css/base.css?v=4">
-  <link rel="stylesheet" href="/static/css/portfolio.css?v=4">
+  <link rel="stylesheet" href="/static/css/portfolio.css?v=5">
 </head>
 <body>
   <a class="skip-link" href="#main-content">Skip to content</a>
@@ -36,15 +36,50 @@
     </header>
 
     <main id="main-content" tabindex="-1">
+    <div class="paper-takeover hidden" id="paper-takeover" role="note">
+      <strong>This portfolio now lives in your Alpaca paper account.</strong>
+      <span>The summary and open positions below are paper numbers.
+        <a href="/trading">Open the trading page</a> for orders, equity, and performance.</span>
+    </div>
+
     <div class="summary-grid" id="summary-grid">
-      <div class="summary-card" title="The simulation's starting balance"><div class="sc-label">Starting cash</div><div class="sc-value" id="sc-start">…</div></div>
-      <div class="summary-card" title="Demo trading cash: starting cash − simulated buys + sell proceeds (tracked holdings excluded)"><div class="sc-label">Cash remaining</div><div class="sc-value" id="sc-cash">…</div></div>
-      <div class="summary-card" title="All open positions (tracked + demo) valued at live prices"><div class="sc-label">Positions value</div><div class="sc-value" id="sc-value">…</div></div>
-      <div class="summary-card" title="Cash remaining + positions value"><div class="sc-label">Total equity</div><div class="sc-value" id="sc-equity">…</div></div>
-      <div class="summary-card" title="Sum of per-position results: open (unrealized) + closed (realized)"><div class="sc-label">Total P&L</div><div class="sc-value" id="sc-pnl">…</div></div>
-      <div class="summary-card" title="Profit or loss from closed positions only"><div class="sc-label">Realized P&L</div><div class="sc-value" id="sc-realized">…</div></div>
+      <div class="summary-card" id="sc-start-card" title="The simulation's starting balance"><div class="sc-label">Starting cash</div><div class="sc-value" id="sc-start">…</div></div>
+      <div class="summary-card" id="sc-cash-card" title="Demo trading cash: starting cash − simulated buys + sell proceeds (tracked holdings excluded)"><div class="sc-label">Cash remaining</div><div class="sc-value" id="sc-cash">…</div></div>
+      <div class="summary-card" id="sc-value-card" title="All open positions (tracked + demo) valued at live prices"><div class="sc-label">Positions value</div><div class="sc-value" id="sc-value">…</div></div>
+      <div class="summary-card" id="sc-equity-card" title="Cash remaining + positions value"><div class="sc-label">Total equity</div><div class="sc-value" id="sc-equity">…</div></div>
+      <div class="summary-card" id="sc-pnl-card" title="Sum of per-position results: open (unrealized) + closed (realized)"><div class="sc-label">Total P&L</div><div class="sc-value" id="sc-pnl">…</div></div>
+      <div class="summary-card" id="sc-realized-card" title="Profit or loss from closed positions only"><div class="sc-label">Realized P&L</div><div class="sc-value" id="sc-realized">…</div></div>
     </div>
     <p class="hint hidden" id="unpriced-note"></p>
+
+    <div class="card table-wrap portfolio-table hidden" id="paper-positions-card">
+      <table id="paper-positions-table">
+        <caption>Open paper positions (Alpaca)</caption>
+        <thead>
+          <tr>
+            <th>Ticker</th>
+            <th class="num">Qty</th>
+            <th class="num">Avg entry</th>
+            <th class="num">Current</th>
+            <th class="num">Value</th>
+            <th class="num">Unrealized P&L</th>
+            <th class="num">P&L %</th>
+          </tr>
+        </thead>
+        <tbody id="paper-positions-body"></tbody>
+      </table>
+      <p class="empty-note hidden" id="paper-empty-note">No open paper positions yet. BUY decisions on the analysis page offer a paper order.</p>
+    </div>
+
+    <div id="backup-ledger">
+      <div class="backup-heading hidden" id="backup-heading">
+        <div>
+          <strong>Local backup (demo, not traded)</strong>
+          <span>The demo ledger below keeps working offline; the paper account above is the primary record.</span>
+        </div>
+        <button id="replay-all-btn" class="secondary-btn hidden" type="button">Replay all in paper account</button>
+      </div>
+      <div class="replay-summary hidden" id="replay-summary" role="status" aria-live="polite"></div>
 
     <div class="card manage-card">
       <div class="manage-grid">
@@ -141,10 +176,11 @@
         No closed trades yet. Close an open position to see realized P&L here.
       </p>
     </div>
+    </div>
     </main>
   </div>
 
   <div id="toast" class="toast hidden" role="status" aria-live="polite" aria-atomic="true"></div>
-  <script src="/static/js/portfolio.js?v=4"></script>
+  <script src="/static/js/portfolio.js?v=5"></script>
 </body>
 </html>

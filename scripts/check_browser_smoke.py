@@ -22,7 +22,11 @@ import socket
 import tempfile
 import threading
 import time
+from types import SimpleNamespace
 import urllib.request
+import uuid
+
+from alpaca.trading.enums import OrderStatus
 
 # Isolate state before app modules read their configuration. Alpaca keys are
 # cleared too: the smoke must never reach the broker, even when a developer's
@@ -614,6 +618,14 @@ def check_trading_page(page) -> None:
     )
     with urllib.request.urlopen(request, timeout=10) as response:
         run_id = json.load(response)[0]["run_id"]
+
+    # Unconfigured portfolio page renders exactly the legacy view.
+    page.goto(f"{BASE_URL}/portfolio", wait_until="networkidle")
+    page.wait_for_selector("#positions-body tr", timeout=10_000)
+    assert page.locator("#paper-takeover.hidden").count() == 1, \
+        "no takeover banner while unconfigured"
+    assert page.locator("#backup-heading.hidden").count() == 1, \
+        "no backup label while unconfigured"
     page.goto(f"{BASE_URL}/?run={run_id}", wait_until="networkidle")
     page.wait_for_selector(".result-card", timeout=10_000)
     page.click(".result-summary")
@@ -732,6 +744,94 @@ def check_trading_page(page) -> None:
     finally:
         for name, original in originals.items():
             setattr(broker_module, name, original)
+
+    # ---- portfolio takeover driven through the real broker path --------------
+    # The client seam and price fetch are faked, so replay exercises the real
+    # guard rails, insert-before-POST, and position stamping, all offline.
+    from app.tools import market_data as smoke_market_data
+
+    class _SmokeBrokerClient:
+        def get_account(self):
+            return SimpleNamespace(
+                account_number="PA-SMOKE", status="ACTIVE", equity="101234.56",
+                cash="51234.56", buying_power="202469.12", last_equity="100000.00",
+                trading_blocked=False,
+            )
+
+        def get_all_positions(self):
+            return [
+                SimpleNamespace(
+                    symbol=TICKER, qty="12", avg_entry_price="95.00",
+                    current_price="100.00", market_value="1200.00",
+                    unrealized_pl="60.00", unrealized_plpc="0.05",
+                )
+            ]
+
+        def submit_order(self, order_data):
+            return SimpleNamespace(
+                id=uuid.uuid4(), status=OrderStatus.ACCEPTED,
+                filled_qty=None, filled_avg_price=None,
+            )
+
+        def get_order_by_client_id(self, client_order_id):
+            return SimpleNamespace(
+                id=uuid.uuid4(), status=OrderStatus.ACCEPTED,
+                filled_qty=None, filled_avg_price=None,
+            )
+
+    async def fake_smoke_price(ticker: str):
+        return 100.0
+
+    # The real guard rails read settings directly, so the smoke configures the
+    # feature with throwaway values; the client seam keeps every HTTP call off.
+    smoke_settings = main_module.settings
+    original_keys = (smoke_settings.alpaca_api_key_id, smoke_settings.alpaca_api_secret_key, smoke_settings.alpaca_trading_enabled)
+    smoke_settings.alpaca_api_key_id = "PKSMOKEKEY"
+    smoke_settings.alpaca_api_secret_key = "smoke-secret-value"
+    smoke_settings.alpaca_trading_enabled = True
+    original_status = broker_module.status
+    original_client = broker_module._client
+    original_price = smoke_market_data.get_current_price
+
+    async def fake_smoke_status():
+        return BrokerStatus(configured=True, enabled=True, max_order_usd=10000)
+
+    broker_module.status = fake_smoke_status
+    broker_module._client = lambda: _SmokeBrokerClient()
+    smoke_market_data.get_current_price = fake_smoke_price
+    try:
+        page.goto(f"{BASE_URL}/portfolio", wait_until="networkidle")
+        page.wait_for_selector("#paper-takeover:not(.hidden)", timeout=10_000)
+        assert "$101,234.56" in page.inner_text("#sc-equity"), \
+            "summary cards must show the paper equity"
+        assert "Local backup (demo, not traded)" in page.inner_text("#backup-heading")
+        assert page.locator("#paper-positions-card:not(.hidden)").count() == 1
+        assert page.locator("#paper-positions-body tr").count() == 1
+        assert page.locator("#backup-ledger.backup-mode").count() == 1
+        assert page.locator("#positions-body .replay-btn").count() == 2, \
+            "both open local positions offer a replay action"
+        page.click("#positions-body .replay-btn")
+        page.wait_for_function(
+            "document.querySelector('#replay-summary')?.textContent.includes('replayed')",
+            timeout=10_000,
+        )
+        assert "skipped" not in page.inner_text("#replay-summary")
+        page.wait_for_function(
+            "document.querySelectorAll('#positions-body .replay-btn').length === 1",
+            timeout=10_000,
+        )
+        assert "replayed" in page.inner_text("#positions-body").lower(), \
+            "the replayed position must carry its stamp"
+        assert page.evaluate(
+            "[...document.querySelectorAll('button')].filter((b) => "
+            "!(b.getAttribute('aria-label') || b.textContent.trim())).length === 0"
+        ), "every button needs an accessible name"
+        assert_no_page_scroll(page, 320, "portfolio page paper view")
+    finally:
+        broker_module.status = original_status
+        broker_module._client = original_client
+        smoke_market_data.get_current_price = original_price
+        smoke_settings.alpaca_api_key_id, smoke_settings.alpaca_api_secret_key, smoke_settings.alpaca_trading_enabled = original_keys
 
 
 def main() -> None:

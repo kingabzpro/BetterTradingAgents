@@ -49,6 +49,9 @@ def _init_db() -> None:
             "exit_price REAL",
             "closed_at TEXT",
             "external INTEGER NOT NULL DEFAULT 0",
+            # Paper replay marker (P2.1): the client_order_id of the paper order
+            # that replayed this position, or NULL while it has not been replayed.
+            "replay_client_order_id TEXT",
         ):
             try:
                 conn.execute(f"ALTER TABLE positions ADD COLUMN {column}")
@@ -211,11 +214,20 @@ def _select_open_row(position_id: int) -> dict | None:
     with _connect() as conn:
         conn.row_factory = sqlite3.Row
         row = conn.execute(
-            "SELECT id, ticker, quantity, entry_price, added_at FROM positions "
-            "WHERE id = ? AND closed_at IS NULL",
+            "SELECT id, ticker, quantity, entry_price, added_at, replay_client_order_id "
+            "FROM positions WHERE id = ? AND closed_at IS NULL",
             (position_id,),
         ).fetchone()
         return dict(row) if row else None
+
+
+def stamp_replayed(position_id: int, client_order_id: str) -> None:
+    """Mark a local position as replayed so it cannot be replayed twice."""
+    with _connect() as conn:
+        conn.execute(
+            "UPDATE positions SET replay_client_order_id = ? WHERE id = ?",
+            (client_order_id, position_id),
+        )
 
 
 def _to_closed_position(row: dict, exit_price: float) -> PortfolioPosition:
@@ -279,6 +291,7 @@ async def get_portfolio() -> PortfolioSummary:
                 else None,
                 added_at=row["added_at"],
                 external=bool(row["external"]),
+                replay_client_order_id=row["replay_client_order_id"],
             )
         )
 
