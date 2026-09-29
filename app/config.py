@@ -86,6 +86,24 @@ class Settings:
         1, int(_env("CALIBRATION_MIN_OBSERVATIONS", "30"))
     )
 
+    # Alpaca paper trading (wiki Roadmap P2.1). Paper only: app/broker.py
+    # constructs the SDK client with paper=True hardcoded, so no configuration
+    # can point this feature at the live broker. The feature stays dormant
+    # until both key variables exist.
+    alpaca_api_key_id: str = _env("ALPACA_API_KEY_ID")
+    alpaca_api_secret_key: str = _env("ALPACA_API_SECRET_KEY")
+    # Kill switch: 0 = read-only, no order submissions.
+    alpaca_trading_enabled: bool = _env("ALPACA_TRADING_ENABLED", "0").lower() in (
+        "1",
+        "true",
+        "yes",
+    )
+    alpaca_max_order_usd: float = float(_env("ALPACA_MAX_ORDER_USD", "10000"))
+    alpaca_max_orders_per_day: int = int(_env("ALPACA_MAX_ORDERS_PER_DAY", "20"))
+    alpaca_max_decision_age_hours: float = float(
+        _env("ALPACA_MAX_DECISION_AGE_HOURS", "72")
+    )
+
     # Live reasoning stream (wiki Roadmap 3.2): stream agent tokens to the
     # UI as agent_token SSE events. OFF by default - in live use the stream is
     # mostly the final JSON blob, which reads as noise next to the result card.
@@ -96,6 +114,10 @@ class Settings:
     @property
     def llm_configured(self) -> bool:
         return bool(self.llm_api_key)
+
+    @property
+    def alpaca_configured(self) -> bool:
+        return bool(self.alpaca_api_key_id and self.alpaca_api_secret_key)
 
     def llm_for(self, role: str) -> dict:
         """Resolved {model, base_url, api_key} for one role

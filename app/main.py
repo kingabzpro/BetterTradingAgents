@@ -11,12 +11,15 @@ from fastapi import FastAPI, Header, HTTPException, Query
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
-from app import calibration, chat, memory, portfolio, watchlist
+from app import broker, calibration, chat, memory, portfolio, watchlist
 from app.config import settings
 from app.discovery import discover_stocks
 from app.models import (
     AnalysisRequest,
     AnalysisResponse,
+    BrokerAccount,
+    BrokerPosition,
+    BrokerStatus,
     CalibrationTrackRecord,
     CancelRunResponse,
     ClearHistoryResponse,
@@ -76,6 +79,7 @@ async def startup() -> None:
     await portfolio.init()
     await memory.init()
     await watchlist.init()
+    await broker.init()
     await store.init()
     mode = "mock (no LLM_API_KEY)" if not settings.llm_configured else settings.llm_model
     logger.info("[startup] BetterTradingAgents ready | llm=%s", mode)
@@ -353,6 +357,36 @@ async def close_position(request: PortfolioCloseRequest):
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     return position
+
+
+def _broker_http_error(exc: Exception) -> HTTPException:
+    """Map broker-module exceptions to the repo's HTTPException conventions."""
+    if isinstance(exc, broker.BrokerNotConfigured):
+        return HTTPException(status_code=503, detail=str(exc))
+    if isinstance(exc, broker.BrokerRuleError):
+        return HTTPException(status_code=exc.status_code, detail=str(exc))
+    return HTTPException(status_code=503, detail=f"paper trading unavailable: {exc}")
+
+
+@app.get("/api/broker/status", response_model=BrokerStatus)
+async def broker_status():
+    return await broker.status()
+
+
+@app.get("/api/broker/account", response_model=BrokerAccount)
+async def broker_account():
+    try:
+        return await broker.account()
+    except (broker.BrokerNotConfigured, broker.BrokerRuleError) as exc:
+        raise _broker_http_error(exc) from exc
+
+
+@app.get("/api/broker/positions", response_model=list[BrokerPosition])
+async def broker_positions():
+    try:
+        return await broker.positions()
+    except (broker.BrokerNotConfigured, broker.BrokerRuleError) as exc:
+        raise _broker_http_error(exc) from exc
 
 
 def _require_client(client_id: str | None) -> str:

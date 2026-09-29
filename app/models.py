@@ -397,3 +397,76 @@ class WatchlistUpdateRequest(BaseModel):
 class WatchlistAddResponse(BaseModel):
     item: WatchlistItem
     already_watched: bool = False
+
+
+class BrokerStatus(BaseModel):
+    """Whether the Alpaca paper connection exists and submissions are allowed.
+
+    Never carries credentials. enabled=False means the kill switch
+    (ALPACA_TRADING_ENABLED) is off: reads still work, orders do not.
+    """
+
+    configured: bool = False
+    enabled: bool = False
+    paper_url: str = "https://docs.alpaca.markets/us/docs/paper-trading"
+
+
+class BrokerAccount(BaseModel):
+    """Mapped Alpaca paper account snapshot."""
+
+    account_number: str = ""
+    status: str = ""
+    equity: float | None = None
+    cash: float | None = None
+    buying_power: float | None = None
+    last_equity: float | None = None
+    trading_blocked: bool = False
+
+
+class BrokerPosition(BaseModel):
+    """Mapped open Alpaca paper position."""
+
+    symbol: str
+    quantity: float
+    avg_entry_price: float
+    current_price: float | None = None
+    market_value: float | None = None
+    unrealized_pl: float | None = None
+    unrealized_plpc: float | None = None
+
+
+class BrokerOrder(BaseModel):
+    """One order this app placed, from the local broker_orders row."""
+
+    client_order_id: str
+    alpaca_order_id: str | None = None
+    run_id: str
+    ticker: str
+    side: Literal["buy", "sell"]
+    notional: float
+    status: str  # pending_submit | unknown | an Alpaca order status
+    decision: str | None = None
+    confidence: float | None = None
+    decision_as_of: str | None = None
+    filled_qty: float | None = None
+    filled_avg_price: float | None = None
+    error: str | None = None
+    origin: Literal["decision", "replay"] = "decision"
+    created_at: str = ""
+    updated_at: str = ""
+
+
+class BrokerOrderRequest(BaseModel):
+    """Body of POST /api/broker/orders; confirm must be explicitly true."""
+
+    run_id: str = Field(min_length=1, max_length=64)
+    ticker: str = Field(min_length=1, max_length=12)
+    side: Literal["buy", "sell"]
+    notional: float = Field(gt=0, le=1_000_000)
+    confirm: bool = False
+
+
+class BrokerReplayRequest(BaseModel):
+    """Body of POST /api/broker/replay: migrate one open local position."""
+
+    position_id: int
