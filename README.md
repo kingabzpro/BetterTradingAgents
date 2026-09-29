@@ -186,7 +186,7 @@ loads; nothing is tracked in a parallel local book. The manager sees the paper
 holdings when making its next call, and the risk gate's exposure caps use the
 paper equity. A **Download CSV** action exports the open positions.
 
-### Paper trading with Alpaca (optional)
+![Alpaca paper portfolio](static/screenshots/portfolio.png)
 
 ### Paper trading with Alpaca (optional)
 
@@ -200,14 +200,14 @@ to allow submissions) and restart. Three things change:
 - The **Portfolio** page becomes the paper cockpit: equity, cash, buying power, an equity
   curve, open positions, the orders this app placed with cancel actions, and per-order return
   since fill with alpha vs SPY. A **Download CSV** action exports the open positions.
-- Without keys the page shows exactly what to set; the demo portfolio has been retired, so
-  the paper account is the single source of truth for holdings.
+- Without keys the page shows exactly what to set; there is no separate demo book, the
+  paper account is the single record of holdings.
 
 The adapter is paper-only by construction: the client is built with `paper=True` hardcoded,
 so no configuration can reach the live broker. Server-side caps apply to every submission
 (`ALPACA_MAX_ORDER_USD`, `ALPACA_MAX_ORDERS_PER_DAY`, and stale research older than
 `ALPACA_MAX_DECISION_AGE_HOURS` hours is refused). Paper fills are a simulation, never
-live-trading proof; see the disclosure on the Trading page.
+live-trading proof; the disclosure is on the Portfolio page.
 
 ### Run history
 
