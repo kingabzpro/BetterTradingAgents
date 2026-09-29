@@ -68,6 +68,7 @@ class _FakeClient:
         self.submit_error = None
         self.on_submit = None
         self.remote_order = None
+        self.history = None
 
     def get_account(self):
         if self.error:
@@ -96,6 +97,11 @@ class _FakeClient:
         if self.error:
             raise self.error
         return self.remote_order
+
+    def get_portfolio_history(self, history_filter=None):
+        if self.error:
+            raise self.error
+        return self.history
 
     def cancel_order_by_id(self, order_id):
         self.cancel_calls += 1
@@ -511,6 +517,68 @@ async def checks() -> None:
             missing = await client.post("/api/broker/replay", json={"position_id": 424242})
             assert missing.status_code == 404
         print("replay endpoint OK")
+    finally:
+        _restore()
+
+    # ================= M5: equity curve and performance loop ==================
+    from datetime import date, timedelta
+
+    from app.tools import market_data
+
+    today = date.today().isoformat()
+    tomorrow = (date.today() + timedelta(days=1)).isoformat()
+    fake.history = SimpleNamespace(
+        timestamp=[1_759_000_000, 1_759_086_400],
+        equity=[100000.0, 101000.0],
+        profit_loss=[0.0, 1000.0],
+        profit_loss_pct=[0.0, 0.01],
+    )
+    _use(fake)
+    try:
+        curve = await broker.equity("1M")
+        assert curve["period"] == "1M" and len(curve["dates"]) == 2
+        assert curve["equity"] == [100000.0, 101000.0]
+        fake.history = SimpleNamespace(
+            timestamp=[1_759_000_000, 1_759_086_400],
+            equity=[100000.0, None],  # Alpaca pads the last slot intraday
+            profit_loss=[0.0, 0.0],
+            profit_loss_pct=[0.0, 0.0],
+        )
+        curve = await broker.equity("1M")
+        assert curve["equity"] == [100000.0], "None marks must be dropped"
+        print("equity mapping OK")
+
+        # ---- per-order return math and alpha vs SPY on fake closes ------------
+        async def fake_spy(ticker, start, end):
+            assert ticker == "SPY"
+            return {today: 100.0, tomorrow: 105.0}
+
+        async def fake_live_price(ticker):
+            return 110.0
+
+        market_data.get_closes_between = fake_spy
+        market_data.get_current_price = fake_live_price
+        perf = await broker.order_performance()
+        filled = [row for row in perf if row["filled_avg_price"] == 191.0]
+        assert filled, perf
+        row = filled[0]
+        assert row["current_price"] == 110.0
+        assert row["return_pct"] == round((110.0 / 191.0 - 1) * 100, 2)
+        assert row["spy_return_pct"] == 5.0
+        assert row["alpha_pct"] == round(row["return_pct"] - 5.0, 2)
+        assert all(row["run_id"] for row in perf), "every perf row links to its run"
+        print("filled-order return + alpha math OK")
+
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+            curve_response = await client.get("/api/broker/equity?period=1M")
+            assert curve_response.status_code == 200
+            assert len(curve_response.json()["equity"]) == 1
+            perf_response = await client.get("/api/broker/performance")
+            assert perf_response.status_code == 200 and perf_response.json()
+            bad_period = await client.get("/api/broker/equity?period=2W")
+            assert bad_period.status_code == 422
+        print("equity + performance endpoints OK")
     finally:
         _restore()
 

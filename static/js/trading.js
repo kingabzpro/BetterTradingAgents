@@ -68,6 +68,8 @@ async function load() {
     renderPositions(positions);
     renderOrders(orders);
     $("trading-status").textContent = "";
+    renderEquityCurve();
+    renderPerformance();
   } catch (error) {
     if (String(error.message).includes("ALPACA_API_KEY_ID")) setUnconfigured(error.message);
     else {
@@ -146,6 +148,83 @@ async function cancelOrder(clientOrderId, ticker) {
     load();
   } catch (error) {
     showToast(`Could not cancel: ${error.message}`, true);
+  }
+}
+
+/* Equity curve (P2.1 M5): small inline SVG polyline in the price-chart visual
+   language; every mark is also stated as text in the disclosure table. */
+async function renderEquityCurve() {
+  const card = $("equity-card");
+  try {
+    const data = await getJson("/api/broker/equity?period=1M").catch(() => null);
+    const values = data && data.equity ? data.equity : [];
+    if (values.length < 2) {
+      card.classList.add("hidden");
+      return;
+    }
+    card.classList.remove("hidden");
+    const min = Math.min(...values);
+    const max = Math.max(...values);
+    const span = max - min || 1;
+    const W = 300;
+    const H = 100;
+    const y = (value) => H - ((value - min) / span) * (H - 8) - 4;
+    const points = values.map((value, i) =>
+      `${((i / (values.length - 1)) * W).toFixed(1)},${y(value).toFixed(1)}`
+    );
+    const first = values[0];
+    const last = values[values.length - 1];
+    $("equity-chart").innerHTML =
+      `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" ` +
+      `aria-label="Paper account equity over the last month; every value is listed below as text">` +
+      `<line class="baseline" x1="0" x2="${W}" y1="${y(first).toFixed(1)}" y2="${y(first).toFixed(1)}"></line>` +
+      `<polyline class="poly" points="${points.join(" ")}"></polyline></svg>`;
+    const changePct = ((last / first - 1) * 100).toFixed(2);
+    $("equity-note").textContent =
+      `${data.dates[0]} ${fmt(first)} to ${data.dates[data.dates.length - 1]} ${fmt(last)} ` +
+      `(${changePct >= 0 ? "+" : ""}${changePct}%)`;
+    $("equity-tbody").innerHTML = data.dates
+      .map((day, i) => `<tr><td>${esc(day)}</td><td class="num">${fmt(values[i])}</td></tr>`)
+      .join("");
+  } catch (_) {
+    card.classList.add("hidden");
+  }
+}
+
+/* Performance card (P2.1 M5): per filled order, return since fill and alpha
+   vs SPY over the same window, graded like the decision track record. */
+async function renderPerformance() {
+  const card = $("perf-card");
+  try {
+    const rows = await getJson("/api/broker/performance").catch(() => []);
+    const body = $("perf-body");
+    body.innerHTML = "";
+    card.classList.toggle("hidden", rows.length === 0);
+    for (const row of rows) {
+      const retClass = row.return_pct >= 0 ? "pnl-green" : "pnl-red";
+      const alphaText = row.alpha_pct == null
+        ? "n/a"
+        : `${row.alpha_pct >= 0 ? "+" : ""}${row.alpha_pct}%`;
+      const alphaClass = row.alpha_pct == null ? "" : row.alpha_pct >= 0 ? "pnl-green" : "pnl-red";
+      const spyText = row.spy_return_pct == null
+        ? "n/a"
+        : `${row.spy_return_pct >= 0 ? "+" : ""}${row.spy_return_pct}%`;
+      const decision = row.run_id
+        ? `<a href="/?run=${encodeURIComponent(row.run_id)}">View</a>`
+        : "n/a";
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td data-label="Ticker"><strong>${esc(row.ticker)}</strong></td>
+        <td data-label="Filled">${esc(row.placed_at || "")}</td>
+        <td class="num" data-label="Fill price">${fmt(row.filled_avg_price)}</td>
+        <td class="num" data-label="Now">${fmt(row.current_price)}</td>
+        <td class="num ${retClass}" data-label="Return">${row.return_pct >= 0 ? "+" : ""}${row.return_pct}%</td>
+        <td class="num" data-label="SPY">${spyText}</td>
+        <td class="num ${alphaClass}" data-label="Alpha">${alphaText}</td>`;
+      body.appendChild(tr);
+    }
+  } catch (_) {
+    card.classList.add("hidden");
   }
 }
 

@@ -440,6 +440,23 @@ async def replay_broker_position(request: BrokerReplayRequest):
         raise _broker_http_error(exc) from exc
 
 
+@app.get("/api/broker/equity")
+async def broker_equity(period: str = Query(default="1M", pattern="^(1W|1M|3M|1A)$")):
+    try:
+        return await broker.equity(period)
+    except (broker.BrokerNotConfigured, broker.BrokerRuleError) as exc:
+        raise _broker_http_error(exc) from exc
+
+
+@app.get("/api/broker/performance")
+async def broker_performance(limit: int = Query(default=50, ge=1, le=100)):
+    """Per filled paper order: return since fill and alpha vs SPY (P2.1 M5)."""
+    try:
+        return await broker.order_performance(limit)
+    except (broker.BrokerNotConfigured, broker.BrokerRuleError) as exc:
+        raise _broker_http_error(exc) from exc
+
+
 @app.delete("/api/broker/orders/{client_order_id}", response_model=BrokerOrder)
 async def cancel_broker_order(client_order_id: str):
     try:

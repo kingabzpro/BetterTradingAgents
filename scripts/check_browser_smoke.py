@@ -768,19 +768,29 @@ def check_trading_page(page) -> None:
             ]
 
         def submit_order(self, order_data):
+            # Paper market orders fill immediately: the replay lands as filled.
             return SimpleNamespace(
-                id=uuid.uuid4(), status=OrderStatus.ACCEPTED,
-                filled_qty=None, filled_avg_price=None,
+                id=uuid.uuid4(), status=OrderStatus.FILLED,
+                filled_qty="12", filled_avg_price="100.00",
             )
 
         def get_order_by_client_id(self, client_order_id):
             return SimpleNamespace(
-                id=uuid.uuid4(), status=OrderStatus.ACCEPTED,
-                filled_qty=None, filled_avg_price=None,
+                id=uuid.uuid4(), status=OrderStatus.FILLED,
+                filled_qty="12", filled_avg_price="100.00",
+            )
+
+        def get_portfolio_history(self, history_filter=None):
+            return SimpleNamespace(
+                timestamp=[0, 86400], equity=[100000.0, 101000.0],
+                profit_loss=[0.0, 1000.0], profit_loss_pct=[0.0, 0.01],
             )
 
     async def fake_smoke_price(ticker: str):
         return 100.0
+
+    async def fake_smoke_closes(ticker: str, start: str, end: str):
+        return {"2026-01-01": 100.0, "2099-01-01": 101.0}
 
     # The real guard rails read settings directly, so the smoke configures the
     # feature with throwaway values; the client seam keeps every HTTP call off.
@@ -792,6 +802,7 @@ def check_trading_page(page) -> None:
     original_status = broker_module.status
     original_client = broker_module._client
     original_price = smoke_market_data.get_current_price
+    original_closes = smoke_market_data.get_closes_between
 
     async def fake_smoke_status():
         return BrokerStatus(configured=True, enabled=True, max_order_usd=10000)
@@ -799,6 +810,7 @@ def check_trading_page(page) -> None:
     broker_module.status = fake_smoke_status
     broker_module._client = lambda: _SmokeBrokerClient()
     smoke_market_data.get_current_price = fake_smoke_price
+    smoke_market_data.get_closes_between = fake_smoke_closes
     try:
         page.goto(f"{BASE_URL}/portfolio", wait_until="networkidle")
         page.wait_for_selector("#paper-takeover:not(.hidden)", timeout=10_000)
@@ -827,10 +839,18 @@ def check_trading_page(page) -> None:
             "!(b.getAttribute('aria-label') || b.textContent.trim())).length === 0"
         ), "every button needs an accessible name"
         assert_no_page_scroll(page, 320, "portfolio page paper view")
+        # ---- performance loop on the trading page: curve and alpha columns ----
+        page.goto(f"{BASE_URL}/trading", wait_until="networkidle")
+        page.wait_for_selector("#equity-card:not(.hidden)", timeout=10_000)
+        assert page.locator("#equity-chart svg polyline").count() == 1, "the equity curve must render as an inline SVG"
+        assert page.locator("#equity-table tbody tr").count() == 2, "every equity mark must also be stated as text"
+        page.wait_for_selector("#perf-card:not(.hidden)", timeout=10_000)
+        assert page.locator("#perf-body tr").count() >= 1, "filled orders must show return since fill and alpha"
     finally:
         broker_module.status = original_status
         broker_module._client = original_client
         smoke_market_data.get_current_price = original_price
+        smoke_market_data.get_closes_between = original_closes
         smoke_settings.alpaca_api_key_id, smoke_settings.alpaca_api_secret_key, smoke_settings.alpaca_trading_enabled = original_keys
 
 

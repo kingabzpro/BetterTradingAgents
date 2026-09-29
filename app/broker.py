@@ -23,7 +23,7 @@ import requests
 from alpaca.common.exceptions import APIError
 from alpaca.trading.client import TradingClient
 from alpaca.trading.enums import OrderSide, OrderType, TimeInForce
-from alpaca.trading.requests import MarketOrderRequest
+from alpaca.trading.requests import GetPortfolioHistoryRequest, MarketOrderRequest
 
 from app.config import settings
 from app.models import BrokerAccount, BrokerOrder, BrokerPosition, BrokerStatus
@@ -36,6 +36,8 @@ TICKER_RE = re.compile(r"^[A-Z0-9.\-]{1,10}$")
 
 # Terminal for our purposes; anything else may still move or be canceled.
 TERMINAL_ORDER_STATUSES = ("filled", "canceled", "expired", "rejected")
+
+EQUITY_PERIODS = ("1W", "1M", "3M", "1A")
 
 
 class BrokerNotConfigured(ValueError):
@@ -644,6 +646,98 @@ async def list_orders(limit: int = 50) -> list[BrokerOrder]:
                 pass  # serve the local row; the next read reconciles again
         orders.append(_row_to_order(row))
     return orders
+
+
+async def equity(period: str = "1M") -> dict:
+    """Paper-account equity timeseries for the performance card."""
+
+    def _fetch():
+        return _client().get_portfolio_history(
+            GetPortfolioHistoryRequest(period=period, timeframe="1D")
+        )
+
+    try:
+        history = await asyncio.to_thread(_fetch)
+    except APIError as exc:
+        raise BrokerRuleError(_map_broker_error(exc), status_code=502) from exc
+
+    stamps = list(history.timestamp or [])
+    values = list(history.equity or [])
+    points = [
+        (datetime.fromtimestamp(int(stamp), tz=timezone.utc).date().isoformat(), value)
+        for stamp, value in zip(stamps, values)
+        if value is not None
+    ]
+    return {
+        "period": period,
+        "dates": [point[0] for point in points],
+        "equity": [point[1] for point in points],
+    }
+
+
+async def order_performance(limit: int = 50) -> list[dict]:
+    """Return since fill and alpha vs SPY for each filled order.
+
+    The window for the SPY comparison is the order's own placement date to
+    today, fetched once via get_closes_between; unpriced tickers are skipped
+    rather than shown as a fake zero.
+    """
+    from datetime import date, timedelta
+
+    from app.tools.market_data import get_closes_between, get_current_price
+
+    def _rows():
+        with _connect() as connection:
+            return connection.execute(
+                "SELECT * FROM broker_orders "
+                "WHERE status = 'filled' AND filled_avg_price IS NOT NULL "
+                "ORDER BY created_at DESC, id DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+
+    rows = await asyncio.to_thread(_rows)
+    if not rows:
+        return []
+
+    end = (date.today() + timedelta(days=1)).isoformat()
+    start = min(row["created_at"][:10] for row in rows)
+    results = await asyncio.gather(
+        get_closes_between("SPY", start, end),
+        *(get_current_price(row["ticker"]) for row in rows),
+    )
+    spy, prices = results[0], results[1:]
+
+    performance: list[dict] = []
+    for row, price in zip(rows, prices):
+        if price is None:
+            continue
+        entry = float(row["filled_avg_price"])
+        return_pct = round((price / entry - 1) * 100, 2)
+        window = [
+            close for day, close in spy.items() if day >= row["created_at"][:10]
+        ]
+        spy_pct = (
+            round((window[-1] / window[0] - 1) * 100, 2) if len(window) >= 2 else None
+        )
+        performance.append(
+            {
+                "client_order_id": row["client_order_id"],
+                "run_id": row["run_id"],
+                "ticker": row["ticker"],
+                "side": row["side"],
+                "notional": row["notional"],
+                "filled_qty": row["filled_qty"],
+                "filled_avg_price": entry,
+                "placed_at": row["created_at"],
+                "current_price": round(price, 2),
+                "return_pct": return_pct,
+                "spy_return_pct": spy_pct,
+                "alpha_pct": round(return_pct - spy_pct, 2)
+                if spy_pct is not None
+                else None,
+            }
+        )
+    return performance
 
 
 async def cancel_order(client_order_id: str) -> BrokerOrder:
