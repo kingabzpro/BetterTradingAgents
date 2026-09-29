@@ -24,9 +24,13 @@ import threading
 import time
 import urllib.request
 
-# Isolate state before app modules read their configuration.
+# Isolate state before app modules read their configuration. Alpaca keys are
+# cleared too: the smoke must never reach the broker, even when a developer's
+# .env carries real paper keys.
 _DB = Path(tempfile.mkdtemp()) / "browser_smoke_test.db"
 os.environ["DB_PATH"] = str(_DB)
+for _var in ("ALPACA_API_KEY_ID", "ALPACA_API_SECRET_KEY", "ALPACA_API_KEY", "ALPACA_SECRET_KEY", "ALPACA_TRADING_ENABLED"):
+    os.environ[_var] = ""
 
 import uvicorn  # noqa: E402
 
@@ -583,6 +587,153 @@ def check_p1_6_filters_and_exports(page) -> None:
     )
 
 
+def check_trading_page(page) -> None:
+    """P2.1: the trading page is a first-class dormant view without keys and
+    the full lifecycle with faked broker functions."""
+    from app.models import BrokerAccount, BrokerOrder, BrokerPosition, BrokerStatus
+
+    # ---- unconfigured: setup card, banner, named controls, 320 px ------------
+    page.goto(f"{BASE_URL}/", wait_until="networkidle")
+    assert page.locator("header nav a[href='/trading']").count() == 1, \
+        "every page must offer the Trading nav link"
+    page.goto(f"{BASE_URL}/trading", wait_until="networkidle")
+    content = page.content()
+    assert "Simulated fills; not live-trading proof." in content, "banner must disclose paper fills"
+    assert page.locator("#setup-card:not(.hidden)").count() == 1, "setup card must lead when unconfigured"
+    assert page.locator("#live-section.hidden").count() == 1
+    assert page.evaluate(
+        "[...document.querySelectorAll('button')].filter((b) => "
+        "!(b.getAttribute('aria-label') || b.textContent.trim())).length === 0"
+    ), "every button needs an accessible name"
+    assert_no_page_scroll(page, 320, "trading page unconfigured")
+
+    # Result cards are unaffected: no paper order button without a connection.
+    client_id = page.evaluate("localStorage.getItem('bta:clientId')") or ""
+    request = urllib.request.Request(
+        f"{BASE_URL}/api/runs?limit=5", headers={"X-Client-ID": client_id}
+    )
+    with urllib.request.urlopen(request, timeout=10) as response:
+        run_id = json.load(response)[0]["run_id"]
+    page.goto(f"{BASE_URL}/?run={run_id}", wait_until="networkidle")
+    page.wait_for_selector(".result-card", timeout=10_000)
+    page.click(".result-summary")
+    page.wait_for_selector(".result-detail:not([hidden])", timeout=5_000)
+    assert page.locator(".paper-open-btn").count() == 0, \
+        "no paper order button may render while unconfigured"
+    page.set_viewport_size({"width": 1280, "height": 900})
+
+    # ---- connected: broker functions faked, lifecycle end to end -------------
+    broker_module = main_module.broker
+    orders = [
+        BrokerOrder(
+            client_order_id="bta-smoke-open0001", run_id=run_id, ticker=TICKER,
+            side="buy", notional=5000.0, status="accepted",
+        ),
+        BrokerOrder(
+            client_order_id="bta-smoke-filled01", run_id=run_id, ticker=TICKER,
+            side="buy", notional=5000.0, status="filled",
+            filled_qty=12.0, filled_avg_price=95.0,
+        ),
+    ]
+    state = {"canceled": False}
+
+    async def fake_status():
+        return BrokerStatus(configured=True, enabled=True, max_order_usd=10000)
+
+    async def fake_account():
+        return BrokerAccount(
+            account_number="PA-SMOKE", status="ACTIVE", equity=101234.56,
+            cash=51234.56, buying_power=202469.12, last_equity=100000.0,
+        )
+
+    async def fake_positions():
+        return [
+            BrokerPosition(
+                symbol=TICKER, quantity=12, avg_entry_price=95.0, current_price=100.0,
+                market_value=1200.0, unrealized_pl=60.0, unrealized_plpc=0.05,
+            )
+        ]
+
+    async def fake_list_orders(limit: int = 50):
+        return list(orders)
+
+    async def fake_cancel_order(client_order_id: str):
+        state["canceled"] = True
+        for index, order in enumerate(orders):
+            if order.client_order_id == client_order_id:
+                orders[index] = order.model_copy(update={"status": "canceled"})
+                return orders[index]
+        raise broker_module.BrokerRuleError("no order", status_code=404)
+
+    async def fake_submit_order(run_id_arg, ticker, side, notional):
+        return BrokerOrder(
+            client_order_id="bta-smoke-submit01", run_id=run_id_arg, ticker=ticker,
+            side=side, notional=notional, status="accepted",
+        )
+
+    fakes = {
+        "status": fake_status,
+        "account": fake_account,
+        "positions": fake_positions,
+        "list_orders": fake_list_orders,
+        "cancel_order": fake_cancel_order,
+        "submit_order": fake_submit_order,
+    }
+    originals = {name: getattr(broker_module, name) for name in fakes}
+    for name, fake in fakes.items():
+        setattr(broker_module, name, fake)
+    try:
+        page.goto(f"{BASE_URL}/trading", wait_until="networkidle")
+        page.wait_for_selector("#live-section:not(.hidden)", timeout=10_000)
+        assert "$101,234.56" in page.inner_text("#acc-equity"), "equity must render"
+        assert page.locator("#positions-body tr").count() == 1
+        assert page.locator("#orders-body tr").count() == 2, "both orders must render"
+        assert page.locator("#orders-body .status-chip.ok").count() == 1
+        assert page.locator("#orders-body .cancel-btn").count() == 1, \
+            "cancel only on the non-terminal row"
+        link = page.locator("#orders-body a[href*='/?run=']").first
+        assert run_id in (link.get_attribute("href") or ""), "decision link must resolve"
+        assert page.evaluate(
+            "[...document.querySelectorAll('button')].filter((b) => "
+            "!(b.getAttribute('aria-label') || b.textContent.trim())).length === 0"
+        ), "every button needs an accessible name"
+
+        page.on("dialog", lambda dialog: dialog.accept())
+        page.click("#orders-body .cancel-btn")
+        page.wait_for_function(
+            "document.querySelectorAll('#orders-body .cancel-btn').length === 0",
+            timeout=10_000,
+        )
+        assert state["canceled"], "cancel must call the DELETE path"
+        assert "canceled" in page.inner_text("#orders-body").lower()
+
+        # The BUY result card now offers the paper order review step (M2 UI).
+        page.goto(f"{BASE_URL}/?run={run_id}", wait_until="networkidle")
+        page.wait_for_selector(".result-card", timeout=10_000)
+        page.click(".result-summary")
+        page.wait_for_selector(".paper-open-btn", timeout=10_000)
+        page.click(".paper-open-btn")
+        page.wait_for_selector(f"#paper-review-{TICKER}:not(.hidden)", timeout=10_000)
+        assert page.is_disabled(f"#paper-place-{TICKER}"), \
+            "place must stay disabled until the review checkbox is checked"
+        page.check(f"#paper-confirm-{TICKER}")
+        assert not page.is_disabled(f"#paper-place-{TICKER}")
+        page.click(f"#paper-place-{TICKER}")
+        page.wait_for_function(
+            "(ticker) => document.querySelector(`#paper-status-${ticker}`)?.textContent.includes('accepted')",
+            arg=TICKER,
+            timeout=10_000,
+        )
+        status_line = page.inner_text(f"#paper-status-{TICKER}")
+        assert "accepted" in status_line, f"placement status must show: {status_line}"
+        assert "/trading" in page.content()
+        assert_no_page_scroll(page, 320, "trading page connected")
+        page.set_viewport_size({"width": 1280, "height": 900})
+    finally:
+        for name, original in originals.items():
+            setattr(broker_module, name, original)
+
+
 def main() -> None:
     try:
         from playwright.sync_api import sync_playwright
@@ -622,6 +773,7 @@ def main() -> None:
                 check_history_page(page)
                 check_compare_page(page)
                 check_p1_6_filters_and_exports(page)
+                check_trading_page(page)
             finally:
                 browser.close()
     finally:
