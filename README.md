@@ -63,9 +63,7 @@ flowchart LR
     PM --> RG["🛡️ Risk gate<br/>sizing · caps · forecast check"]
     RG --> OUT["✅ BUY · HOLD · SELL"]
     OUT --> C["💬 Manager chat"]
-    OUT --> O["🧾 Paper order<br/>explicit confirm"]
-    O --> A["🟢 Alpaca paper account"]
-    A --> P["📊 Portfolio page<br/>equity · orders · alpha vs SPY"]
+    OUT --> O["🧾 Paper order"]
 ```
 
 ## Quick start
