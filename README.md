@@ -123,6 +123,9 @@ The full walkthrough, screen by screen, lives in the wiki's
 > defaults** undoes them. Keys saved in the app go to your OS keychain, never into the
 > database; see [Security](#security).
 
+New here? The wiki's [Providers](https://github.com/kingabzpro/BetterTradingAgents/wiki/Providers)
+page has one-click sign-up links for every key the app can use, plus which ones are optional.
+
 The settings most people touch:
 
 | Variable | Default | Purpose |
