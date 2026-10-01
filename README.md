@@ -55,44 +55,17 @@ reference list and how each finding shapes the roadmap.
 
 ```mermaid
 flowchart LR
-    SETTINGS["⚙️ Settings<br/>every knob applied live<br/>secrets in the OS keychain"]
-    SETTINGS -.-> D["📡 Market data<br/>yfinance · Finnhub · Olostep · TimeGPT"]
-    SETTINGS -.-> PM
-    T --> D
-
-    subgraph RESEARCH["🔬 Research: five analysts in parallel"]
-        direction TB
-        TA["Technical<br/>SMA · RSI · MACD · volume"]
-        FA["Fundamentals<br/>growth · margins · valuation"]
-        NA["News<br/>headlines · catalysts"]
-        SA["Sentiment<br/>Reddit · StockTwits chatter"]
-        FC["Forecast<br/>TimeGPT vs own noise band"]
-        TA ~~~ FA ~~~ NA ~~~ SA ~~~ FC
-    end
-
-    subgraph DEBATE["⚔️ Debate: bull vs bear"]
-        direction TB
-        BULL["🐂 Bull researcher<br/>strongest case to buy"]
-        RB["Rebuttal round<br/>each side answers the other"]
-        BEAR["🐻 Bear researcher<br/>risks and downsides"]
-        BULL --- RB --- BEAR
-    end
-
-    D --> RESEARCH
-    RESEARCH --> DEBATE
-    DEBATE --> PM["👔 Portfolio Manager<br/>weighs debate, holdings, track record"]
-    TRACK["📜 Track record<br/>decision memory + walk-forward backtests<br/>calls graded vs SPY after costs"] --> PM
-    PM --> RISK["🛡️ Risk gate<br/>vol-scaled size · exposure caps · forecast check"]
-    RISK --> RESULT["✅ BUY · HOLD · SELL<br/>confidence + size + reasoning trail"]
-    RESULT --> CHAT["💬 Chat with the manager<br/>grounded in this run, you decide"]
-    RESULT --> ORDER["🧾 Paper order<br/>review step, explicit confirm"]
-    ORDER --> BROKER["🛡️ Alpaca paper adapter<br/>server-side guards · client_order_id idempotency"]
-    BROKER --> PAPER["🟢 Alpaca paper account<br/>simulated fills, never live"]
-    PAPER --> PORT["📊 Portfolio page<br/>equity curve · order lifecycle<br/>return + alpha vs SPY"]
-    PORT --> AUTO["🤖 Autopilot sessions<br/>scheduled · risk-gated · recorded"]
-    AUTO -.->|"candidates and held tickers<br/>on a schedule"| T
-    AUTO -.->|"orders through the same guards"| BROKER
-    AUTO --> NOTIFY["🔔 Desktop notification<br/>session finished"]
+    T["📈 Tickers<br/>up to five"] --> D["📡 Market data"]
+    D --> S["🔬 Five researchers in parallel<br/>technical · fundamental · news · sentiment · forecast"]
+    S --> B["⚔️ Bull vs bear debate"]
+    B --> PM["👔 Portfolio Manager"]
+    TR["📜 Every call graded vs SPY"] -.-> PM
+    PM --> RG["🛡️ Risk gate<br/>sizing · caps · forecast check"]
+    RG --> OUT["✅ BUY · HOLD · SELL"]
+    OUT --> C["💬 Manager chat"]
+    OUT --> O["🧾 Paper order<br/>explicit confirm"]
+    O --> A["🟢 Alpaca paper account"]
+    A --> P["📊 Portfolio page<br/>equity · orders · alpha vs SPY"]
 ```
 
 ## Quick start
