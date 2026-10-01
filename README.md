@@ -237,7 +237,7 @@ decision brief with trust state, run controls, confidence calibration, portfolio
 concentration risk, the watchlist, decision comparison, Alpaca paper trading with autopilot
 sessions, and in-app settings with OS-keychain secret storage and browser notifications.
 
-Next up: guided first-run onboarding in the web UI, and search and export across past runs.
+Next up: guided first-run onboarding in the web UI, an in-app accuracy report comparing past calls with realized 21-day stock performance, and search and export across past runs.
 
 ## Disclaimer
 
