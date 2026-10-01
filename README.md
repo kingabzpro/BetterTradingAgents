@@ -55,7 +55,10 @@ reference list and how each finding shapes the roadmap.
 
 ```mermaid
 flowchart LR
-    T["📈 Tickers<br/>up to five per run"] --> D["📡 Market data<br/>yfinance · Finnhub · Olostep · TimeGPT"]
+    SETTINGS["⚙️ Settings<br/>every knob applied live<br/>secrets in the OS keychain"]
+    SETTINGS -.-> D["📡 Market data<br/>yfinance · Finnhub · Olostep · TimeGPT"]
+    SETTINGS -.-> PM
+    T --> D
 
     subgraph RESEARCH["🔬 Research: five analysts in parallel"]
         direction TB
@@ -86,6 +89,10 @@ flowchart LR
     ORDER --> BROKER["🛡️ Alpaca paper adapter<br/>server-side guards · client_order_id idempotency"]
     BROKER --> PAPER["🟢 Alpaca paper account<br/>simulated fills, never live"]
     PAPER --> PORT["📊 Portfolio page<br/>equity curve · order lifecycle<br/>return + alpha vs SPY"]
+    PORT --> AUTO["🤖 Autopilot sessions<br/>scheduled · risk-gated · recorded"]
+    AUTO -.->|"candidates and held tickers<br/>on a schedule"| T
+    AUTO -.->|"orders through the same guards"| BROKER
+    AUTO --> NOTIFY["🔔 Desktop notification<br/>session finished"]
 ```
 
 ## Quick start
