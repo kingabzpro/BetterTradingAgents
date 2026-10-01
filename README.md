@@ -111,10 +111,6 @@ through the same guarded broker path as a manual click. Desktop notifications ca
 when a session finishes. Scheduled sessions only trade while the market is open; every order
 is simulated paper, never live.
 
-![Live agent progress](static/screenshots/live-analysis.png)
-![Analysis results](static/screenshots/results.png)
-![Alpaca paper portfolio](static/screenshots/portfolio.png)
-
 The full walkthrough, screen by screen, lives in the wiki's
 [Usage](https://github.com/kingabzpro/BetterTradingAgents/wiki/Usage) page.
 
