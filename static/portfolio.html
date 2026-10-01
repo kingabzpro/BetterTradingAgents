@@ -11,7 +11,7 @@
   <link rel="icon" href="/static/favicon.ico?v=2" sizes="any">
   <link rel="icon" type="image/png" href="/static/favicon.png?v=2">
   <link rel="apple-touch-icon" href="/static/favicon.png?v=2">
-  <link rel="stylesheet" href="/static/css/base.css?v=4">
+  <link rel="stylesheet" href="/static/css/base.css?v=6">
   <link rel="stylesheet" href="/static/css/portfolio.css?v=6">
 </head>
 <body>
@@ -28,9 +28,12 @@
         </div>
       </div>
       <nav aria-label="Primary navigation">
-        <a href="/history" class="nav-link">Runs</a>
+        <a href="/" class="nav-link">Home</a>
+        <a href="/history" class="nav-link">History</a>
+        <a href="/compare" class="nav-link">Compare</a>
         <a href="/watchlist" class="nav-link">Watchlist</a>
-        <a href="/" class="nav-link">Analysis</a>
+        <a href="/portfolio" class="nav-link active" aria-current="page">Trades</a>
+        <a href="/settings" class="nav-link nav-settings"><svg class="gear" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg><span>Settings</span></a>
       </nav>
     </header>
 
@@ -38,8 +41,9 @@
     <p class="hint hidden" id="paper-connect-hint">
       Connect a free <strong>Alpaca paper</strong> account to make this page live: your decisions
       become tradeable simulated orders, and this portfolio tracks what they actually did.
-      Set <code>ALPACA_API_KEY_ID</code>, <code>ALPACA_API_SECRET_KEY</code> (and
-      <code>ALPACA_TRADING_ENABLED=1</code> to allow submissions) in <code>.env</code> and restart.
+      Add your <code>ALPACA_API_KEY_ID</code> and <code>ALPACA_API_SECRET_KEY</code> (and enable
+      <code>ALPACA_TRADING_ENABLED</code>) on the <a href="/settings">Settings page</a>; they apply
+      immediately, no restart.
     </p>
     <div class="paper-takeover hidden" id="paper-takeover" role="note">
       <strong>This portfolio is your Alpaca paper account.</strong>
@@ -57,6 +61,35 @@
       <div class="summary-card" title="Equity change since the previous close"><div class="sc-label">Last P&L</div><div class="sc-value" id="pc-pnl">…</div></div>
     </div>
     <p id="paper-status" class="page-status hidden" role="status" aria-live="polite"></p>
+
+    <div class="card table-wrap portfolio-table hidden" id="automation-card" aria-labelledby="automation-heading">
+      <div class="card-heading">
+        <h2 id="automation-heading">Automated trading sessions</h2>
+        <span class="status-chip muted" id="automation-state">Off</span>
+        <button id="automation-toggle" class="secondary-btn" type="button">Enable</button>
+        <button id="automation-run" class="secondary-btn" type="button">Run session now</button>
+        <span class="status-chip ok hidden" id="notify-state" role="status" title="Desktop notifications are on for finished sessions; click to turn them off">Notifications on</span>
+        <button id="notify-enable" class="secondary-btn hidden" type="button" title="Get a desktop notification when a session finishes">Enable notifications</button>
+      </div>
+      <p class="hint" id="automation-config"></p>
+      <p class="page-status" id="automation-warn" role="status" aria-live="polite"></p>
+      <div class="table-wrap">
+        <table id="automation-table">
+          <caption>Recent automated sessions</caption>
+          <thead>
+            <tr>
+              <th>Started</th>
+              <th>Result</th>
+              <th>Decisions</th>
+              <th>Orders</th>
+              <th>Run</th>
+            </tr>
+          </thead>
+          <tbody id="automation-body"></tbody>
+        </table>
+      </div>
+      <p class="empty-note hidden" id="automation-empty">No sessions yet. Enable autopilot or run one now.</p>
+    </div>
 
     <section id="equity-card" class="card hidden" aria-labelledby="equity-heading">
       <div class="card-heading"><h2 id="equity-heading">Paper equity, last month</h2><span class="muted" id="equity-note"></span></div>
@@ -135,6 +168,6 @@
   </div>
 
   <div id="toast" class="toast hidden" role="status" aria-live="polite" aria-atomic="true"></div>
-  <script src="/static/js/portfolio.js?v=7"></script>
+  <script src="/static/js/portfolio.js?v=9"></script>
 </body>
 </html>

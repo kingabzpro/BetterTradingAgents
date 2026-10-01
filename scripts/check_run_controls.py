@@ -75,7 +75,7 @@ async def checks() -> None:
     try:
         transport = httpx.ASGITransport(app=app)
         async with httpx.AsyncClient(
-            transport=transport, base_url="http://test"
+            transport=transport, base_url="http://127.0.0.1"
         ) as client:
             assert (await client.post("/api/runs/nosuchrun00/cancel")).status_code == 404
 

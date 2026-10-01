@@ -13,6 +13,7 @@ dependencies = [
     "yfinance>=0.2.50",
     "python-dotenv>=1.0",
     "alpaca-py>=0.44.0",
+    "keyring>=25.7.0",
 ]
 
 # Everyday commands: uv run setup / uv run app / uv run test.

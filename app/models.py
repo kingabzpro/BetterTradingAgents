@@ -1,6 +1,6 @@
 """Pydantic models shared across the app."""
 
-from typing import Literal
+from typing import Any, Literal
 from urllib.parse import urlparse
 
 from pydantic import BaseModel, Field, field_validator
@@ -438,4 +438,63 @@ class BrokerOrderRequest(BaseModel):
     side: Literal["buy", "sell"]
     notional: float = Field(gt=0, le=1_000_000)
     confirm: bool = False
+
+
+class AutomationOrderOutcome(BaseModel):
+    """What one automated order attempt did (submitted, or why it was not)."""
+
+    ticker: str
+    side: Literal["buy", "sell"]
+    notional: float | None = None
+    status: str = "skipped"  # an Alpaca order status, or skipped
+    client_order_id: str | None = None
+    error: str | None = None
+
+
+class AutomationSession(BaseModel):
+    """One automated trading session: one scan -> one agent run -> orders."""
+
+    id: int = 0
+    trigger: Literal["schedule", "manual"] = "schedule"
+    status: Literal["running", "completed", "failed", "skipped"] = "running"
+    started_at: float = 0.0  # epoch seconds
+    finished_at: float | None = None
+    run_id: str | None = None  # links to the analysis run and every order
+    tickers: list[str] = Field(default_factory=list)
+    decisions: dict[str, str] = Field(default_factory=dict)
+    orders: list[AutomationOrderOutcome] = Field(default_factory=list)
+    error: str | None = None
+
+
+class AutomationStatus(BaseModel):
+    """Current autopilot state for the portfolio page card."""
+
+    enabled: bool = False
+    session_active: bool = False
+    configured: bool = False  # Alpaca keys present
+    trading_enabled: bool = False  # submissions kill switch off = False
+    llm_configured: bool = False
+    interval_minutes: int = 0
+    candidates: int = 0
+    min_confidence: float = 0.0
+    outlook: str = "short_term"
+    depth: str = "medium"
+    allow_sells: bool = True
+    next_check_at: float | None = None
+    sessions: list[AutomationSession] = Field(default_factory=list)
+
+
+class AutomationUpdateRequest(BaseModel):
+    """Body of POST /api/automation; flips the persisted on/off toggle."""
+
+    enabled: bool
+
+
+class SettingsUpdateRequest(BaseModel):
+    """Body of POST /api/settings. values maps setting name to its new value
+    (blank or None for a secret means unchanged); clear_secrets lists secret
+    names whose keychain/DB entries should be deleted."""
+
+    values: dict[str, Any] = Field(default_factory=dict)
+    clear_secrets: list[str] = Field(default_factory=list)
 

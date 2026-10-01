@@ -109,6 +109,24 @@ nav { display: flex; align-items: center; gap: 10px; flex: none; }
   background: var(--panel); transition: color 0.15s, border-color 0.15s, background 0.15s;
 }
 .nav-link:hover { color: var(--text); border-color: var(--border-strong); background: var(--panel-2); }
+/* The current page: identical nav on every page, so the highlight (and the
+   button placement) never shifts as you move between sections. */
+.nav-link.active, .nav-link[aria-current="page"] {
+  color: var(--accent); border-color: rgba(16, 201, 115, 0.55); background: rgba(16, 201, 115, 0.08);
+}
+/* Settings is a first-class destination: solid accent pill with a gear. */
+.nav-link.nav-settings {
+  align-items: center; background: var(--accent); border-color: var(--accent);
+  color: var(--on-accent); display: inline-flex; font-weight: 650; gap: 6px;
+}
+.nav-link.nav-settings:hover { background: #12d97e; border-color: #12d97e; color: var(--on-accent); }
+.nav-link.nav-settings.active, .nav-link.nav-settings[aria-current="page"] {
+  box-shadow: 0 0 0 3px rgba(16, 201, 115, 0.3); color: var(--on-accent);
+}
+.nav-settings .gear { flex: none; height: 14px; width: 14px; }
+.nav-settings .gear circle, .nav-settings .gear path {
+  fill: none; stroke: var(--on-accent); stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.8;
+}
 .chip {
   font-size: 11px; font-weight: 600; padding: 4px 11px; border-radius: 999px;
   border: 1px solid rgba(245, 165, 36, 0.35); background: rgba(245, 165, 36, 0.1); color: var(--hold);

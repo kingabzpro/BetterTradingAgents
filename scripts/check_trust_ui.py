@@ -148,7 +148,7 @@ async def endpoint_checks() -> None:
     run.results = {"MSFT": complete}
     store.runs[run.run_id] = run
     transport = httpx.ASGITransport(app=app)
-    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+    async with httpx.AsyncClient(transport=transport, base_url="http://127.0.0.1") as client:
         response = await client.get(f"/api/runs/{run.run_id}")
         assert response.status_code == 200
         assert response.json()["results"]["MSFT"]["as_of"]

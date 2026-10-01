@@ -123,7 +123,7 @@ async def checks() -> None:
     assert by_id["mixed000001"].cost_usd == 3.60 and by_id["mixed000001"].cost_unknown is True
 
     transport = httpx.ASGITransport(app=app)
-    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+    async with httpx.AsyncClient(transport=transport, base_url="http://127.0.0.1") as client:
         listing = await client.get("/api/runs", headers={"X-Client-ID": "device_cost_test"})
         assert listing.status_code == 200
         rows = {row["run_id"]: row for row in listing.json()}

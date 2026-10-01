@@ -118,7 +118,7 @@ async def e2e():
     store.runs[run.run_id] = run
 
     transport = httpx.ASGITransport(app=app)
-    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+    async with httpx.AsyncClient(transport=transport, base_url="http://127.0.0.1") as client:
         response = await client.post(f"/api/runs/{run.run_id}/chat", json={
             "ticker": "nvda",
             "messages": [{"role": "user",
@@ -171,7 +171,7 @@ async def e2e():
     await run_history.save(run.to_status(), owner_id="chat_check")
     store.runs.pop(run.run_id)
     transport = httpx.ASGITransport(app=app)
-    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+    async with httpx.AsyncClient(transport=transport, base_url="http://127.0.0.1") as client:
         response = await client.post(f"/api/runs/{run.run_id}/chat", json={
             "ticker": "NVDA",
             "messages": [{"role": "user", "content": "still there?"}],

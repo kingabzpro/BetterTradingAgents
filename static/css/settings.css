@@ -1,0 +1,221 @@
+/* Settings page: grouped sidebar with status dots, section panels, role
+   cards, sticky save bar. */
+
+#panels .card { margin-top: 0; }
+#panels .card + .card { margin-top: 16px; }
+
+/* ---- layout: sidebar + content ------------------------------------------------ */
+
+.settings-layout {
+  align-items: start;
+  display: grid;
+  gap: 22px;
+  grid-template-columns: 232px minmax(0, 1fr);
+  margin-top: 16px;
+}
+.settings-content { min-width: 0; }
+
+/* ---- sidebar nav ---------------------------------------------------------------- */
+
+.settings-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  position: sticky;
+  top: 86px;
+}
+.nav-caption {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  margin: 14px 10px 4px;
+  text-transform: uppercase;
+}
+.nav-item {
+  align-items: center;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  color: var(--text);
+  cursor: pointer;
+  display: flex;
+  flex: none;
+  font: inherit;
+  font-size: 13px;
+  gap: 10px;
+  padding: 8px 12px;
+  text-align: left;
+  width: 100%;
+}
+.nav-item:hover { background: var(--panel-2); }
+.nav-item[aria-current="true"] {
+  background: var(--panel-2);
+  border-color: var(--border-strong);
+}
+.nav-item .nav-ico { flex: none; height: 16px; width: 16px; }
+.nav-item .nav-ico path, .nav-item .nav-ico circle, .nav-item .nav-ico rect,
+.nav-item .nav-ico line, .nav-item .nav-ico polyline, .nav-item .nav-ico polygon {
+  fill: none;
+  stroke: var(--muted);
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.nav-item[aria-current="true"] .nav-ico path,
+.nav-item[aria-current="true"] .nav-ico circle,
+.nav-item[aria-current="true"] .nav-ico rect,
+.nav-item[aria-current="true"] .nav-ico line,
+.nav-item[aria-current="true"] .nav-ico polyline,
+.nav-item[aria-current="true"] .nav-ico polygon { stroke: var(--accent); }
+
+.nav-dot {
+  border-radius: 50%;
+  flex: none;
+  height: 8px;
+  margin-left: auto;
+  width: 8px;
+}
+.nav-dot.ok { background: var(--buy); box-shadow: 0 0 6px rgba(34, 197, 94, 0.55); }
+.nav-dot.off { background: transparent; border: 1.5px solid var(--muted); }
+.nav-dot.warn { background: var(--hold); box-shadow: 0 0 6px rgba(245, 165, 36, 0.45); }
+.nav-dot.bad { background: var(--sell); box-shadow: 0 0 6px rgba(244, 88, 107, 0.5); }
+
+/* ---- panel, sections, field rows -------------------------------------------- */
+
+.group-heading {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 14px 16px 6px;
+}
+.group-heading h2 { margin: 0; font-size: 15px; }
+.group-heading .muted { font-size: 11px; }
+
+.fields { padding: 4px 16px 12px; }
+.section-heading {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  margin: 14px 0 2px;
+  text-transform: uppercase;
+}
+.section-heading:first-child { margin-top: 2px; }
+
+.field-row {
+  align-items: center;
+  border-top: 1px dashed var(--border-strong);
+  display: grid;
+  gap: 4px 18px;
+  grid-template-columns: minmax(180px, 300px) minmax(220px, 1fr);
+  padding: 9px 0;
+}
+.section-heading + .field-row { border-top: none; }
+
+.field-label label { display: block; font-size: 13px; font-weight: 500; }
+.field-hint { color: var(--muted); display: block; font-size: 11px; margin-top: 1px; }
+.field-label code { color: var(--muted); font-size: 10px; cursor: help; }
+
+.field-input { align-items: center; display: flex; flex-wrap: wrap; gap: 8px; min-width: 0; }
+.field-input input[type="text"],
+.field-input input[type="password"],
+.field-input input[type="number"],
+.field-input select {
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  flex: 1;
+  font: inherit;
+  font-size: 13px;
+  min-width: 0;
+  padding: 7px 10px;
+}
+.field-input input:focus, .field-input select:focus {
+  border-color: rgba(16, 201, 115, 0.65);
+  outline: none;
+}
+.field-input input.changed, .field-input select.changed { border-color: rgba(245, 165, 36, 0.55); }
+.field-input input[type="checkbox"] { accent-color: #10c973; flex: none; height: 16px; width: 16px; }
+.field-input .bool-label { color: var(--muted); flex: 1; font-size: 12px; min-width: 160px; }
+
+.reveal-btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+  padding: 3px 8px;
+  white-space: nowrap;
+}
+.reveal-btn:hover { border-color: var(--border-strong); color: var(--text); }
+
+.source-chip { font-size: 10px; white-space: nowrap; }
+.source-chip.keychain { color: #6fda9e; }
+.source-chip.db { color: #ffc75e; }
+.source-chip.env { color: var(--muted); }
+
+.clear-secret {
+  align-items: center;
+  color: var(--muted);
+  display: inline-flex;
+  font-size: 11px;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+/* ---- per-role cards ---------------------------------------------------------- */
+
+.role-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  padding: 12px 0 4px;
+}
+.role-card {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  padding: 10px 12px 6px;
+}
+.role-card h3 { font-size: 13px; margin: 0 0 2px; }
+.role-card .field-row { border-top: none; grid-template-columns: 1fr; padding: 7px 0; }
+.role-card .field-label code { display: none; }
+
+/* ---- sticky save bar ---------------------------------------------------------- */
+
+.save-bar {
+  backdrop-filter: blur(6px);
+  background: rgba(12, 21, 38, 0.92);
+  border: 1px solid var(--border-strong);
+  border-radius: 12px;
+  bottom: 12px;
+  box-shadow: var(--shadow);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 18px;
+  padding: 10px 14px;
+  position: sticky;
+}
+.save-bar #dirty-note { flex: 1; }
+
+@media (max-width: 900px) {
+  .settings-layout { grid-template-columns: 1fr; }
+  .settings-nav {
+    flex-direction: row;
+    overflow-x: auto;
+    position: static;
+    padding-bottom: 6px;
+  }
+  .nav-caption { display: none; }
+  .nav-item { width: auto; white-space: nowrap; }
+}
+
+@media (max-width: 640px) {
+  .field-row { gap: 4px; grid-template-columns: 1fr; }
+  .role-grid { grid-template-columns: 1fr; }
+}

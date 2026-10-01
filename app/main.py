@@ -6,12 +6,13 @@ import logging
 import re
 from datetime import date, timedelta
 from pathlib import Path
+from urllib.parse import urlparse
 
 from fastapi import FastAPI, Header, HTTPException, Query
-from fastapi.responses import FileResponse, RedirectResponse, StreamingResponse
+from fastapi.responses import FileResponse, PlainTextResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
-from app import broker, calibration, chat, memory, watchlist
+from app import automation, broker, calibration, chat, memory, settings_store, watchlist
 from app.config import settings
 from app.discovery import discover_stocks
 from app.models import (
@@ -23,12 +24,15 @@ from app.models import (
     BrokerPosition,
     BrokerStatus,
     CalibrationTrackRecord,
+    AutomationStatus,
+    AutomationUpdateRequest,
     CancelRunResponse,
     ClearHistoryResponse,
     ManagerChatRequest,
     ManagerChatResponse,
     RunHistoryItem,
     RunStatus,
+    SettingsUpdateRequest,
     WatchlistAddRequest,
     WatchlistAddResponse,
     WatchlistItem,
@@ -49,6 +53,34 @@ app = FastAPI(title="BetterTradingAgents")
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
+def _origin_authority(origin: str) -> str:
+    """The host[:port] part of an Origin header, lowercased."""
+    return urlparse(origin.lower()).netloc
+
+
+@app.middleware("http")
+async def local_only_guard(request, call_next):
+    """Drive-by protection for a localhost app (settings hold real API keys).
+
+    A malicious page in the user's browser can reach http://127.0.0.1:8000
+    even though nothing is exposed to the network: DNS rebinding makes an
+    attacker site resolve here, and cross-site form/fetch POSTs carry an
+    Origin header naming the attacker. So: the Host header must be loopback,
+    and any Origin must be this app's own origin. Same-origin fetches,
+    same-page navigation, and header-less curl are unaffected.
+    """
+    host = (request.headers.get("host") or "").lower()
+    if not host:
+        return PlainTextResponse("forbidden: missing Host header", status_code=403)
+    hostname = host[host.index("[") + 1 : host.index("]")] if host.startswith("[") else host.rsplit(":", 1)[0]
+    if hostname not in ("127.0.0.1", "localhost", "::1"):
+        return PlainTextResponse("forbidden: non-loopback Host", status_code=403)
+    origin = request.headers.get("origin")
+    if origin and _origin_authority(origin) != host:
+        return PlainTextResponse("forbidden: cross-origin request", status_code=403)
+    return await call_next(request)
+
+
 @app.middleware("http")
 async def revalidate_assets(request, call_next):
     """Never let the browser serve a stale UI mix (old CSS + new markup).
@@ -63,6 +95,7 @@ async def revalidate_assets(request, call_next):
     path = request.url.path
     if path.startswith(("/static/", "/api/")) or path in (
         "/",
+        "/settings",
         "/portfolio",
         "/history",
         "/watchlist",
@@ -78,6 +111,11 @@ async def startup() -> None:
     await watchlist.init()
     await broker.init()
     await store.init()
+    await automation.init()
+    # Keychain/DB overrides must land on the settings object before the
+    # automation loop and anything else first reads them.
+    await asyncio.to_thread(settings_store.apply_overrides)
+    automation.start()
     mode = "mock (no LLM_API_KEY)" if not settings.llm_configured else settings.llm_model
     logger.info("[startup] BetterTradingAgents ready | llm=%s", mode)
 
@@ -85,6 +123,11 @@ async def startup() -> None:
 @app.get("/")
 async def index():
     return FileResponse(STATIC_DIR / "index.html")
+
+
+@app.get("/settings")
+async def settings_page():
+    return FileResponse(STATIC_DIR / "settings.html")
 
 
 @app.get("/portfolio")
@@ -130,6 +173,37 @@ async def health():
         "max_tickers": settings.max_tickers,
         "debate_rounds": settings.debate_rounds,
     }
+
+
+@app.get("/api/settings")
+async def get_settings():
+    """Settings page payload. Secret values never leave the server: each
+    secret carries only a configured flag and where it is stored from."""
+    return await asyncio.to_thread(settings_store.snapshot)
+
+
+@app.post("/api/settings")
+async def update_settings(update: SettingsUpdateRequest):
+    """Validate, persist, and live-apply a settings change. No restart: every
+    consumer reads settings at call time. Secrets save to the OS keychain."""
+    try:
+        await asyncio.to_thread(settings_store.save, update.values, update.clear_secrets)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    logger.info(
+        "[settings] updated: %s; cleared: %s",
+        ", ".join(sorted(update.values)) or "nothing",
+        ", ".join(update.clear_secrets) or "nothing",
+    )
+    return await asyncio.to_thread(settings_store.snapshot)
+
+
+@app.post("/api/settings/reset")
+async def reset_settings():
+    """Drop every app-saved override and restore the .env values."""
+    await asyncio.to_thread(settings_store.reset)
+    logger.info("[settings] reset to .env defaults")
+    return await asyncio.to_thread(settings_store.snapshot)
 
 
 @app.get("/api/calibration", response_model=CalibrationTrackRecord)
@@ -408,6 +482,28 @@ async def cancel_broker_order(client_order_id: str):
         return await broker.cancel_order(client_order_id)
     except (broker.BrokerNotConfigured, broker.BrokerRuleError) as exc:
         raise _broker_http_error(exc) from exc
+
+
+@app.get("/api/automation", response_model=AutomationStatus)
+async def automation_status():
+    """Autopilot state, config, and recent sessions (portfolio page card)."""
+    return await automation.status_snapshot()
+
+
+@app.post("/api/automation", response_model=AutomationStatus)
+async def set_automation(request: AutomationUpdateRequest):
+    await automation.set_enabled(request.enabled)
+    return await automation.status_snapshot()
+
+
+@app.post("/api/automation/run")
+async def automation_run_now():
+    """Fire one autopilot session immediately (allowed while the market is
+    closed; those orders queue for the next open)."""
+    started = await automation.start_manual_session()
+    if not started:
+        raise HTTPException(status_code=409, detail="a session is already running")
+    return {"started": True}
 
 
 def _require_client(client_id: str | None) -> str:

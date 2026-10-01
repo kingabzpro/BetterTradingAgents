@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#05070d">
+  <title>Settings · BetterTradingAgents</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+  <link rel="icon" href="/static/favicon.ico?v=2" sizes="any">
+  <link rel="icon" type="image/png" href="/static/favicon.png?v=2">
+  <link rel="apple-touch-icon" href="/static/favicon.png?v=2">
+  <link rel="stylesheet" href="/static/css/base.css?v=6">
+  <link rel="stylesheet" href="/static/css/settings.css?v=4">
+</head>
+<body>
+  <a class="skip-link" href="#main-content">Skip to content</a>
+  <div class="container">
+    <header>
+      <div class="brand">
+        <a href="/" class="logo-home" aria-label="Go to BetterTradingAgents home">
+          <img src="/static/logo.png" alt="" class="logo-img">
+        </a>
+        <div>
+          <h1>Settings</h1>
+          <p class="tagline">Configuration · applies live, no restart</p>
+        </div>
+      </div>
+      <nav aria-label="Primary navigation">
+        <a href="/" class="nav-link">Home</a>
+        <a href="/history" class="nav-link">History</a>
+        <a href="/compare" class="nav-link">Compare</a>
+        <a href="/watchlist" class="nav-link">Watchlist</a>
+        <a href="/portfolio" class="nav-link">Trades</a>
+        <a href="/settings" class="nav-link nav-settings active" aria-current="page"><svg class="gear" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg><span>Settings</span></a>
+      </nav>
+    </header>
+
+    <main id="main-content" tabindex="-1">
+      <p class="hint">
+        Everything here overrides <code>.env</code> and applies immediately. Keys are stored in
+        your OS keychain (Windows Credential Manager), never in the database or this browser.
+        Pick a section on the left; the dot shows whether it is ready.
+      </p>
+      <p class="error hidden" id="insecure-note" role="alert">
+        No OS keychain was found on this machine: secrets will be stored unencrypted in the local
+        database file. Consider adding them to <code>.env</code> instead.
+      </p>
+
+      <div class="settings-layout">
+        <nav class="settings-nav" id="settings-nav" aria-label="Settings sections"></nav>
+
+        <div class="settings-content">
+          <div id="panels"></div>
+
+          <div class="save-bar" id="save-bar">
+            <span class="muted" id="dirty-note">Loading settings…</span>
+            <button id="reset-btn" class="secondary-btn" type="button" disabled>Reset to .env defaults</button>
+            <button id="save-btn" class="add-btn" type="button" disabled>Save changes</button>
+          </div>
+        </div>
+      </div>
+
+      <datalist id="dl-reasoning">
+        <option value=""></option>
+        <option value="none"></option>
+        <option value="low"></option>
+        <option value="medium"></option>
+        <option value="high"></option>
+      </datalist>
+    </main>
+  </div>
+
+  <div id="toast" class="toast hidden" role="status" aria-live="polite" aria-atomic="true"></div>
+  <script src="/static/js/settings.js?v=5"></script>
+</body>
+</html>

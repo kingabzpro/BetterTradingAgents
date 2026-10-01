@@ -165,7 +165,7 @@ async def checks() -> None:
 
     # ---- API surface ----------------------------------------------------------
     transport = httpx.ASGITransport(app=app)
-    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+    async with httpx.AsyncClient(transport=transport, base_url="http://127.0.0.1") as client:
         missing = await client.get("/api/watchlist")
         assert missing.status_code == 200 and missing.json() == []
 

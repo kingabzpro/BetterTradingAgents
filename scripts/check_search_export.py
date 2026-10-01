@@ -73,7 +73,7 @@ async def checks() -> None:
     await run_history.save(run_b, completed_at=1_780_100_011.0, owner_id=OWNER)
 
     transport = httpx.ASGITransport(app=app)
-    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+    async with httpx.AsyncClient(transport=transport, base_url="http://127.0.0.1") as client:
         # ---- runs page: search, every filter, sort, chips, empty states ----
         page = await client.get("/history")
         assert page.status_code == 200, page.text

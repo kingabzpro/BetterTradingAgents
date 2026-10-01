@@ -71,6 +71,22 @@ assert abs(out["alpha_vs_spy_pct"] - 9.0) < 0.01, out
 # Decided today: entry exists but no later close -> ungradable.
 today_row = {**row30, "date": TODAY_ISO}
 assert memory.compute_outcome(today_row, CLOSES, SPY) is None
+
+# Horizon landing on a Saturday: matured on the Friday close, not frozen partial.
+weekend = next(
+    d for i in range(7)
+    if ((d := TODAY - timedelta(days=30 + i)) + timedelta(days=21)).weekday() == 5
+)
+friday = (weekend + timedelta(days=20)).isoformat()
+D_WE = weekend.isoformat()
+we_row = {**row30, "date": D_WE}
+we_out = memory.compute_outcome(
+    we_row, {D_WE: 100.0, friday: 90.0}, {D_WE: 400.0, friday: 400.0}
+)
+assert we_out["mature"] is True, we_out
+assert we_out["outcome_date"] == friday and we_out["window_days"] == 20, we_out
+assert abs(we_out["realized_return_pct"] + 10.0) < 0.01, we_out
+print("weekend-horizon maturing OK: target on a Saturday closes on Friday")
 print("outcome math OK: +10% vs +1% over 21d, decided-today returns None")
 
 

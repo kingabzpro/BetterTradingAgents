@@ -171,7 +171,7 @@ async def checks() -> None:
 
     # Endpoint: same scope as the report, 422 on a malformed decision.
     transport = httpx.ASGITransport(app=app)
-    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+    async with httpx.AsyncClient(transport=transport, base_url="http://127.0.0.1") as client:
         response = await client.get(
             "/api/calibration",
             params={"decision": "BUY", "confidence": 0.72,

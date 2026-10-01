@@ -163,7 +163,7 @@ async def checks() -> None:
     main_module.get_closes_between = fake_closes
 
     transport = httpx.ASGITransport(app=app)
-    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+    async with httpx.AsyncClient(transport=transport, base_url="http://127.0.0.1") as client:
         history = await client.get("/api/price-history/AAPL")
         assert history.status_code == 200, history.text
         body = history.json()

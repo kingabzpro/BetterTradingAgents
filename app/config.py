@@ -106,6 +106,39 @@ class Settings:
         _env("ALPACA_MAX_DECISION_AGE_HOURS", "72")
     )
 
+    # Automated paper-trading sessions (autopilot). A background loop scans
+    # the market for candidates (the discovery screen), adds held tickers so
+    # SELL decisions can act, runs the normal agent pipeline as one run, and
+    # submits the risk-gated trades through broker.submit_order - so the kill
+    # switch, order caps, and decision-age checks still apply to every order.
+    # Sessions never trade mock decisions and scheduled ones only run while
+    # the market is open. The on/off toggle itself lives in the DB (the
+    # portfolio page flips it); this env value only seeds the first boot.
+    automation_enabled: bool = _env("AUTOMATION_ENABLED", "0").lower() in (
+        "1",
+        "true",
+        "yes",
+    )
+    automation_interval_minutes: int = max(
+        15, int(_env("AUTOMATION_INTERVAL_MINUTES", "240"))
+    )
+    automation_candidates: int = max(1, int(_env("AUTOMATION_CANDIDATES", "3")))
+    # BUYs need at least this final (risk-gated) confidence; SELLs always act
+    # because they only exit positions already held.
+    automation_min_confidence: float = float(_env("AUTOMATION_MIN_CONFIDENCE", "0.65"))
+    automation_outlook: str = _env("AUTOMATION_OUTLOOK", "short_term")
+    automation_depth: str = _env("AUTOMATION_DEPTH", "medium")
+    automation_allow_sells: bool = _env("AUTOMATION_ALLOW_SELLS", "1").lower() in (
+        "1",
+        "true",
+        "yes",
+    )
+    # One hung provider must not wedge the loop forever: a session longer
+    # than this is cancelled and recorded as failed.
+    automation_session_timeout_minutes: int = max(
+        5, int(_env("AUTOMATION_SESSION_TIMEOUT_MINUTES", "40"))
+    )
+
     # Live reasoning stream (wiki Roadmap 3.2): stream agent tokens to the
     # UI as agent_token SSE events. OFF by default - in live use the stream is
     # mostly the final JSON blob, which reads as noise next to the result card.

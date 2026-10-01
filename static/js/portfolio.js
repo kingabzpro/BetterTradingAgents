@@ -1,7 +1,8 @@
 /* Portfolio page (ROADMAP P2.1): the Alpaca paper account IS the portfolio.
    Account summary, equity curve, open positions, the order lifecycle this app
-   placed, and per-order performance vs SPY. Without keys the page is a slim
-   connect hint; there is no local demo ledger anymore. */
+   placed, per-order performance vs SPY, and the automated-trading (autopilot)
+   sessions card. Without keys the page is a slim connect hint; there is no
+   local demo ledger anymore. */
 
 const $ = (id) => document.getElementById(id);
 const esc = (value) => String(value).replace(/[&<>"']/g, (ch) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[ch]));
@@ -24,6 +25,7 @@ function showToast(message, isError = false) {
 function setUnconfigured(detail) {
   $("paper-takeover").classList.add("hidden");
   $("paper-summary").classList.add("hidden");
+  $("automation-card").classList.add("hidden");
   for (const id of ["equity-card", "paper-positions-card", "orders-card", "perf-card"]) {
     $(id).classList.add("hidden");
   }
@@ -254,7 +256,220 @@ async function renderPerformance() {
   }
 }
 
+/* Automated trading sessions (autopilot): one session = market scan (the
+   discovery screen) + held tickers -> the full agent pipeline as one run ->
+   risk-gated orders through the same guarded broker path as manual clicks. */
+
+let lastAutomation = null;
+let automationPoll = null;
+
+function fmtWhen(epoch) {
+  if (!epoch) return "n/a";
+  return new Date(epoch * 1000).toLocaleString(undefined, {
+    month: "short", day: "numeric", hour: "2-digit", minute: "2-digit",
+  });
+}
+
+function sessionChip(status) {
+  const kind = status === "completed"
+    ? "ok"
+    : status === "failed"
+      ? "bad"
+      : status === "running"
+        ? "live"
+        : "muted";
+  return `<span class="status-chip ${kind}">${esc(status)}</span>`;
+}
+
+function orderText(order) {
+  if (order.status === "skipped" || order.status === "rejected") {
+    return `${order.side} ${order.ticker}: ${order.error || order.status}`;
+  }
+  return `${order.side === "buy" ? "Bought" : "Sold"} ${order.ticker} ${fmtUsd0(order.notional)} (${order.status})`;
+}
+
+function renderAutomation(status) {
+  lastAutomation = status;
+  const state = $("automation-state");
+  const chip = status.session_active
+    ? ["Running", "live"]
+    : status.enabled
+      ? ["On", "ok"]
+      : ["Off", "muted"];
+  state.textContent = chip[0];
+  state.className = `status-chip ${chip[1]}`;
+  $("automation-toggle").textContent = status.enabled ? "Disable" : "Enable";
+  $("automation-run").disabled = status.session_active;
+
+  const every = status.interval_minutes >= 60
+    ? `${Math.round(status.interval_minutes / 60)}h`
+    : `${status.interval_minutes} min`;
+  const next = status.enabled && status.next_check_at && !status.session_active
+    ? ` Next check ${fmtWhen(status.next_check_at)}.`
+    : "";
+  $("automation-config").textContent =
+    `Every ${every} while the market is open: scans the market for the top ${status.candidates} candidates, adds held tickers, runs the full agent crew ` +
+    `(${status.depth} depth, ${status.outlook}), then submits BUYs at ${Math.round(status.min_confidence * 100)}%+ confidence and SELLs that exit held positions, through the guarded paper broker.${next}`;
+
+  const warn = $("automation-warn");
+  if (status.enabled && !status.trading_enabled) {
+    warn.textContent = "Sessions will research but cannot order: submissions are disabled (ALPACA_TRADING_ENABLED).";
+  } else if (status.enabled && !status.llm_configured) {
+    warn.textContent = "Sessions cannot run: no LLM configured.";
+  } else {
+    warn.textContent = "";
+  }
+
+  const sessions = status.sessions || [];
+  const body = $("automation-body");
+  body.innerHTML = "";
+  $("automation-empty").classList.toggle("hidden", sessions.length > 0);
+  for (const session of sessions) {
+    const decisions = Object.entries(session.decisions || {})
+      .map(([ticker, decision]) => `${ticker} ${decision}`)
+      .join(", ") || "-";
+    const orders = (session.orders || []).map(orderText).join("; ") || "-";
+    const runCell = session.run_id
+      ? `<a href="/?run=${encodeURIComponent(session.run_id)}">View run</a>`
+      : "-";
+    const error = session.error
+      ? `<small class="order-error">${esc(session.error)}</small>`
+      : "";
+    const row = document.createElement("tr");
+    row.innerHTML = `
+      <td data-label="Started">${esc(fmtWhen(session.started_at))}</td>
+      <td data-label="Result">${sessionChip(session.status)}${error}</td>
+      <td data-label="Decisions">${esc(decisions)}</td>
+      <td data-label="Orders">${esc(orders)}</td>
+      <td data-label="Run">${runCell}</td>`;
+    body.appendChild(row);
+  }
+}
+
+async function fetchAutomation() {
+  try {
+    const status = await fetch("/api/automation").then((r) => (r.ok ? r.json() : null));
+    if (!status) return;
+    $("automation-card").classList.toggle("hidden", !status.configured);
+    if (status.configured) renderAutomation(status);
+    maybeNotify(status);
+  } catch (_) { /* the page keeps working without the card */ }
+}
+
+/* Desktop notifications (per-browser): while this page is open, a finished
+   autopilot session raises a Notification with a short summary. Only the
+   preference and the last notified timestamp live in localStorage; the
+   notification itself carries decision and order counts, never keys. */
+const NOTIFY_PREF = "bta_notify";
+const NOTIFY_SEEN = "bta_last_notified";
+
+function notificationsOn() {
+  return "Notification" in window
+    && Notification.permission === "granted"
+    && localStorage.getItem(NOTIFY_PREF) === "1";
+}
+
+function renderNotifyControls() {
+  const supported = "Notification" in window;
+  $("notify-enable").classList.toggle("hidden", !supported || notificationsOn());
+  $("notify-state").classList.toggle("hidden", !notificationsOn());
+}
+
+function latestFinished(status) {
+  return (status.sessions || []).find(
+    (session) => session.status === "completed" || session.status === "failed"
+  );
+}
+
+async function enableNotifications() {
+  const permission = await Notification.requestPermission();
+  if (permission !== "granted") {
+    showToast("Notifications are blocked for this site; allow them in the browser settings", true);
+    return;
+  }
+  localStorage.setItem(NOTIFY_PREF, "1");
+  /* Stamp what has already finished so enabling never replays old sessions. */
+  const status = await fetch("/api/automation").then((r) => (r.ok ? r.json() : null)).catch(() => null);
+  const done = status && latestFinished(status);
+  if (done && done.finished_at) localStorage.setItem(NOTIFY_SEEN, String(done.finished_at));
+  renderNotifyControls();
+  const note = new Notification("BetterTradingAgents", {
+    body: "Notifications are on: you will hear about finished autopilot sessions while this page is open.",
+    tag: "bta-test",
+  });
+  note.addEventListener("click", () => { window.focus(); note.close(); });
+}
+
+function maybeNotify(status) {
+  if (!notificationsOn()) return;
+  const done = latestFinished(status);
+  if (!done || !done.finished_at) return;
+  const seen = Number(localStorage.getItem(NOTIFY_SEEN) || 0);
+  if (done.finished_at <= seen) return;
+  localStorage.setItem(NOTIFY_SEEN, String(done.finished_at));
+  const decisions = Object.entries(done.decisions || {})
+    .map(([ticker, decision]) => `${ticker} ${decision}`)
+    .join(", ")
+    .slice(0, 180);
+  const orders = (done.orders || []).filter((order) => order.status !== "skipped");
+  const body = done.status === "failed"
+    ? `Session failed: ${done.error || "unknown error"}`
+    : orders.length
+      ? `${orders.map((order) => `${order.side} ${order.ticker}`).join(", ")} (${decisions || "no decisions"})`
+      : `No orders. Decisions: ${decisions || "none"}`;
+  const note = new Notification(`Autopilot session ${done.status}`, { body, tag: "bta-session" });
+  note.addEventListener("click", () => { window.focus(); note.close(); });
+}
+
+async function toggleAutomation() {
+  try {
+    const status = await fetch("/api/automation", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ enabled: !(lastAutomation && lastAutomation.enabled) }),
+    }).then((r) => (r.ok ? r.json() : Promise.reject(new Error(`failed (${r.status})`))));
+    renderAutomation(status);
+    showToast(status.enabled ? "Autopilot enabled" : "Autopilot disabled");
+    pollAutomation();
+  } catch (error) {
+    showToast(`Could not update autopilot: ${error.message}`, true);
+  }
+}
+
+async function runSessionNow() {
+  try {
+    const response = await fetch("/api/automation/run", { method: "POST" });
+    const body = await response.json().catch(() => null);
+    if (!response.ok) throw new Error(body?.detail || `failed (${response.status})`);
+    showToast("Session started: scanning and analyzing, this takes a few minutes");
+    pollAutomation();
+  } catch (error) {
+    showToast(`Could not start a session: ${error.message}`, true);
+  }
+}
+
+/* Keep the card live while a session runs; a slower tick refreshes the
+   next-check time when idle. */
+function pollAutomation() {
+  window.clearTimeout(automationPoll);
+  if (!lastAutomation || (!lastAutomation.session_active && !lastAutomation.enabled)) return;
+  automationPoll = window.setTimeout(async () => {
+    await fetchAutomation();
+    pollAutomation();
+  }, lastAutomation.session_active ? 15000 : 60000);
+}
+
 document.addEventListener("DOMContentLoaded", () => {
   $("download-csv").addEventListener("click", downloadCsv);
+  $("automation-toggle").addEventListener("click", toggleAutomation);
+  $("automation-run").addEventListener("click", runSessionNow);
+  $("notify-enable").addEventListener("click", enableNotifications);
+  $("notify-state").addEventListener("click", () => {
+    localStorage.removeItem(NOTIFY_PREF);
+    renderNotifyControls();
+    showToast("Notifications off");
+  });
+  renderNotifyControls();
   load();
+  fetchAutomation().then(pollAutomation);
 });

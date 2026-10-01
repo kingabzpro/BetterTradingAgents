@@ -85,7 +85,7 @@ async def checks() -> None:
     assert items[2].decisions == {"TSLA": "HOLD"}
 
     transport = httpx.ASGITransport(app=app)
-    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+    async with httpx.AsyncClient(transport=transport, base_url="http://127.0.0.1") as client:
         listing = await client.get(
             "/api/runs", headers={"X-Client-ID": "device_history_test"}
         )

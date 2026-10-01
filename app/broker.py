@@ -61,8 +61,8 @@ def _client() -> TradingClient:
     """
     if not settings.alpaca_configured:
         raise BrokerNotConfigured(
-            "Alpaca paper trading is not configured; set ALPACA_API_KEY_ID "
-            "and ALPACA_API_SECRET_KEY in .env and restart"
+            "Alpaca paper trading is not configured; add the API key ID and "
+            "secret key on the Settings page"
         )
     return TradingClient(
         settings.alpaca_api_key_id,
@@ -111,6 +111,19 @@ async def status() -> BrokerStatus:
         paper_url=PAPER_DOCS_URL,
         max_order_usd=settings.alpaca_max_order_usd,
     )
+
+
+async def clock() -> dict:
+    """Market calendar: whether the paper market is open right now."""
+
+    def _fetch():
+        raw = _client().get_clock()
+        return {
+            "is_open": bool(raw.is_open),
+            "next_open": str(getattr(raw, "next_open", "") or ""),
+        }
+
+    return await _call(_fetch)
 
 
 async def account() -> BrokerAccount:
@@ -344,8 +357,8 @@ async def submit_order(run_id: str, ticker: str, side: str, notional: float) -> 
         raise BrokerRuleError(f"invalid ticker symbol: '{ticker}'")
     if not settings.alpaca_configured:
         raise BrokerNotConfigured(
-            "Alpaca paper trading is not configured; set ALPACA_API_KEY_ID "
-            "and ALPACA_API_SECRET_KEY in .env and restart"
+            "Alpaca paper trading is not configured; add the API key ID and "
+            "secret key on the Settings page"
         )
     if not settings.alpaca_trading_enabled:
         raise BrokerRuleError(

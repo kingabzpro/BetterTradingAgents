@@ -224,6 +224,12 @@ def compute_outcome(
         if spy_entry and spy_exit and spy_exit[0] >= spy_entry[0] and spy_entry[1]
         else None
     )
+    # A horizon ending on a weekend matures on the Friday close before it;
+    # otherwise a Saturday target could never be reached and the decision
+    # would stay partial forever. Holidays merely delay by one trading day.
+    final_day = date.fromisoformat(target)
+    while final_day.weekday() >= 5:
+        final_day -= timedelta(days=1)
     return {
         "outcome_date": exit_day,
         "realized_return_pct": round(realized, 2),
@@ -232,7 +238,7 @@ def compute_outcome(
         if spy_return is None
         else round(realized - spy_return, 2),
         "window_days": (date.fromisoformat(exit_day) - decided).days,
-        "mature": exit_day >= target,
+        "mature": dates[-1] >= final_day.isoformat(),
     }
 
 

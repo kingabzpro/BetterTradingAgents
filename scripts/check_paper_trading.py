@@ -130,13 +130,13 @@ async def checks() -> None:
     assert "alpaca.markets" in status.paper_url
 
     transport = httpx.ASGITransport(app=app)
-    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+    async with httpx.AsyncClient(transport=transport, base_url="http://127.0.0.1") as client:
         read = await client.get("/api/broker/status")
         assert read.status_code == 200 and read.json()["configured"] is False
 
         missing = await client.get("/api/broker/account")
         assert missing.status_code == 503, missing.text
-        assert "ALPACA_API_KEY_ID" in missing.json()["detail"]
+        assert "Settings page" in missing.json()["detail"]
 
         positions = await client.get("/api/broker/positions")
         assert positions.status_code == 503
@@ -231,7 +231,7 @@ async def checks() -> None:
     _use(fake)
     try:
         transport = httpx.ASGITransport(app=app)
-        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        async with httpx.AsyncClient(transport=transport, base_url="http://127.0.0.1") as client:
             for path in ("/api/broker/status", "/api/broker/account", "/api/broker/positions"):
                 body = (await client.get(path)).text
                 assert FAKE_SECRET not in body and FAKE_KEY not in body, path
@@ -302,7 +302,7 @@ async def checks() -> None:
     # ---- kill switch and confirm are endpoint-level --------------------------
     settings.alpaca_trading_enabled = False
     transport = httpx.ASGITransport(app=app)
-    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+    async with httpx.AsyncClient(transport=transport, base_url="http://127.0.0.1") as client:
         blocked = await client.post(
             "/api/broker/orders",
             json={"run_id": "paperrun01", "ticker": "AAPL", "side": "buy", "notional": 100, "confirm": True},
@@ -310,7 +310,7 @@ async def checks() -> None:
         assert blocked.status_code == 403, blocked.text
         assert "disabled" in blocked.json()["detail"]
     settings.alpaca_trading_enabled = True
-    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+    async with httpx.AsyncClient(transport=transport, base_url="http://127.0.0.1") as client:
         unconfirmed = await client.post(
             "/api/broker/orders",
             json={"run_id": "paperrun01", "ticker": "AAPL", "side": "buy", "notional": 100, "confirm": False},
@@ -452,7 +452,7 @@ async def checks() -> None:
     _use(fake)
     try:
         transport = httpx.ASGITransport(app=app)
-        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        async with httpx.AsyncClient(transport=transport, base_url="http://127.0.0.1") as client:
             listed = await client.get("/api/broker/orders?limit=5")
             assert listed.status_code == 200 and len(listed.json()) <= 5
 
@@ -536,7 +536,7 @@ async def checks() -> None:
         print("filled-order return + alpha math OK")
 
         transport = httpx.ASGITransport(app=app)
-        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        async with httpx.AsyncClient(transport=transport, base_url="http://127.0.0.1") as client:
             curve_response = await client.get("/api/broker/equity?period=1M")
             assert curve_response.status_code == 200
             assert len(curve_response.json()["equity"]) == 2
