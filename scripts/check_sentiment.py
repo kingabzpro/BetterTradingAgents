@@ -64,11 +64,11 @@ ok = sentiment.to_result({"signal": "negative", "confidence": 0.7, "summary": "s
 assert ok.signal == "negative" and ok.confidence == 0.7
 print("to_result OK: coercion + clipping")
 
-# ---- depth profiles: 5th researcher on medium/expert ---------------------------
-assert "sentiment" in depth_profile("medium")["research"]
-assert "sentiment" in depth_profile("expert")["research"]
+# ---- depth profiles: sentiment differentiates Max ------------------------------
+assert "sentiment" in depth_profile("max")["research"]
+assert "sentiment" not in depth_profile("pro")["research"]
 assert "sentiment" not in depth_profile("fast")["research"]
-print("depth profiles OK: sentiment runs at medium/expert, not fast")
+print("depth profiles OK: sentiment runs at max, not pro/fast")
 
 # ---- source references include social posts ------------------------------------
 market = MarketData(
@@ -122,7 +122,7 @@ async def e2e():
     # Thick crowd: the sentiment agent must run, complete and reach the result.
     result = await asyncio.wait_for(
         analyze_ticker("NVDA", emit, market_data=snapshot("NVDA", bullish_posts),
-                       live_context=False),
+                       live_context=False, depth="max"),
         timeout=90,
     )
     assert result.error is None, result.error
@@ -139,7 +139,7 @@ async def e2e():
     # Backtest-style empty social set -> thin-volume neutral, run still completes.
     quiet = await asyncio.wait_for(
         analyze_ticker("AMD", emit, market_data=snapshot("AMD", []),
-                       live_context=False),
+                       live_context=False, depth="max"),
         timeout=90,
     )
     assert quiet.error is None, quiet.error

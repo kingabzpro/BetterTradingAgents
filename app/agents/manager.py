@@ -99,12 +99,32 @@ def to_manager_result(data: dict, ticker: str) -> ManagerResult:
 
 
 def mock(ticker: str, payload: dict) -> dict:
-    """Fallback: net score of the bull/bear debate decides."""
-    bull = payload.get("bull") or {}
-    bear = payload.get("bear") or {}
-    bull_score = bull.get("confidence", 0.5) if isinstance(bull, dict) else 0.5
-    bear_score = bear.get("confidence", 0.5) if isinstance(bear, dict) else 0.5
-    net = bull_score - bear_score
+    """Fallback: net score of the bull/bear debate decides.
+
+    Fast depth skips the debate, so with no debate scores available the net
+    comes from the research signals themselves (bullish +1, bearish -1).
+    """
+    bull = payload.get("bull")
+    bear = payload.get("bear")
+    if isinstance(bull, dict) and bull and isinstance(bear, dict) and bear:
+        bull_score = bull.get("confidence", 0.5)
+        bear_score = bear.get("confidence", 0.5)
+        net = bull_score - bear_score
+        basis = f"Bull {bull_score:.2f} vs bear {bear_score:.2f}"
+    else:
+        bull_score = bear_score = 0.5
+        net = 0.0
+        for key in ("market", "technical", "fundamental", "news", "sentiment", "forecast"):
+            entry = payload.get(key)
+            if not isinstance(entry, dict):
+                continue
+            signal = str(entry.get("signal") or "").lower()
+            if signal in ("bullish", "positive"):
+                net += 1
+            elif signal in ("bearish", "negative"):
+                net -= 1
+        net = round(net / 2, 2)
+        basis = "Research net (no debate)"
     decision = "BUY" if net >= 0.15 else "SELL" if net <= -0.15 else "HOLD"
     probability = (
         None
@@ -114,9 +134,9 @@ def mock(ticker: str, payload: dict) -> dict:
     return {
         "ticker": ticker,
         "decision": decision,
-        "confidence": round(0.5 + abs(net), 2),
+        "confidence": round(min(0.95, 0.5 + abs(net)), 2),
         "probability_beat_spy": probability,
-        "summary": f"[mock] Bull {bull_score:.2f} vs bear {bear_score:.2f} -> {decision}.",
+        "summary": f"[mock] {basis} -> {decision}.",
         "bull_case": "[mock] See bull researcher summary.",
         "bear_case": "[mock] See bear researcher summary.",
         "would_upgrade_if": (

@@ -327,14 +327,14 @@ async def e2e():
         "same cache and code must reproduce the same manifest"
     print("warm re-run OK: zero network calls, identical results and manifest")
 
-    # medium depth asks for the fundamental analyst; the honest default still
-    # excludes it because no point-in-time fundamentals source exists
+    # pro depth asks for the market analyst; the honest default still
+    # excludes it because no point-in-time index source exists
     medium = await run_backtest(
         tickers=["NVDA"], start=START, end=START, step_days=21, horizon_days=21,
         depth="medium", mode="mock", out_dir=OUT_DIR, cache=cache,
         name="medium-excluded",
     )
-    assert medium.config["excluded_analysts"] == ["fundamental"]
+    assert medium.config["excluded_analysts"] == ["market"]
     assert calls["fund"] == 0
     medium_payload = json.loads((OUT_DIR / "report-medium-excluded.json").read_text())
     assert medium_payload["flags"]["fundamentals_vintage"] == "excluded"

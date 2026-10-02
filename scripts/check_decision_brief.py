@@ -41,14 +41,14 @@ assert age_hours("garbage", NOW) is None
 print("staleness OK: per-outlook thresholds, tolerant parsing")
 
 
+ALL = ("market", "technical", "fundamental", "news", "sentiment", "forecast")
+
+
 def results(**overrides):
-    base = {key: AgentResult(agent=key, signal="neutral") for key in
-            ("technical", "fundamental", "news", "sentiment", "forecast")}
+    base = {key: AgentResult(agent=key, signal="neutral") for key in ALL}
     base.update(overrides)
     return base
 
-
-ALL = ("technical", "fundamental", "news", "sentiment", "forecast")
 
 # ---- fresh vs stale vs unknown -------------------------------------------------
 fresh = build("2026-09-08T11:00:00+00:00", "day_trade", ALL,
@@ -78,13 +78,13 @@ assert full.available_analysts == list(ALL) and full.failed_analysts == []
 
 partial = build("2026-09-08T11:00:00+00:00", "short_term", ALL,
                 results(fundamental=None, sentiment=None), {}, now=NOW)
-assert partial.available_analysts == ["technical", "news", "forecast"]
+assert partial.available_analysts == ["market", "technical", "news", "forecast"]
 assert partial.failed_analysts == ["fundamental", "sentiment"]
 
 fast = build("2026-09-08T11:00:00+00:00", "short_term",
-             ("technical", "news"), results(), {}, now=NOW)
-assert fast.expected_analysts == ["technical", "news"]
-assert fast.skipped_analysts == ["fundamental", "sentiment", "forecast"]
+             ("technical", "forecast"), results(), {}, now=NOW)
+assert fast.expected_analysts == ["technical", "forecast"]
+assert fast.skipped_analysts == ["market", "fundamental", "news", "sentiment"]
 print("coverage OK: failed is a breakdown of expected, skipped is a choice")
 
 # ---- provider fallbacks only fire when the provider was configured -------------
@@ -161,7 +161,7 @@ async def e2e():
 
     # 1) Plain mock run: manager call preserved, data_quality attached.
     result = await asyncio.wait_for(
-        analyze_ticker("NVDA", emit, market_data=snapshot("NVDA"),
+        analyze_ticker("NVDA", emit, market_data=snapshot("NVDA"), depth="max",
                        live_context=False),
         timeout=90,
     )
@@ -196,7 +196,7 @@ async def e2e():
     manager_agent.mock = buy_mock
     try:
         gated = await asyncio.wait_for(
-            analyze_ticker("AMD", emit, market_data=snapshot("AMD"),
+            analyze_ticker("AMD", emit, market_data=snapshot("AMD"), depth="max",
                            live_context=False),
             timeout=90,
         )

@@ -195,7 +195,7 @@ async def e2e():
     assert all(e.get("text") for e in tokens)
     # Per agent: started < first token < completed, and the streamed text
     # reassembles into the mock summary the result card shows.
-    for agent in ("technical", "news", "sentiment", "bull", "bear", "manager"):
+    for agent in ("market", "technical", "news", "forecast", "bull", "bear", "manager"):
         idx_started = next(
             i for i, e in enumerate(stream_events)
             if e["type"] == "agent_started" and e["agent"] == agent
@@ -211,9 +211,9 @@ async def e2e():
         assert agent_tokens, f"{agent} streamed no tokens between started/completed"
         streamed = "".join(e["text"] for e in agent_tokens)
         final = {
-            "technical": result.technical, "news": result.news,
-            "sentiment": result.sentiment, "bull": result.bull,
-            "bear": result.bear, "manager": None,
+            "market": result.market, "technical": result.technical,
+            "news": result.news, "forecast": result.forecast,
+            "bull": result.bull, "bear": result.bear, "manager": None,
         }[agent]
         expected = final.summary if final else result.summary
         assert streamed.replace(" ", "") == expected.replace(" ", ""), (agent, streamed[:80])

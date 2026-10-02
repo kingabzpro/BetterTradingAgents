@@ -6,6 +6,12 @@ from urllib.parse import urlparse
 from pydantic import BaseModel, Field, field_validator
 
 from app.depth import DEFAULT_DEPTH, Depth, normalize_depth
+
+
+def _depth_value(value: object) -> object:
+    """Normalize legacy depth keys ("medium"/"expert") on input; None passes through."""
+    return None if value is None else normalize_depth(value)
+
 from app.outlook import DEFAULT_OUTLOOK, Outlook
 
 Decision = Literal["BUY", "HOLD", "SELL"]
@@ -222,6 +228,7 @@ class AnalysisRequest(BaseModel):
     tickers: list[str] = Field(min_length=1)
     outlook: Outlook = DEFAULT_OUTLOOK
     depth: Depth = DEFAULT_DEPTH
+    _depth_validator = field_validator("depth", mode="before")(classmethod(lambda cls, value: _depth_value(value)))
     client_id: str | None = Field(
         default=None, min_length=8, max_length=64, pattern=r"^[A-Za-z0-9_-]+$"
     )
@@ -246,6 +253,7 @@ class RunStatus(BaseModel):
     tickers: list[str]
     outlook: Outlook = DEFAULT_OUTLOOK
     depth: Depth = DEFAULT_DEPTH
+    _depth_validator = field_validator("depth", mode="before")(classmethod(lambda cls, value: _depth_value(value)))
     status: Literal["running", "completed", "failed", "cancelled"] = "running"
     mock_mode: bool = False
     started_at: float = 0.0
@@ -253,11 +261,7 @@ class RunStatus(BaseModel):
     error: str | None = None
     results: dict[str, StockAnalysis] = Field(default_factory=dict)
 
-    @field_validator("depth", mode="before")
-    @classmethod
-    def _normalize_depth(cls, value: object) -> object:
-        # Old saved depths keep working: medium -> pro, expert -> max.
-        return normalize_depth(value)
+    _normalize_depth = field_validator("depth", mode="before")(classmethod(lambda cls, value: _depth_value(value)))
 
 
 class RunHistoryItem(BaseModel):
@@ -267,6 +271,7 @@ class RunHistoryItem(BaseModel):
     tickers: list[str]
     outlook: Outlook = DEFAULT_OUTLOOK
     depth: Depth = DEFAULT_DEPTH
+    _depth_validator = field_validator("depth", mode="before")(classmethod(lambda cls, value: _depth_value(value)))
     status: Literal["running", "completed", "failed", "cancelled"]
     mock_mode: bool = False
     started_at: float
@@ -358,6 +363,7 @@ class WatchlistItem(BaseModel):
     note: str = ""
     outlook: Outlook = DEFAULT_OUTLOOK
     depth: Depth = DEFAULT_DEPTH
+    _depth_validator = field_validator("depth", mode="before")(classmethod(lambda cls, value: _depth_value(value)))
     added_at: str = ""
     last_call: WatchlistCall | None = None  # baseline: the call being tracked
     current_call: WatchlistCall | None = None  # newest comparable completed call, if any
@@ -376,6 +382,7 @@ class WatchlistAddRequest(BaseModel):
     note: str = Field(default="", max_length=500)
     outlook: Outlook = DEFAULT_OUTLOOK
     depth: Depth = DEFAULT_DEPTH
+    _depth_validator = field_validator("depth", mode="before")(classmethod(lambda cls, value: _depth_value(value)))
     run_id: str | None = Field(
         default=None, max_length=64
     )  # snapshot the baseline from this run's result
@@ -385,6 +392,7 @@ class WatchlistUpdateRequest(BaseModel):
     note: str | None = Field(default=None, max_length=500)
     outlook: Outlook | None = None
     depth: Depth | None = None
+    _depth_validator = field_validator("depth", mode="before")(classmethod(lambda cls, value: _depth_value(value)))
 
 
 class WatchlistAddResponse(BaseModel):

@@ -135,6 +135,11 @@ async def run_backtest(
 
     profile = depth_profile(depth)
     exclusions = tuple(exclude_analysts)
+    # The Market analyst reads current index data (yfinance), so replaying it
+    # at past dates would leak future information - same honesty rule as
+    # fundamentals until a point-in-time index source exists.
+    if "market" in profile["research"]:
+        exclusions += ("market",)
     if fundamentals == FUNDAMENTALS_EXCLUDED and "fundamental" in profile["research"]:
         exclusions += ("fundamental",)
 

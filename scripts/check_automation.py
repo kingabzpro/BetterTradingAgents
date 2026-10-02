@@ -296,7 +296,7 @@ async def checks() -> None:
         body = read.json()
         assert body["enabled"] is False and body["configured"] is True
         assert body["interval_minutes"] == 240 and body["min_confidence"] == 0.65
-        assert body["allow_sells"] is True and body["depth"] == "medium"
+        assert body["allow_sells"] is True and body["depth"] == "pro"
 
         toggled = await client.post("/api/automation", json={"enabled": True})
         assert toggled.status_code == 200 and toggled.json()["enabled"] is True
