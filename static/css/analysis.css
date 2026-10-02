@@ -315,14 +315,25 @@
   align-items: center;
 }
 .agent-left { min-width: 0; }
+/* Fixed tracks anchored to the right edge: dot, verdict pill, duration.
+   Equal tracks on every row keep each dot, pill edge, and duration on the
+   same vertical lines; the pill track is fixed so different verdict words
+   align too. */
 .status {
-  display: grid; grid-template-columns: 8px auto minmax(0, 1fr); align-items: center;
+  display: grid; grid-template-columns: 8px 76px minmax(0, 44px); justify-content: end; align-items: center;
   grid-column: -2 / -1;
   min-width: 0; max-width: 100%; justify-self: stretch;
   gap: 7px; white-space: nowrap; line-height: 1.35;
 }
-.status-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.status-duration { color: #91a0b9; font-variant-numeric: tabular-nums; white-space: nowrap; justify-self: end; }
+.status-label {
+  grid-column: 2 / -1; grid-row: 1; text-align: left;
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.status .verdict { justify-content: center; }
+.status-duration {
+  grid-column: 3; grid-row: 1; justify-self: end;
+  color: #91a0b9; font-variant-numeric: tabular-nums; white-space: nowrap;
+}
 
 #summary-panel {
   width: 100%; max-width: 100%; min-width: 0; overflow: hidden;
@@ -644,6 +655,11 @@
   .decision-facts { grid-template-columns: 1fr; gap: 12px; }
   .section-heading-row #overall-status { flex-basis: 100%; text-align: left; }
   .agent-row { grid-template-columns: minmax(0, 1fr) minmax(122px, 46%); }
+  /* The fixed status tracks (dot + pill + duration) exceed the narrow
+     column here: let the pill size naturally and keep dot and duration
+     pinned instead. */
+  .status { grid-template-columns: 8px minmax(0, 1fr) auto; }
+  .status .verdict { justify-self: start; }
   .stream-hint { display: none; }  /* no room for a third column this narrow */
   .stream-pane { margin-left: 0; }
   .option-row { display: grid; grid-template-columns: 1fr; }

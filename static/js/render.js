@@ -232,7 +232,7 @@ export function renderProgressCard(ticker) {
         <div class="agent-row ${agent.stage !== "Research" ? "stage2" : ""}" data-agent="${agent.key}">
           <span class="agent-left"><span class="agent-icon">${ICONS[agent.key]}</span><span>${agent.label}<small>${agent.stage}</small></span></span>
           <span class="stream-hint" hidden>▶</span>
-          <span class="status" id="status-${ticker}-${agent.key}"><span class="icon" aria-hidden="true"></span>Waiting</span>
+          <span class="status" id="status-${ticker}-${agent.key}"><span class="icon" aria-hidden="true"></span><span class="status-label">Waiting</span></span>
         </div>
         <div class="stream-pane" id="stream-${ticker}-${agent.key}" hidden><pre id="stream-pre-${ticker}-${agent.key}"></pre></div>
       </div>`).join("")}`;
