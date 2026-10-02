@@ -53,6 +53,20 @@ app = FastAPI(title="BetterTradingAgents")
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
+@app.middleware("http")
+async def static_revalidate(request, call_next):
+    """Browsers revalidate /static assets instead of trusting heuristics.
+
+    The ES modules import each other without version params, so a stale
+    cached constants.js once showed the old agent list after an update.
+    no-cache keeps assets cached but forces a cheap 304 check every load.
+    """
+    response = await call_next(request)
+    if request.url.path.startswith("/static"):
+        response.headers["Cache-Control"] = "no-cache"
+    return response
+
+
 def _origin_authority(origin: str) -> str:
     """The host[:port] part of an Origin header, lowercased."""
     return urlparse(origin.lower()).netloc
