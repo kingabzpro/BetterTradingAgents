@@ -20,10 +20,16 @@ FAST_CHECKS = ("quick_wins", "cost", "run_history", "watchlist", "compare", "sea
 
 
 def serve() -> int:
-    """Entry point for `uv run app`: start the server with autoreload."""
+    """Entry point for `uv run app`: start the server on port 8000.
+
+    No auto-reload: uvicorn's reload worker spawns the base interpreter and
+    has served stale code silently after code changes (twice). A plain
+    single process always runs exactly what is on disk; restart with
+    Ctrl+C and `uv run app` to pick up changes.
+    """
     import uvicorn
 
-    uvicorn.run("app.main:app", host="127.0.0.1", port=8000, reload=True)
+    uvicorn.run("app.main:app", host="127.0.0.1", port=8000)
     return 0
 
 
