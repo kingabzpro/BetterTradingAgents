@@ -147,15 +147,15 @@
   min-width: 0;
 }
 .ticker-card:hover { border-color: var(--border-strong); }
-.ticker-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-bottom: 10px; }
+.ticker-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-bottom: 8px; }
 .ticker-head .tk { font-weight: 700; font-size: 15px; letter-spacing: 0.03em; white-space: nowrap; }
 .ticker-head .px { color: var(--muted); font-size: 12px; font-weight: 500; margin-left: 4px; font-variant-numeric: tabular-nums; }
 .ticker-head .src { color: #6b7590; font-size: 11px; text-align: right; white-space: nowrap; flex: none; }
-.agent-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 6px 0; border-top: 1px solid rgba(255, 255, 255, 0.05); font-size: 13px; }
+.agent-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 3px 0; border-top: 1px solid rgba(255, 255, 255, 0.05); font-size: 12.5px; }
 .agent-row:first-of-type { border-top: none; }
 .agent-left { display: flex; align-items: center; gap: 9px; color: #c0c8d8; font-weight: 500; min-width: 0; }
 .agent-icon { display: inline-flex; align-items: center; color: var(--muted); flex: none; }
-.stage2 { margin-top: 6px; padding-top: 10px; border-top: 1px dashed var(--border-strong); }
+.stage2 { margin-top: 4px; padding-top: 6px; border-top: 1px solid rgba(255, 255, 255, 0.06); }
 
 /* Live reasoning stream (ROADMAP 3.2): collapsible per-agent token pane.
    Agents without a stream reuse the same pane for a peek at their finished
@@ -195,9 +195,11 @@
 .status.failed .icon { background: var(--sell); }
 
 /* Completed agents show their verdict as a tinted pill using the same
-   palette as the decision badges; the agent icon takes the matching tone. */
+   palette as the decision badges; the agent icon takes the matching tone.
+   Pills share one width so the column reads as a straight line. */
 .verdict {
-  display: inline-flex; align-items: center; padding: 1px 9px; border-radius: 999px;
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 72px; padding: 1px 9px; border-radius: 999px;
   font-size: 11px; font-weight: 700; letter-spacing: 0.03em; border: 1px solid; white-space: nowrap;
 }
 .verdict.up { color: #6fe0a0; border-color: rgba(34, 197, 94, 0.4); background: rgba(34, 197, 94, 0.1); }
@@ -214,8 +216,10 @@
   60% { box-shadow: 0 0 0 6px rgba(16, 201, 115, 0); }
 }
 
-/* live run progress: one segment per agent, filled as each completes */
-.run-progress { display: flex; gap: 3px; height: 4px; margin: 8px 0 2px; }
+/* live run progress: one segment per agent, filled as each completes;
+   finished cards fade the bar out, the count carries the rest */
+.run-progress { display: flex; gap: 3px; height: 4px; margin: 8px 0 2px; transition: opacity 0.4s; }
+.run-progress.finished { opacity: 0.3; }
 .run-progress .seg { flex: 1 1 0; border-radius: 999px; background: rgba(255, 255, 255, 0.09); transition: background 0.25s; }
 .run-progress .seg.running { background: rgba(16, 201, 115, 0.45); animation: pulse-seg 1.1s ease-in-out infinite; }
 .run-progress .seg.done { background: linear-gradient(90deg, #10c973, #0aa85d); }
@@ -290,14 +294,12 @@
 .cancel-btn:hover { background: rgba(244, 88, 107, 0.12); border-color: rgba(244, 88, 107, 0.55); color: #ff97a8; }
 .cancel-btn:disabled { opacity: 0.55; cursor: wait; }
 
-.agent-left > span:last-child {
-  display: flex; flex-direction: column; align-items: flex-start; gap: 1px;
-  min-width: 0; line-height: 1.25;
-}
-.agent-left small {
-  display: block; color: #67728a; font-size: 9px; font-weight: 700;
-  line-height: 1.2; letter-spacing: 0.08em; text-transform: uppercase;
-}
+.agent-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Rebuttal rows are sub-rows of the argument they answer: smaller, muted,
+   and indented so four pills stop reading as four separate verdicts. */
+.agent-row.rebuttal-row { padding: 2px 0 2px 15px; font-size: 12px; }
+.rebuttal-row .agent-left { color: #94a0b5; }
+.rebuttal-row .verdict { min-width: 0; font-size: 10px; padding: 1px 8px; }
 .prog-count { min-width: 42px; text-align: right; }
 .ticker-head {
   display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start;

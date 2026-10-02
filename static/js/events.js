@@ -128,6 +128,7 @@ export function updateProgress(ticker, entry) {
   if (!progress || !count || !entry.total) return;
   const pct = Math.min(100, Math.round((entry.done / entry.total) * 100));
   progress.setAttribute("aria-valuenow", String(pct));
+  progress.classList.toggle("finished", entry.done >= entry.total);
   progress.querySelectorAll(".seg").forEach((seg) => {
     const key = seg.dataset.agent;
     let stateClass = "";

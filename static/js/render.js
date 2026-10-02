@@ -229,8 +229,8 @@ export function renderProgressCard(ticker) {
     <div class="run-progress" id="progress-${ticker}" role="progressbar" aria-label="${escapeAttr(ticker)} analysis progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">${agents.map((agent) => `<span class="seg" data-agent="${escapeAttr(agent.key)}"></span>`).join("")}</div>
     ${agents.map((agent) => `
       <div class="agent-cell" id="cell-${ticker}-${agent.key}">
-        <div class="agent-row ${agent.stage !== "Research" ? "stage2" : ""}" data-agent="${agent.key}">
-          <span class="agent-left"><span class="agent-icon">${ICONS[agent.key]}</span><span>${agent.label}<small>${agent.stage}</small></span></span>
+        <div class="agent-row ${agent.stage !== "Research" ? "stage2" : ""}${agent.rebuttal ? " rebuttal-row" : ""}" data-agent="${agent.key}">
+          <span class="agent-left"><span class="agent-icon">${ICONS[agent.key]}</span><span class="agent-name">${agent.label}</span></span>
           <span class="stream-hint" hidden>▶</span>
           <span class="status" id="status-${ticker}-${agent.key}"><span class="icon" aria-hidden="true"></span>Waiting</span>
         </div>
@@ -292,14 +292,15 @@ export function setAgentStatus(ticker, agent, statusClass, text, duration, signa
     cell.classList.remove("tone-up", "tone-down", "tone-hold", "tone-flat");
     if (tone) cell.classList.add(`tone-${tone}`);
   }
-  // Completed agents show their verdict as a tinted pill; other states keep
+  // Completed agents show their verdict as a tinted pill; the state dot drops
+  // out there because the pill's color already carries it. Other states keep
   // the plain label. Visual progress only: the overall status live region
   // announces ticker results, so per-agent starts/completions are not
   // spoken (P0.3).
-  const labelMarkup = tone
-    ? `<span class="verdict ${tone}">${escapeHtml(text)}</span>`
-    : `<span class="status-label">${escapeHtml(text)}</span>`;
-  element.innerHTML = `<span class="icon" aria-hidden="true"></span>${labelMarkup}${durationText ? `<span class="status-duration">${durationText}</span>` : ""}`;
+  const durationMarkup = durationText ? `<span class="status-duration">${durationText}</span>` : "";
+  element.innerHTML = tone
+    ? `<span class="verdict ${tone}">${escapeHtml(text)}</span>${durationMarkup}`
+    : `<span class="icon" aria-hidden="true"></span><span class="status-label">${escapeHtml(text)}</span>${durationMarkup}`;
 }
 
 function signalClass(signal) { return `sig-${String(signal || "unknown").toLowerCase()}`; }
