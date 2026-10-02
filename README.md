@@ -19,10 +19,12 @@
 BetterTradingAgents is an improved and streamlined version of the TradingAgents concept, with a
 faster parallel workflow, live progress, explainable decisions, risk controls, and paper trading.
 
-Enter up to five stock tickers. Specialized agents analyze technicals, fundamentals,
-news, social sentiment, and the 5-day price forecast in parallel, bull and bear
-researchers debate across a rebuttal round, and a risk-gated **BUY / HOLD / SELL** decision
-comes back with a suggested position size and the full reasoning trail. Every completed call
+Enter up to five stock tickers. Six specialized analysts read the market regime,
+technicals, fundamentals, news, social sentiment, and the 5-day price forecast in
+parallel; the depth tier picks the roster (Fast weighs the research directly, skipping
+the debate), bull and bear researchers argue their cases with a neutral judge
+cross-examining both at Max depth, and a risk-gated **BUY / HOLD / SELL** decision comes
+back with a suggested position size and the full reasoning trail. Every completed call
 is remembered and graded against what the market actually did, so the Portfolio Manager
 brings a track record to the next decision, not just fresh data.
 
@@ -57,8 +59,8 @@ reference list and how each finding shapes the roadmap.
 ```mermaid
 flowchart LR
     T["📈 Tickers<br/>up to five"] --> D["📡 Market data"]
-    D --> S["🔬 Five researchers in parallel<br/>technical · fundamental · news · sentiment · forecast"]
-    S --> B["⚔️ Bull vs bear debate"]
+    D --> S["🔬 Researchers in parallel<br/>market · technical · fundamental · news · sentiment · forecast"]
+    S --> B["⚔️ Bull vs bear debate<br/>+ judge at Max · skipped at Fast"]
     B --> PM["👔 Portfolio Manager"]
     TR["📜 Every call graded vs SPY"] -.-> PM
     PM --> RG["🛡️ Risk gate<br/>sizing · caps · forecast check"]
