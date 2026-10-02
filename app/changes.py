@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 from app.models import PreviousCall, StockAnalysis
 
 # Display order matches the evidence cards on the result page.
-ANALYST_KEYS = ("technical", "fundamental", "news", "sentiment", "forecast")
+ANALYST_KEYS = ("market", "technical", "fundamental", "news", "sentiment", "forecast")
 
 
 def evidence_bucket(confidence: float | None) -> str:

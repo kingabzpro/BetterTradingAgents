@@ -1,6 +1,7 @@
 /* Static definitions: agent metadata, outlook/depth profiles, storage keys. */
 
 export const ICONS = {
+  market: '<svg aria-hidden="true" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2 13.5h12"/><path d="M4.5 13.5V9M8 13.5V4.5M11.5 13.5V6.5"/></svg>',
   technical: '<svg aria-hidden="true" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 12.5 6 8l2.5 2.5L13.5 4"/></svg>',
   fundamental: '<svg aria-hidden="true" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3.5h10M3 7h10M3 10.5h6"/><circle cx="12.4" cy="10.7" r="1.6"/></svg>',
   news: '<svg aria-hidden="true" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="8" cy="8" r="5.7"/><path d="M2.3 8h11.4M8 2.3c-1.8 1.6-2.7 3.5-2.7 5.7s.9 4.1 2.7 5.7c1.8-1.6 2.7-3.5 2.7-5.7S9.8 3.9 8 2.3z"/></svg>',
@@ -13,6 +14,7 @@ export const ICONS = {
 };
 
 export const AGENTS = [
+  { key: "market", label: "Market", stage: "Research" },
   { key: "technical", label: "Technical", stage: "Research" },
   { key: "fundamental", label: "Fundamentals", stage: "Research" },
   { key: "news", label: "News", stage: "Research" },
@@ -24,7 +26,7 @@ export const AGENTS = [
   { key: "manager", label: "Portfolio manager", stage: "Decision" },
 ];
 
-export const RESEARCH_KEYS = ["technical", "fundamental", "news", "sentiment", "forecast"];
+export const RESEARCH_KEYS = ["market", "technical", "fundamental", "news", "sentiment", "forecast"];
 
 export const LAST_RUN_KEY = "bta:lastRunId";
 export const CLIENT_ID_KEY = "bta:clientId";
@@ -39,10 +41,11 @@ export const OUTLOOK_KEY = "bta:outlook";
 export const DEPTH_KEY = "bta:depth";
 export const DEPTH_PROFILES = {
   fast: { label: "Fast", research: ["technical", "news"] },
-  medium: { label: "Medium", research: ["technical", "fundamental", "news", "forecast", "sentiment"] },
-  expert: { label: "Expert", research: ["technical", "fundamental", "news", "forecast", "sentiment"], judge: true },
+  pro: { label: "Pro", research: ["market", "technical", "fundamental", "news", "forecast", "sentiment"] },
+  max: { label: "Max", research: ["market", "technical", "fundamental", "news", "forecast", "sentiment"], judge: true },
 };
 export const EVIDENCE_META = {
+  market: { title: "Market" },
   technical: { title: "Technical" },
   fundamental: { title: "Fundamentals" },
   news: { title: "News" },

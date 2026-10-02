@@ -1,12 +1,12 @@
 /* Run lifecycle: start, stream, cancel, finish, restore, and rerun. */
 
-import { CLIENT_ID_KEY, LAST_RUN_KEY } from "./constants.js";
-import { activeAgents, setDepth, setOutlook } from "./options.js";
-import { state } from "./state.js";
-import { addTickerTags, setTickerTags } from "./tickers.js";
-import { handleEvent, updateOverallProgress, updateProgress } from "./events.js";
-import { labelFor, renderProgressCard, renderResultCard, renderSummaryTable, setAgentStatus, setHeader } from "./render.js";
-import { $, getClientId, hideError, showError, showToast } from "./util.js";
+import { CLIENT_ID_KEY, LAST_RUN_KEY } from "./constants.js?v=11";
+import { activeAgents, setDepth, setOutlook } from "./options.js?v=11";
+import { state } from "./state.js?v=11";
+import { addTickerTags, setTickerTags } from "./tickers.js?v=11";
+import { handleEvent, updateOverallProgress, updateProgress } from "./events.js?v=11";
+import { labelFor, renderProgressCard, renderResultCard, renderSummaryTable, setAgentStatus, setHeader } from "./render.js?v=11";
+import { $, getClientId, hideError, showError, showToast } from "./util.js?v=11";
 
 function storedRunId() {
   try { return localStorage.getItem(LAST_RUN_KEY); } catch (_) { return null; }
@@ -269,7 +269,8 @@ function hydrateResults(results, restored) {
       // run that has forecast_method genuinely failed.
       const legacyMissing = agent.judge
         ? !("judge" in analysis)
-        : (agent.key === "forecast" && !result && !analysis.forecast_method)
+        : (agent.key === "market" && !("market" in analysis))
+          || (agent.key === "forecast" && !result && !analysis.forecast_method)
           || (agent.key === "sentiment" && !result && analysis.providers && !("social" in analysis.providers));
       const available = agent.key === "manager" ? !analysis.error : Boolean(result);
       const statusClass = legacyMissing ? "neutral" : available ? "done" : "failed";

@@ -591,3 +591,60 @@ async def _olostep_scrape(
     except Exception as exc:  # noqa: BLE001
         logger.warning("olostep scrape failed for %s: %s", url, exc)
         return None
+
+
+# Market-regime snapshot for the Market Analyst: broad indices, volatility,
+# and the 10-year yield. Kept yfinance-only (no fundamentals/news fan-out).
+_MARKET_INDEXES = {
+    "spx": "^GSPC",
+    "nasdaq": "^IXIC",
+    "vix": "^VIX",
+    "rates_10y": "^TNX",
+}
+
+
+def _index_stats(symbol: str) -> dict:
+    hist = yf.Ticker(symbol).history(period="6mo", interval="1d")
+    hist = hist.dropna(subset=["Close"]) if not hist.empty else hist
+    closes = [float(c) for c in hist["Close"].tolist()]
+    if not closes:
+        return {}
+    last = closes[-1]
+
+    def pct(days: int) -> float | None:
+        if len(closes) <= days:
+            return None
+        base = closes[-1 - days]
+        return round((last - base) / base * 100, 2)
+
+    sma20 = round(sum(closes[-20:]) / len(closes[-20:]), 2) if len(closes) >= 20 else None
+    return {
+        "last": round(last, 2),
+        "change_5d_pct": pct(5),
+        "change_21d_pct": pct(21),
+        "above_sma20": None if sma20 is None else last > sma20,
+    }
+
+
+async def get_market_context() -> dict:
+    """Compact regime snapshot: S&P 500, Nasdaq, VIX, 10-year yield.
+
+    Best-effort per index: one failing must not sink the rest. ^TNX quotes
+    the 10-year yield times ten, so it is scaled back to a percent (its
+    percentage changes are scale-invariant).
+    """
+
+    async def one(key: str, symbol: str) -> tuple[str, dict]:
+        try:
+            return key, await asyncio.to_thread(_index_stats, symbol)
+        except Exception as exc:  # noqa: BLE001 - one index failing is fine
+            logger.warning("market context: %s (%s) failed: %s", key, symbol, exc)
+            return key, {}
+
+    pairs = dict(await asyncio.gather(*(one(k, s) for k, s in _MARKET_INDEXES.items())))
+    if pairs.get("rates_10y"):
+        pairs["rates_10y"] = {
+            key: (round(value / 10, 3) if isinstance(value, float) else value)
+            for key, value in pairs["rates_10y"].items()
+        }
+    return {key: stats for key, stats in pairs.items() if stats}

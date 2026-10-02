@@ -1,9 +1,9 @@
 /* SSE event handling: live agent progress -> progress UI updates. */
 
-import { AGENTS, STREAM_WINDOW_CHARS } from "./constants.js";
-import { state } from "./state.js";
-import { $ } from "./util.js";
-import { labelFor, renderResultCard, renderSummaryTable, setAgentStatus, setHeader } from "./render.js";
+import { AGENTS, STREAM_WINDOW_CHARS } from "./constants.js?v=11";
+import { state } from "./state.js?v=11";
+import { $ } from "./util.js?v=11";
+import { labelFor, renderResultCard, renderSummaryTable, setAgentStatus, setHeader } from "./render.js?v=11";
 
 export function handleEvent(event) {
   const { ticker } = event;
@@ -92,6 +92,7 @@ export function handleEvent(event) {
       entry.agents = {
         technical: event.analysis.technical, fundamental: event.analysis.fundamental,
         news: event.analysis.news, sentiment: event.analysis.sentiment, forecast: event.analysis.forecast,
+        market: event.analysis.market,
         bull: event.analysis.bull, bear: event.analysis.bear, judge: event.analysis.judge,
         manager: { signal: event.decision, confidence: event.confidence, summary: event.analysis.summary },
       };

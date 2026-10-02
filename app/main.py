@@ -55,15 +55,15 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 @app.middleware("http")
 async def static_revalidate(request, call_next):
-    """Browsers revalidate /static assets instead of trusting heuristics.
+    """Browsers revalidate assets and pages instead of trusting heuristics.
 
-    The ES modules import each other without version params, so a stale
-    cached constants.js once showed the old agent list after an update.
-    no-cache keeps assets cached but forces a cheap 304 check every load.
+    The ES modules import each other (version-stamped once at the rename),
+    and a stale cached constants.js once showed the old agent list after an
+    update. no-cache keeps assets cached but forces a cheap 304 check every
+    load, so code changes reach the browser on the next refresh.
     """
     response = await call_next(request)
-    if request.url.path.startswith("/static"):
-        response.headers["Cache-Control"] = "no-cache"
+    response.headers["Cache-Control"] = "no-cache"
     return response
 
 

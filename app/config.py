@@ -127,7 +127,7 @@ class Settings:
     # because they only exit positions already held.
     automation_min_confidence: float = float(_env("AUTOMATION_MIN_CONFIDENCE", "0.65"))
     automation_outlook: str = _env("AUTOMATION_OUTLOOK", "short_term")
-    automation_depth: str = _env("AUTOMATION_DEPTH", "medium")
+    automation_depth: str = _env("AUTOMATION_DEPTH", "pro")
     automation_allow_sells: bool = _env("AUTOMATION_ALLOW_SELLS", "1").lower() in (
         "1",
         "true",

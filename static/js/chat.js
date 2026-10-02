@@ -1,7 +1,7 @@
 /* Per-ticker follow-up chat with the portfolio manager. */
 
-import { state } from "./state.js";
-import { $, escapeAttr, escapeHtml, showToast } from "./util.js";
+import { state } from "./state.js?v=11";
+import { $, escapeAttr, escapeHtml, showToast } from "./util.js?v=11";
 
 export function chatState(ticker) {
   if (!state.chats.has(ticker)) {

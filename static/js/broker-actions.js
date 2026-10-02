@@ -2,7 +2,7 @@
    fetch per page load; the inline review step shows what a person needs to
    check before committing, and the server re-validates everything anyway. */
 
-import { $, escapeAttr, escapeHtml, fmtUsd, formatDateTime } from "./util.js";
+import { $, escapeAttr, escapeHtml, fmtUsd, formatDateTime } from "./util.js?v=11";
 
 let infoPromise = null;
 let info = { status: null, positions: [] };

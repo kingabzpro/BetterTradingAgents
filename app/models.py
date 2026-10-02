@@ -5,7 +5,7 @@ from urllib.parse import urlparse
 
 from pydantic import BaseModel, Field, field_validator
 
-from app.depth import DEFAULT_DEPTH, Depth
+from app.depth import DEFAULT_DEPTH, Depth, normalize_depth
 from app.outlook import DEFAULT_OUTLOOK, Outlook
 
 Decision = Literal["BUY", "HOLD", "SELL"]
@@ -196,6 +196,7 @@ class StockAnalysis(BaseModel):
     news: AgentResult | None = None
     sentiment: AgentResult | None = None
     forecast: AgentResult | None = None
+    market: AgentResult | None = None
     bull: AgentResult | None = None
     bear: AgentResult | None = None
     bull_rebuttal: AgentResult | None = None  # deprecated: runs before the judge
@@ -251,6 +252,12 @@ class RunStatus(BaseModel):
     duration_s: float = 0.0
     error: str | None = None
     results: dict[str, StockAnalysis] = Field(default_factory=dict)
+
+    @field_validator("depth", mode="before")
+    @classmethod
+    def _normalize_depth(cls, value: object) -> object:
+        # Old saved depths keep working: medium -> pro, expert -> max.
+        return normalize_depth(value)
 
 
 class RunHistoryItem(BaseModel):
@@ -490,7 +497,7 @@ class AutomationStatus(BaseModel):
     candidates: int = 0
     min_confidence: float = 0.0
     outlook: str = "short_term"
-    depth: str = "medium"
+    depth: str = "pro"
     allow_sells: bool = True
     next_check_at: float | None = None
     sessions: list[AutomationSession] = Field(default_factory=list)

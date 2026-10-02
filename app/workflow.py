@@ -15,7 +15,18 @@ import time
 from typing import Any, Awaitable, Callable
 
 from app import changes, cost, quality, risk
-from app.agents import bear, bull, forecast, fundamental, judge, manager, news, sentiment, technical
+from app.agents import (
+    bear,
+    bull,
+    forecast,
+    fundamental,
+    judge,
+    manager,
+    market as market_regime,
+    news,
+    sentiment,
+    technical,
+)
 from app.config import settings
 from app.depth import DEFAULT_DEPTH, depth_profile
 from app.models import (
@@ -30,6 +41,7 @@ from app.outlook import DEFAULT_OUTLOOK, user_context
 from app.tools.indicators import compute_indicators, historical_forecast
 from app.tools.market_data import (
     MarketData,
+    get_market_context,
     get_stock_data,
     get_timegpt_forecast,
 )
@@ -48,6 +60,7 @@ _MOCK_STREAM_DELAY = 0.025  # seconds between chunks
 # Which role each agent runs as - per-role LLM overrides (ROADMAP 2.3) key
 # off this: cheap fast models for the researchers, a stronger one for the call.
 ROLE_BY_AGENT = {
+    "market": "analysts",
     "technical": "analysts",
     "fundamental": "analysts",
     "news": "analysts",
@@ -708,6 +721,13 @@ async def analyze_ticker(
     research: tuple[str, ...] = tuple(
         key for key in prof["research"] if key not in exclude_analysts
     )
+    # Market-regime context for the Market Analyst: fetched once, only when
+    # the profile asks for the agent, overlapping the forecast fetch below.
+    indices_task = (
+        asyncio.create_task(get_market_context())
+        if "market" in research
+        else None
+    )
     local_forecast: dict | None = None
     timegpt_forecast: dict | None = None
     if "forecast" in research:
@@ -757,6 +777,28 @@ async def analyze_ticker(
     }
 
     async def run_research(key: str) -> dict | None:
+        if key == "market":
+            indices = await indices_task if indices_task else {}
+            if not indices:
+                # No index data at all: the regime read would be invention.
+                await emit(
+                    "agent_failed",
+                    {
+                        "ticker": ticker,
+                        "agent": "market",
+                        "error": "skipped: market index data unavailable",
+                    },
+                )
+                return None
+            return await _run_agent(
+                market_regime,
+                ticker,
+                emit,
+                token_totals=token_totals,
+                role_usage=role_usage,
+                live=live_context,
+                payload=indices,
+            )
         if key == "technical":
             return await _run_agent(
                 technical,
@@ -807,7 +849,7 @@ async def analyze_ticker(
             payload=forecast_payload,
         )
 
-    order = ("technical", "fundamental", "news", "forecast", "sentiment")
+    order = ("market", "technical", "fundamental", "news", "forecast", "sentiment")
     research_keys = [key for key in order if key in research]
     research_data = dict(
         zip(
@@ -815,11 +857,13 @@ async def analyze_ticker(
             await asyncio.gather(*(run_research(key) for key in research_keys)),
         )
     )
+    market_data_res = research_data.get("market")
     tech_data = research_data.get("technical")
     fund_data = research_data.get("fundamental")
     news_data = research_data.get("news")
     sentiment_data = research_data.get("sentiment")
     forecast_data = research_data.get("forecast")
+    market_r = market_regime.to_result(market_data_res, ticker) if market_data_res else None
     tech = technical.to_result(tech_data, ticker) if tech_data else None
     fund = fundamental.to_result(fund_data, ticker) if fund_data else None
     news_r = news.to_result(news_data, ticker) if news_data else None
@@ -839,6 +883,7 @@ async def analyze_ticker(
         "ticker": ticker,
         "price": market.price,
         "user_context": user_ctx,
+        "market": slot("market", market_r),
         "technical": slot("technical", tech),
         "fundamental": slot("fundamental", fund),
         "news": slot("news", news_r),
@@ -864,7 +909,7 @@ async def analyze_ticker(
     # asks for it (and the server must allow DEBATE_ROUNDS >= 2); it is
     # skipped when either first-round brief failed.
     judge_data = None
-    if prof["judge"] and settings.debate_rounds >= 2:
+    if prof.get("judge") and settings.debate_rounds >= 2:
         if bull_data and bear_data:
             judge_data = await _run_agent(
                 judge,
@@ -945,7 +990,7 @@ async def analyze_ticker(
         "bull": bull_r.model_dump() if bull_r else "FAILED - unavailable",
         "bear": bear_r.model_dump() if bear_r else "FAILED - unavailable",
         "debate": {
-            "rounds": 2 if (prof["judge"] and settings.debate_rounds >= 2) else 1,
+            "rounds": 2 if (prof.get("judge") and settings.debate_rounds >= 2) else 1,
             "bull_round_1": bull_data,
             "bear_round_1": bear_data,
             "judge": judge_data,
@@ -1059,6 +1104,7 @@ async def analyze_ticker(
         news=news_r,
         sentiment=sentiment_r,
         forecast=forecast_r,
+        market=market_r,
         bull=bull_r,
         bear=bear_r,
         judge=judge_r,
@@ -1081,6 +1127,7 @@ async def analyze_ticker(
             outlook,
             research,
             {
+                "market": market_r,
                 "technical": tech,
                 "fundamental": fund,
                 "news": news_r,

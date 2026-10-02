@@ -2,9 +2,9 @@
 
 import {
   AGENTS, DEPTH_KEY, DEPTH_PROFILES, OUTLOOKS, OUTLOOK_KEY, OUTLOOK_LABELS,
-} from "./constants.js";
-import { state } from "./state.js";
-import { $ } from "./util.js";
+} from "./constants.js?v=11";
+import { state } from "./state.js?v=11";
+import { $ } from "./util.js?v=11";
 
 export function setOutlook(outlook) {
   state.outlook = OUTLOOKS.includes(outlook) ? outlook : "short_term";
@@ -20,7 +20,10 @@ export function setOutlook(outlook) {
 }
 
 export function setDepth(depth) {
-  state.depth = DEPTH_PROFILES[depth] ? depth : "medium";
+  // Old saved depths keep working: medium -> pro, expert -> max.
+  const aliases = { medium: "pro", expert: "max" };
+  const key = aliases[depth] || depth;
+  state.depth = DEPTH_PROFILES[key] ? key : "pro";
   document.querySelectorAll("[data-depth]").forEach((button) => {
     const selected = button.dataset.depth === state.depth;
     button.classList.toggle("selected", selected);

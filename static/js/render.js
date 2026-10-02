@@ -3,17 +3,17 @@
 
 import {
   EVIDENCE_META, ICONS, OUTLOOK_LABELS, RESEARCH_KEYS,
-} from "./constants.js";
-import { activeAgents, depthProfile } from "./options.js";
-import { state } from "./state.js";
-import { saveToWatchlist } from "./watchlist-actions.js";
-import { attachPaperOrder } from "./broker-actions.js";
-import { loadPriceChart } from "./price-chart.js";
-import { retryTicker } from "./tickers.js";
-import { sendChatMessage, setChatOpen, toggleChat } from "./chat.js";
+} from "./constants.js?v=11";
+import { activeAgents, depthProfile } from "./options.js?v=11";
+import { state } from "./state.js?v=11";
+import { saveToWatchlist } from "./watchlist-actions.js?v=11";
+import { attachPaperOrder } from "./broker-actions.js?v=11";
+import { loadPriceChart } from "./price-chart.js?v=11";
+import { retryTicker } from "./tickers.js?v=11";
+import { sendChatMessage, setChatOpen, toggleChat } from "./chat.js?v=11";
 import {
   $, escapeAttr, escapeHtml, fmtCostUsd, fmtUsd, formatDate, formatDateTime, safeUrl,
-} from "./util.js";
+} from "./util.js?v=11";
 
 export function labelFor(agent, signal, confidence) {
   if (agent === "bull" || agent === "bear" || agent.endsWith("_rebuttal")) return `${Math.round((confidence ?? 0) * 100)}%`;

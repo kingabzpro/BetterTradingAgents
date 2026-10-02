@@ -3,8 +3,8 @@
 
 import {
   $, escapeHtml, escapeAttr, fmtUsd, formatDateTime, getClientId, showToast,
-} from "./util.js";
-import { CLIENT_ID_KEY, OUTLOOK_LABELS } from "./constants.js";
+} from "./util.js?v=11";
+import { CLIENT_ID_KEY, OUTLOOK_LABELS } from "./constants.js?v=11";
 
 const MAX_ITEMS = 3;
 const DEPTH_LABELS = { fast: "Fast", medium: "Medium", expert: "Expert" };

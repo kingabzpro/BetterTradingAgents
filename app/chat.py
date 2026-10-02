@@ -131,7 +131,7 @@ def _dossier(analysis: StockAnalysis, portfolio: PortfolioSummary | None) -> dic
         "data_quality": analysis.data_quality.model_dump(),
         "analysts": {
             key: _agent_view(getattr(analysis, key))
-            for key in ("technical", "fundamental", "news", "sentiment", "forecast")
+            for key in ("market", "technical", "fundamental", "news", "sentiment", "forecast")
         },
         "debate": {
             "bull": _agent_view(analysis.bull),

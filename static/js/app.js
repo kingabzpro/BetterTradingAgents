@@ -1,12 +1,12 @@
 /* BetterTradingAgents - analysis screen entry point.
    Wires the DOM and boots recovery / rerun, then hands off to run.js. */
 
-import { ADVANCED_OPEN_KEY, CLIENT_ID_KEY, DEPTH_KEY, OUTLOOK_KEY } from "./constants.js";
-import { setDepth, setOutlook, updateAdvancedSummary, updateDepthLabels, wireRadioGroups } from "./options.js";
-import { state } from "./state.js";
-import { addTickerTags, analyzeAnother, removeTickerTag, renderTickerTags } from "./tickers.js";
-import { applyRerunParams, cancelRun, feelingLucky, restoreSavedRun, startAnalysis } from "./run.js";
-import { $, getClientId } from "./util.js";
+import { ADVANCED_OPEN_KEY, CLIENT_ID_KEY, DEPTH_KEY, OUTLOOK_KEY } from "./constants.js?v=11";
+import { setDepth, setOutlook, updateAdvancedSummary, updateDepthLabels, wireRadioGroups } from "./options.js?v=11";
+import { state } from "./state.js?v=11";
+import { addTickerTags, analyzeAnother, removeTickerTag, renderTickerTags } from "./tickers.js?v=11";
+import { applyRerunParams, cancelRun, feelingLucky, restoreSavedRun, startAnalysis } from "./run.js?v=11";
+import { $, getClientId } from "./util.js?v=11";
 
 document.addEventListener("DOMContentLoaded", async () => {
   $("analyze-btn").addEventListener("click", () => startAnalysis());

@@ -134,6 +134,25 @@ assert "[mock] Judge:" in _verdict["summary"]
 assert judge.to_result(_verdict, "NVDA").signal == _verdict["signal"]
 print("debate judge mocks OK:", _verdict["bull_strength"], _verdict["bear_strength"], _verdict["signal"])
 
+# ---- market analyst mock (deterministic, offline) ----------------------------
+from app.agents import market  # noqa: E402
+
+_regime = market.mock(
+    "NVDA",
+    {
+        "spx": {"last": 5900.0, "change_5d_pct": 1.2, "change_21d_pct": 3.0, "above_sma20": True},
+        "nasdaq": {"last": 19200.0, "change_5d_pct": -0.4, "change_21d_pct": 2.1, "above_sma20": True},
+        "vix": {"last": 14.2, "change_5d_pct": -3.1},
+        "rates_10y": {"last": 4.2, "change_5d_pct": 0.9},
+    },
+)
+assert _regime["signal"] in ("bullish", "bearish", "neutral")
+assert 0.0 <= _regime["confidence"] <= 1.0
+assert "[mock] S&P 5d" in _regime["summary"]
+assert market.to_result(_regime, "NVDA").signal == _regime["signal"]
+assert market.to_result({}, "NVDA").signal == "neutral"
+print("market analyst mocks OK:", _regime["signal"], _regime["confidence"])
+
 # ---- forecast analyst mock ---------------------------------------------------
 _fc_payload = {
     "price": 100.0,

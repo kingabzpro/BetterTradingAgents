@@ -39,8 +39,9 @@ reference list and how each finding shapes the roadmap.
 | | Feature | What it means |
 |:---:|---|---|
 | ⚡ | **Parallel by design** | Researchers, data fetches, and debate rounds run concurrently, and multiple tickers run side by side. |
+| 🌍 | **Market regime** | A dedicated analyst reads the S&P 500, Nasdaq, VIX and the 10-year yield, so every call knows the weather it trades in. |
 | ⚔️ | **Real debate** | Bull and bear argue their strongest cases, then a neutral judge cross-examines both against the research before the call. |
-| 🗣️ | **Social sentiment** | A fifth researcher reads Reddit and StockTwits chatter, and says so when the crowd is too thin to mean anything. |
+| 🗣️ | **Social sentiment** | A sixth researcher reads Reddit and StockTwits chatter, and says so when the crowd is too thin to mean anything. |
 | ⚖️ | **Risk-gated decisions** | BUYs are volatility-scaled and capped by per-ticker, invested, and cash-buffer limits; downgrades are flagged, never silent. |
 | 📜 | **Learns from its calls** | Every decision is graded on realized return and alpha vs SPY; the manager weighs those lessons on the next run. |
 | 💬 | **Chat with the manager** | Every finished ticker gets a follow-up chat grounded in that run's research. |
@@ -235,9 +236,10 @@ The detailed plan lives in the wiki's
 [Roadmap](https://github.com/kingabzpro/BetterTradingAgents/wiki/Roadmap) page. Shipped: the
 decision brief with trust state, run controls, confidence calibration, portfolio
 concentration risk, the watchlist, decision comparison, Alpaca paper trading with autopilot
-sessions, in-app settings with OS-keychain secret storage, browser notifications, and the
+sessions, in-app settings with OS-keychain secret storage, browser notifications, the
 debate judge (one neutral cross-examination of the bull/bear cases replacing the old
-self-scored rebuttal round; expert depth is now 9 agents).
+self-scored rebuttal round), and the market-regime analyst with the Fast/Pro/Max depth
+tiers (old "medium" and "expert" values keep working everywhere).
 
 Next up: guided first-run onboarding in the web UI, an in-app accuracy report comparing past calls with realized 21-day stock performance (the data to settle whether the judge improves graded outcomes), and search and export across past runs.
 

@@ -222,7 +222,7 @@ function analyzeTickers(tickers) {
     (card) => tickers.includes(card.dataset.ticker)
   );
   const outlook = chosen[0]?.dataset.outlook || "short_term";
-  const depth = chosen[0]?.dataset.depth || "medium";
+  const depth = chosen[0]?.dataset.depth || "pro";
   window.location.href =
     `/?rerun=1&tickers=${encodeURIComponent(tickers.join(","))}` +
     `&outlook=${encodeURIComponent(outlook)}` +

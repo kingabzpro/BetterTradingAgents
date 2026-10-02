@@ -22,7 +22,7 @@ STALE_AFTER_HOURS = {
     "long_term": 1080.0,  # 45 days
 }
 
-ALL_RESEARCHERS = ("technical", "fundamental", "news", "sentiment", "forecast")
+ALL_RESEARCHERS = ("market", "technical", "fundamental", "news", "sentiment", "forecast")
 
 
 def stale_after_hours(outlook: object) -> float:

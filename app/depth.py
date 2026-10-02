@@ -1,34 +1,38 @@
 """Analysis depth profiles: pick which agents run to trade thoroughness for speed.
 
 Agent counts per profile (bull, bear and the manager always run):
-  fast   = technical + news             + bull/bear + manager = 5 agents
-  medium = all five researchers         + bull/bear + manager = 8 agents
-  expert = all five researchers + the debate judge            = 9 agents
+  fast = technical + news             + bull/bear + manager = 5 agents (super fast)
+  pro  = all six researchers          + bull/bear + manager = 9 agents
+  max  = all six researchers + judge + bull/bear + manager = 10 agents
+
+The old tier names ("medium", "expert") are aliased so runs and links saved
+before the rename keep working.
 """
 
 from typing import Any, Literal
 
-Depth = Literal["fast", "medium", "expert"]
-DEFAULT_DEPTH: Depth = "medium"
+Depth = Literal["fast", "pro", "max"]
+DEFAULT_DEPTH: Depth = "pro"
+_DEPTH_ALIASES = {"medium": "pro", "expert": "max"}
 
-_ALL_RESEARCH = ("technical", "fundamental", "news", "forecast", "sentiment")
+_ALL_RESEARCH = ("market", "technical", "fundamental", "news", "forecast", "sentiment")
 
 DEPTH_PROFILES: dict[str, dict[str, Any]] = {
     "fast": {
         "label": "Fast",
         "research": ("technical", "news"),
-        "note": "Technical + news research only, single debate round.",
+        "note": "Super fast scan: technical + news research, single debate round.",
     },
-    "medium": {
-        "label": "Medium",
+    "pro": {
+        "label": "Pro",
         "research": _ALL_RESEARCH,
-        "note": "All five researchers, single debate round.",
+        "note": "All six researchers, single debate round.",
     },
-    "expert": {
-        "label": "Expert",
+    "max": {
+        "label": "Max",
         "research": _ALL_RESEARCH,
         "judge": True,
-        "note": "All five researchers plus the debate judge.",
+        "note": "All six researchers plus the debate judge.",
     },
 }
 
@@ -36,6 +40,7 @@ DEPTH_PROFILES: dict[str, dict[str, Any]] = {
 def normalize_depth(value: object) -> Depth:
     """Coerce anything (API input, old DB rows) into a valid depth key."""
     key = str(value or "").strip().lower()
+    key = _DEPTH_ALIASES.get(key, key)
     return key if key in DEPTH_PROFILES else DEFAULT_DEPTH  # type: ignore[return-value]
 
 

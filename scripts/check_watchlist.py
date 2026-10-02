@@ -60,12 +60,12 @@ async def checks() -> None:
 
     # ---- manual add without a baseline run: not_reanalyzed -------------------
     manual, already = await watchlist.add_item(
-        OWNER, "amd", note="momentum name", outlook="long_term", depth="expert"
+        OWNER, "amd", note="momentum name", outlook="long_term", depth="max"
     )
     assert not already and manual.ticker == "AMD"
     assert manual.change_status == "not_reanalyzed"
     assert manual.last_call is None and manual.current_call is None
-    assert manual.outlook == "long_term" and manual.depth == "expert"
+    assert manual.outlook == "long_term" and manual.depth == "max"
     print("manual add OK:", manual.ticker, manual.change_status)
 
     # ---- save a result as baseline, then no newer run ------------------------

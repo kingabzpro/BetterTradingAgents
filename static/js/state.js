@@ -14,6 +14,6 @@ export const state = {
   tickerTags: [],
   maxTickers: 5,
   outlook: "short_term",
-  depth: "medium",
+  depth: "pro",
   chats: new Map(), // ticker -> { messages: [{role, content}], busy: false, open: false }
 };
