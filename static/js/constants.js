@@ -38,8 +38,8 @@ export const ADVANCED_OPEN_KEY = "bta:advancedOpen";
 export const OUTLOOK_KEY = "bta:outlook";
 export const DEPTH_KEY = "bta:depth";
 export const DEPTH_PROFILES = {
-  fast: { label: "Fast", research: ["technical", "news"], rebuttals: false },
-  medium: { label: "Medium", research: ["technical", "fundamental", "news", "forecast", "sentiment"], rebuttals: false },
+  fast: { label: "Fast", research: ["technical", "news"] },
+  medium: { label: "Medium", research: ["technical", "fundamental", "news", "forecast", "sentiment"] },
   expert: { label: "Expert", research: ["technical", "fundamental", "news", "forecast", "sentiment"], judge: true },
 };
 export const EVIDENCE_META = {

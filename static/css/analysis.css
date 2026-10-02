@@ -151,11 +151,9 @@
 .ticker-head .tk { font-weight: 700; font-size: 15px; letter-spacing: 0.03em; white-space: nowrap; }
 .ticker-head .px { color: var(--muted); font-size: 12px; font-weight: 500; margin-left: 4px; font-variant-numeric: tabular-nums; }
 .ticker-head .src { color: #6b7590; font-size: 11px; text-align: right; white-space: nowrap; flex: none; }
-.agent-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 3px 0; border-top: 1px solid rgba(255, 255, 255, 0.05); font-size: 12.5px; }
-.agent-row:first-of-type { border-top: none; }
+.agent-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 3px 0; font-size: 12.5px; }
 .agent-left { display: flex; align-items: center; gap: 9px; color: #c0c8d8; font-weight: 500; min-width: 0; }
 .agent-icon { display: inline-flex; align-items: center; color: var(--muted); flex: none; }
-.stage2 { margin-top: 4px; padding-top: 6px; border-top: 1px solid rgba(255, 255, 255, 0.06); }
 
 /* Live reasoning stream (ROADMAP 3.2): collapsible per-agent token pane.
    Agents without a stream reuse the same pane for a peek at their finished
@@ -300,11 +298,6 @@
 .cancel-btn:disabled { opacity: 0.55; cursor: wait; }
 
 .agent-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-/* Rebuttal rows are sub-rows of the argument they answer: smaller, muted,
-   and indented so four pills stop reading as four separate verdicts. */
-.agent-row.rebuttal-row { padding: 2px 0 2px 15px; font-size: 12px; }
-.rebuttal-row .agent-left { color: #94a0b5; }
-.rebuttal-row .verdict { min-width: 0; font-size: 10px; padding: 1px 8px; }
 .prog-count { min-width: 42px; text-align: right; }
 .ticker-head {
   display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start;

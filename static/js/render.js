@@ -229,7 +229,7 @@ export function renderProgressCard(ticker) {
     <div class="run-progress" id="progress-${ticker}" role="progressbar" aria-label="${escapeAttr(ticker)} analysis progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">${agents.map((agent) => `<span class="seg" data-agent="${escapeAttr(agent.key)}"></span>`).join("")}</div>
     ${agents.map((agent) => `
       <div class="agent-cell" id="cell-${ticker}-${agent.key}">
-        <div class="agent-row ${agent.stage !== "Research" ? "stage2" : ""}${agent.rebuttal ? " rebuttal-row" : ""}" data-agent="${agent.key}">
+        <div class="agent-row" data-agent="${agent.key}">
           <span class="agent-left"><span class="agent-icon">${ICONS[agent.key]}</span><span class="agent-name">${agent.label}</span></span>
           <span class="stream-hint" hidden>▶</span>
           <span class="status" id="status-${ticker}-${agent.key}"><span class="icon" aria-hidden="true"></span>Waiting</span>

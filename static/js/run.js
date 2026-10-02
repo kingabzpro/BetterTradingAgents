@@ -271,7 +271,6 @@ function hydrateResults(results, restored) {
         ? !("judge" in analysis)
         : (agent.key === "forecast" && !result && !analysis.forecast_method)
           || (agent.key === "sentiment" && !result && analysis.providers && !("social" in analysis.providers));
-      if (agent.rebuttal && legacyMissing && !restored) return;
       const available = agent.key === "manager" ? !analysis.error : Boolean(result);
       const statusClass = legacyMissing ? "neutral" : available ? "done" : "failed";
       const resultLabel = agent.key === "manager"
