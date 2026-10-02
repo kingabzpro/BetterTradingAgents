@@ -206,6 +206,11 @@
 .verdict.down { color: #ff8296; border-color: rgba(244, 88, 107, 0.4); background: rgba(244, 88, 107, 0.1); }
 .verdict.hold { color: #ffc75e; border-color: rgba(245, 165, 36, 0.4); background: rgba(245, 165, 36, 0.1); }
 .verdict.flat { color: #b9c1d0; border-color: var(--border-strong); background: rgba(255, 255, 255, 0.05); }
+/* Pill rows render without a state dot, so they must not auto-place into
+   the reserved 8px dot track (they would overflow the card and the next
+   card would cover them). Pin them to the label and duration tracks. */
+.status .verdict { grid-column: 2; }
+.status .status-duration { grid-column: 3; }
 .agent-cell.tone-up .agent-icon { color: #4fd98a; }
 .agent-cell.tone-down .agent-icon { color: #ff8296; }
 .agent-cell.tone-hold .agent-icon { color: var(--hold); }
