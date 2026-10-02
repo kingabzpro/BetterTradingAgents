@@ -1,12 +1,16 @@
 """Analysis depth profiles: pick which agents run to trade thoroughness for speed.
 
 Agent counts per profile (bull, bear and the manager always run):
-  fast = technical + news             + bull/bear + manager = 5 agents (super fast)
-  pro  = all six researchers          + bull/bear + manager = 9 agents
-  max  = all six researchers + judge + bull/bear + manager = 10 agents
+  fast = technical                       + bull/bear + manager = 4 agents (super fast)
+  pro  = market + technical + news + forecast + bull/bear + manager = 7 agents
+  max  = all six researchers + judge           + bull/bear + manager = 10 agents
 
-The old tier names ("medium", "expert") are aliased so runs and links saved
-before the rename keep working.
+Pro's four researchers mirror the source framework's analyst team
+(fundamentals/sentiment/news/technical in TradingAgents, arXiv 2412.20138)
+adapted for short horizons: regime, price action, catalysts, projection.
+Fundamentals and sentiment are the long-horizon and noisiest inputs, so they
+differentiate Max. The old tier names ("medium", "expert") are aliased so
+runs and links saved before the rename keep working.
 """
 
 from typing import Any, Literal
@@ -20,13 +24,13 @@ _ALL_RESEARCH = ("market", "technical", "fundamental", "news", "forecast", "sent
 DEPTH_PROFILES: dict[str, dict[str, Any]] = {
     "fast": {
         "label": "Fast",
-        "research": ("technical", "news"),
-        "note": "Super fast scan: technical + news research, single debate round.",
+        "research": ("technical",),
+        "note": "Super fast scan: price action only, single debate round.",
     },
     "pro": {
         "label": "Pro",
-        "research": _ALL_RESEARCH,
-        "note": "All six researchers, single debate round.",
+        "research": ("market", "technical", "news", "forecast"),
+        "note": "Regime, price action, catalysts and projection, single debate round.",
     },
     "max": {
         "label": "Max",
