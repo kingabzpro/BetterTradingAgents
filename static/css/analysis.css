@@ -316,13 +316,13 @@
 }
 .agent-left { min-width: 0; }
 .status {
-  display: grid; grid-template-columns: 8px auto minmax(0, 1fr); align-items: center;
+  display: grid; grid-template-columns: 8px minmax(0, auto) auto; align-items: center;
   grid-column: -2 / -1;
-  min-width: 0; max-width: 100%; justify-self: stretch;
+  min-width: 0; max-width: 100%; justify-self: stretch; justify-content: end;
   gap: 7px; white-space: nowrap; line-height: 1.35;
 }
 .status-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.status-duration { color: #91a0b9; font-variant-numeric: tabular-nums; white-space: nowrap; justify-self: end; }
+.status-duration { color: #91a0b9; font-variant-numeric: tabular-nums; white-space: nowrap; }
 
 #summary-panel {
   width: 100%; max-width: 100%; min-width: 0; overflow: hidden;
