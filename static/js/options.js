@@ -66,7 +66,7 @@ export function updateAdvancedSummary() {
 }
 
 export function depthProfile() {
-  return DEPTH_PROFILES[state.depth] || DEPTH_PROFILES.medium;
+  return DEPTH_PROFILES[state.depth] || DEPTH_PROFILES.pro;
 }
 
 export function activeAgents() {
@@ -74,13 +74,16 @@ export function activeAgents() {
   return AGENTS.filter((agent) => {
     if (agent.stage === "Research") return profile.research.includes(agent.key);
     if (agent.judge) return profile.judge && state.debateRounds >= 2;
+    // Fast depth skips the debate entirely; the manager weighs the research.
+    if (profile.debate === false && (agent.key === "bull" || agent.key === "bear")) return false;
     return true;
   });
 }
 
 function agentCount(profileKey) {
   const profile = DEPTH_PROFILES[profileKey];
-  return profile.research.length + 3 + (profile.judge && state.debateRounds >= 2 ? 1 : 0);
+  const debaters = profile.debate === false ? 0 : 2;
+  return profile.research.length + 1 + debaters + (profile.judge && state.debateRounds >= 2 ? 1 : 0);
 }
 
 // Agent counts on the buttons depend on the server's debate-rounds setting.

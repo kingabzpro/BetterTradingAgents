@@ -40,7 +40,7 @@ export const ADVANCED_OPEN_KEY = "bta:advancedOpen";
 export const OUTLOOK_KEY = "bta:outlook";
 export const DEPTH_KEY = "bta:depth";
 export const DEPTH_PROFILES = {
-  fast: { label: "Fast", research: ["technical"] },
+  fast: { label: "Fast", research: ["technical", "forecast"], debate: false },
   pro: { label: "Pro", research: ["market", "technical", "news", "forecast"] },
   max: { label: "Max", research: ["market", "technical", "fundamental", "news", "forecast", "sentiment"], judge: true },
 };

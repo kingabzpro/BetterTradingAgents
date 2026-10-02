@@ -1,9 +1,10 @@
 """Analysis depth profiles: pick which agents run to trade thoroughness for speed.
 
-Agent counts per profile (bull, bear and the manager always run):
-  fast = technical                       + bull/bear + manager = 4 agents (super fast)
+Agent counts per profile:
+  fast = technical + forecast + manager                           = 3 agents (super fast;
+          no debate and no news fetch: the manager weighs the research directly)
   pro  = market + technical + news + forecast + bull/bear + manager = 7 agents
-  max  = all six researchers + judge           + bull/bear + manager = 10 agents
+  max  = all six researchers + judge + bull/bear + manager = 10 agents
 
 Pro's four researchers mirror the source framework's analyst team
 (fundamentals/sentiment/news/technical in TradingAgents, arXiv 2412.20138)
@@ -24,8 +25,9 @@ _ALL_RESEARCH = ("market", "technical", "fundamental", "news", "forecast", "sent
 DEPTH_PROFILES: dict[str, dict[str, Any]] = {
     "fast": {
         "label": "Fast",
-        "research": ("technical",),
-        "note": "Super fast scan: price action only, single debate round.",
+        "research": ("technical", "forecast"),
+        "debate": False,
+        "note": "Super fast scan: price action and projection, weighed directly by the manager.",
     },
     "pro": {
         "label": "Pro",

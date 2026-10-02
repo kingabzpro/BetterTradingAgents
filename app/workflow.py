@@ -891,17 +891,21 @@ async def analyze_ticker(
         "forecast": slot("forecast", forecast_r),
     }
 
-    # Stage 2: bull and bear in parallel.
-    bull_data, bear_data = await asyncio.gather(
-        _run_agent(
-            bull, ticker, emit, token_totals=token_totals, role_usage=role_usage,
-            live=live_context, payload=context,
-        ),
-        _run_agent(
-            bear, ticker, emit, token_totals=token_totals, role_usage=role_usage,
-            live=live_context, payload=context,
-        ),
-    )
+    # Stage 2: bull and bear in parallel. Fast depth skips the debate
+    # entirely; the manager then weighs the research directly (its payload
+    # marks the debate SKIPPED via slot()).
+    bull_data, bear_data = None, None
+    if prof.get("debate", True):
+        bull_data, bear_data = await asyncio.gather(
+            _run_agent(
+                bull, ticker, emit, token_totals=token_totals, role_usage=role_usage,
+                live=live_context, payload=context,
+            ),
+            _run_agent(
+                bear, ticker, emit, token_totals=token_totals, role_usage=role_usage,
+                live=live_context, payload=context,
+            ),
+        )
 
     # Stage 2b: the judge cross-examines both round-1 cases against the
     # research and returns calibrated strengths plus a verdict (one neutral
