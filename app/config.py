@@ -27,6 +27,7 @@ class Settings:
     llm_timeout_seconds: float = float(_env("LLM_TIMEOUT_SECONDS", "90"))
     # Optional provider-specific reasoning effort (e.g. "none"/"low" for GLM).
     llm_reasoning_effort: str = _env("LLM_REASONING_EFFORT")
+    llm_reasoning_effort_manager: str = _env("LLM_REASONING_EFFORT_MANAGER")
     # Per-role overrides (wiki Roadmap 2.3); each falls back to the global
     # LLM_* value. Roles: analysts = the 4 researchers, debate = bull/bear,
     # manager = the final BUY/HOLD/SELL call - cheap fast researchers, a

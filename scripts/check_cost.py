@@ -29,6 +29,9 @@ assert cost.price_for("glm-5.3-flash") == (0.15, 0.50)
 assert cost.price_for("openai/gpt-5.6-luna") == (0.20, 1.20)
 assert cost.price_for("GPT-4o-mini") == (0.15, 0.60)
 assert cost.price_for("gpt-4.1-mini") == (0.40, 1.60)
+assert cost.price_for("deepseek-ai/DeepSeek-V4.1-Flash") == (0.30, 1.20)
+assert cost.price_for("openai/deepseek-ai/DeepSeek-V4.1-Flash") == (0.30, 1.20)
+assert cost.price_for("deepseek-flash") == (0.30, 1.20)
 assert cost.price_for("my-localhost-model") is None
 assert cost.normalize_model("zai-org/GLM-5.3-Flash") == cost.normalize_model("glm5.3-flash")
 print("price table OK: GLM-5.3/Flash, gpt-5.6-luna, gpt-4o-mini; unknown -> None")
@@ -65,6 +68,13 @@ override = cost.estimate(
 assert override["priced"] is True and override["total_usd"] == 0.003
 assert settings.llm_price_in == 0.0 and settings.llm_price_out == 0.0  # table by default
 print("estimate math OK: priced total, unpriced floor, empty, price override")
+
+deepseek = cost.estimate({
+    "manager": {"model": "deepseek-ai/DeepSeek-V4.1-Flash", "prompt_tokens": 1_000_000, "completion_tokens": 500_000, "reasoning_tokens": 100_000},
+})
+assert deepseek["priced"] and deepseek["unpriced_models"] == []
+assert deepseek["total_usd"] == 0.90  # reasoning is already in completion usage
+print("DeepSeek peak-rate estimate OK; reasoning tokens not counted twice")
 
 # ---- old runs still parse ----------------------------------------------------------
 legacy = StockAnalysis.model_validate({"ticker": "AAPL", "token_usage": {"total_tokens": 10}})

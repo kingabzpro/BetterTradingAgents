@@ -104,7 +104,10 @@ def _route_model(model: str) -> str:
     return f"openai/{model}"
 
 
-def _build_llm(role: str, json_mode: bool = True, stream: bool | None = None) -> Any:
+def _build_llm(
+    role: str, json_mode: bool = True, stream: bool | None = None,
+    reasoning_effort: str | None = None,
+) -> Any:
     """Construct the CrewAI LLM for one role from settings.llm_for(role).
 
     json_mode asks the provider for guaranteed JSON output; reasoning_effort
@@ -115,9 +118,12 @@ def _build_llm(role: str, json_mode: bool = True, stream: bool | None = None) ->
     from crewai import LLM
 
     conf = settings.llm_for(role)
+    effort = reasoning_effort if reasoning_effort is not None else (
+        settings.llm_reasoning_effort_manager if role == "manager" else ""
+    ) or settings.llm_reasoning_effort
     extra: dict = {}
-    if settings.llm_reasoning_effort:
-        extra["reasoning_effort"] = settings.llm_reasoning_effort
+    if effort:
+        extra["reasoning_effort"] = effort
     if json_mode:
         extra["response_format"] = {"type": "json_object"}
     if stream is None:
@@ -128,7 +134,7 @@ def _build_llm(role: str, json_mode: bool = True, stream: bool | None = None) ->
         api_key=conf["api_key"],
         temperature=settings.llm_temperature,
         timeout=settings.llm_timeout_seconds,
-        reasoning_effort=settings.llm_reasoning_effort or None,
+        reasoning_effort=effort or None,
         stream=stream,
         additional_params=extra,
     )
@@ -162,7 +168,10 @@ def get_chat_llm() -> Any:
         _llm_roles_initialized.add("chat")
         if settings.llm_configured:
             try:
-                _llms["chat"] = _build_llm("manager", json_mode=False, stream=False)
+                _llms["chat"] = _build_llm(
+                    "manager", json_mode=False, stream=False,
+                    reasoning_effort=settings.llm_reasoning_effort,
+                )
             except Exception as exc:  # noqa: BLE001 - degrade to mock, don't crash
                 logger.error("[llm] could not build chat LLM: %s", exc)
                 _llms["chat"] = None

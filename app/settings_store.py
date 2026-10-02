@@ -83,6 +83,7 @@ FIELD_GROUPS: list[dict[str, Any]] = [
         "tab": "Role models",
         "label": "Per-role model overrides",
         "fields": _role("manager", "Manager", "The final BUY/HOLD/SELL call: worth a stronger model", "zai-org/GLM-5.3")
+        + [_field("llm_reasoning_effort_manager", "LLM_REASONING_EFFORT_MANAGER", "Manager reasoning effort", hint="Empty = global effort; high requests deeper reasoning on supported models", example="high")]
         + _role("analysts", "Analysts", "The 5 researchers: a cheap fast model works", "zai-org/GLM-5.3-Flash")
         + _role("debate", "Debate", "Bull and bear argue the case", "zai-org/GLM-5.3-Flash"),
     },

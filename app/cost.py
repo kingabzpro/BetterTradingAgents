@@ -7,8 +7,13 @@ and gateway fees are ignored on purpose. A model without a known price is
 reported as unpriced instead of guessing, so the UI can say `cost unknown`
 rather than showing a confident wrong number.
 
-Prices are USD per 1M tokens (input, output), checked 2026-09-10 against the
-providers' own pricing pages:
+Prices are USD per 1M tokens (input, output). DeepSeek was added 2026-10-03;
+the other entries were checked 2026-09-10 against provider pricing pages:
+
+- DeepSeek V4.1 Flash: $0.30 / $1.20 peak, uncached list price. Off-peak
+  rates are half; this fixed-rate estimate ignores off-peak discounts and
+  does not represent self-hosted infrastructure billing.
+  https://api-docs.deepseek.com/quick_start/pricing/
 
 - Z.ai GLM-5.3: $1.40 / $4.40 (unchanged from GLM-5.2)
 - Z.ai GLM-5.3-Flash: $0.15 / $0.50 base list (a promotion halves it; the
@@ -19,13 +24,15 @@ providers' own pricing pages:
 - OpenAI gpt-4.1-mini / gpt-4.1: $0.40 / $1.60 and $2.00 / $8.00
 """
 
-PRICES_AS_OF = "2026-09-10"
+PRICES_AS_OF = "2026-10-03"
 
 # Normalized model name -> (input USD per 1M tokens, output USD per 1M tokens).
 # Keys go through normalize_model(): lowercase, part after the last "/",
 # everything that is not a letter or digit dropped ("zai-org/GLM-5.3-Flash"
 # and "glm-5.3-flash" both match "glm53flash").
 MODEL_PRICES: dict[str, tuple[float, float]] = {
+    "deepseekv41flash": (0.30, 1.20),
+    "deepseekflash": (0.30, 1.20),
     "glm53": (1.40, 4.40),
     "glm53flash": (0.15, 0.50),
     "gpt56luna": (0.20, 1.20),
