@@ -10,6 +10,7 @@ pin the page structure, the print stylesheet, and the JSON export payload.
 import asyncio
 import os
 from pathlib import Path
+import re
 import tempfile
 
 # Isolated DB before app.config is imported.
@@ -137,7 +138,8 @@ async def checks() -> None:
             assert marker in css_text, f"print CSS missing: {marker}"
         home = await client.get("/")
         assert home.status_code == 200
-        assert "/static/css/analysis.css?v=4" in home.text, "analysis page must load the print CSS"
+        # The cache-bust version bumps with every CSS change; match any v=N.
+        assert re.search(r"/static/css/analysis\.css\?v=\d+", home.text), "analysis page must load the print CSS"
         print("print stylesheet OK")
 
         # ---- JS assets ship the client-side logic ----

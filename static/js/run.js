@@ -181,7 +181,7 @@ export function beginRun(tickers, options = {}) {
   state.streamWarningShown = false;
   const agents = activeAgents();
   state.tickers = new Map(tickers.map((ticker) => [ticker, {
-    agents: {}, completedAgents: new Set(), done: 0, total: agents.length, failed: false,
+    agents: {}, completedAgents: new Set(), runningAgents: new Set(), done: 0, total: agents.length, failed: false,
   }]));
   state.runStartedAtMs = options.startedAtMs || Date.now();
   state.chats = new Map();
@@ -280,9 +280,14 @@ function hydrateResults(results, restored) {
       const statusText = legacyMissing
         ? "Not recorded"
         : available
-          ? `✓ ${resultLabel === "n/a" ? "Complete" : resultLabel}`
+          ? (resultLabel === "n/a" ? "Complete" : resultLabel)
           : "⚠ Unavailable";
-      setAgentStatus(ticker, agent.key, statusClass, statusText);
+      // Same verdict pill as the live path: the decision for the manager,
+      // the recorded signal for every other agent.
+      const statusSignal = legacyMissing || !available
+        ? null
+        : (agent.key === "manager" ? analysis.decision : result?.signal);
+      setAgentStatus(ticker, agent.key, statusClass, statusText, null, statusSignal);
       entry.completedAgents.add(agent.key);
     });
     updateProgress(ticker, entry);
@@ -351,6 +356,8 @@ function settleCancelled() {
 function markInterruptedTickers() {
   for (const [ticker, entry] of state.tickers) {
     if (entry.analysis) continue;
+    entry.runningAgents?.clear();
+    updateProgress(ticker, entry);
     const count = $(`progc-${ticker}`);
     if (count) count.textContent = "Cancelled";
     for (const agent of activeAgents()) {

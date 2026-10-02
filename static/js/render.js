@@ -21,6 +21,16 @@ export function labelFor(agent, signal, confidence) {
   return map[signal] || signal || "n/a";
 }
 
+// Shared tone for verdict pills, icon tints, and evidence accents: green for
+// bullish sides, red for bearish, amber for a HOLD decision, gray for no lean.
+function verdictTone(signal) {
+  const s = String(signal || "").toLowerCase();
+  if (s === "bullish" || s === "positive" || s === "buy") return "up";
+  if (s === "bearish" || s === "negative" || s === "sell") return "down";
+  if (s === "hold") return "hold";
+  return "flat";
+}
+
 export function convictionLabel(confidence) {
   const pct = Math.round((confidence || 0) * 100);
   if (pct >= 70) return "Strong evidence";
@@ -216,12 +226,12 @@ export function renderProgressCard(ticker) {
   const agents = activeAgents();
   card.innerHTML = `
     <div class="ticker-head"><span class="tk" id="live-title-${ticker}">${escapeHtml(ticker)} <span class="px" id="px-${ticker}">fetching data…</span></span><span class="src" id="src-${ticker}"></span><span class="muted prog-count" id="progc-${ticker}">0/${agents.length}</span></div>
-    <div class="run-progress" id="progress-${ticker}" role="progressbar" aria-label="${escapeAttr(ticker)} analysis progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div class="run-progress-fill" id="prog-${ticker}"></div></div>
+    <div class="run-progress" id="progress-${ticker}" role="progressbar" aria-label="${escapeAttr(ticker)} analysis progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">${agents.map((agent) => `<span class="seg" data-agent="${escapeAttr(agent.key)}"></span>`).join("")}</div>
     ${agents.map((agent) => `
       <div class="agent-cell" id="cell-${ticker}-${agent.key}">
         <div class="agent-row ${agent.stage !== "Research" ? "stage2" : ""}" data-agent="${agent.key}">
           <span class="agent-left"><span class="agent-icon">${ICONS[agent.key]}</span><span>${agent.label}<small>${agent.stage}</small></span></span>
-          <span class="stream-hint" hidden>reasoning ▾</span>
+          <span class="stream-hint" hidden>▶</span>
           <span class="status" id="status-${ticker}-${agent.key}"><span class="icon" aria-hidden="true"></span>Waiting</span>
         </div>
         <div class="stream-pane" id="stream-${ticker}-${agent.key}" hidden><pre id="stream-pre-${ticker}-${agent.key}"></pre></div>
@@ -243,14 +253,15 @@ export function renderProgressCard(ticker) {
 export function toggleStreamPane(ticker, agentKey) {
   const cell = $(`cell-${ticker}-${agentKey}`);
   const pane = $(`stream-${ticker}-${agentKey}`);
-  if (!cell || !pane || !cell.classList.contains("has-stream")) return;
+  // A row is clickable once it streams tokens or holds a finished summary.
+  if (!cell || !pane || (!cell.classList.contains("has-stream") && !cell.classList.contains("has-peek"))) return;
   const open = pane.hidden;
   pane.hidden = !open;
   cell.classList.toggle("open", open);
   const row = cell.querySelector(".agent-row");
   row.setAttribute("aria-expanded", String(open));
   const hint = row.querySelector(".stream-hint");
-  if (hint) hint.textContent = open ? "reasoning ▴" : "reasoning ▾";
+  if (hint) hint.textContent = open ? "▼" : "▶";
   if (open) pane.scrollTop = pane.scrollHeight;
 }
 
@@ -263,25 +274,40 @@ export function setHeader(ticker, price, name, sources) {
     const forecastSource = sources.forecast === "timegpt" ? "Nixtla TimeGPT" : sources.forecast === "local" ? "local forecast" : null;
     const socialSource = sources.social === "olostep" ? "reddit/stocktwits" : null;
     const unique = [...new Set([sources.prices, sources.fundamentals, sources.news, socialSource, forecastSource].filter((source) => source && source !== "none"))];
-    sourceElement.textContent = unique.length ? `via ${unique.join(" + ")}` : "";
+    const label = unique.length ? `via ${unique.join(" + ")}` : "";
+    sourceElement.textContent = label;
+    // The line is clamped to one row; the full list stays on hover.
+    sourceElement.title = label;
   }
 }
 
-export function setAgentStatus(ticker, agent, statusClass, text, duration) {
+export function setAgentStatus(ticker, agent, statusClass, text, duration, signal) {
   const element = $(`status-${ticker}-${agent}`);
   if (!element) return;
   element.className = `status ${statusClass}`;
   const durationText = duration ? `${Number(duration).toFixed(1)}s` : "";
-  // Visual progress only: the overall status live region announces ticker
-  // results, so per-agent starts/completions are not spoken (P0.3).
-  element.innerHTML = `<span class="icon" aria-hidden="true"></span><span class="status-label">${escapeHtml(text)}</span>${durationText ? `<span class="status-duration">${durationText}</span>` : ""}`;
+  const tone = statusClass === "done" && signal ? verdictTone(signal) : "";
+  const cell = $(`cell-${ticker}-${agent}`);
+  if (cell) {
+    cell.classList.remove("tone-up", "tone-down", "tone-hold", "tone-flat");
+    if (tone) cell.classList.add(`tone-${tone}`);
+  }
+  // Completed agents show their verdict as a tinted pill; other states keep
+  // the plain label. Visual progress only: the overall status live region
+  // announces ticker results, so per-agent starts/completions are not
+  // spoken (P0.3).
+  const labelMarkup = tone
+    ? `<span class="verdict ${tone}">${escapeHtml(text)}</span>`
+    : `<span class="status-label">${escapeHtml(text)}</span>`;
+  element.innerHTML = `<span class="icon" aria-hidden="true"></span>${labelMarkup}${durationText ? `<span class="status-duration">${durationText}</span>` : ""}`;
 }
 
 function signalClass(signal) { return `sig-${String(signal || "unknown").toLowerCase()}`; }
 
 function evidenceCard(title, result, agent) {
   const signal = result?.signal || "unknown";
-  return `<article class="evidence-card"><div class="mc-title">${escapeHtml(title)}</div><div class="mc-sig ${signalClass(signal)}">${escapeHtml(labelFor(agent, signal, result?.confidence))}</div><p class="mc-sum">${escapeHtml(result?.summary || "No evidence returned.")}</p></article>`;
+  const confidence = Math.round((result?.confidence || 0) * 100);
+  return `<article class="evidence-card tone-${verdictTone(signal)}"><div class="mc-title">${escapeHtml(title)}</div><div class="mc-sig ${signalClass(signal)}">${escapeHtml(labelFor(agent, signal, result?.confidence))}</div><div class="conf-bar" role="img" aria-label="Confidence ${confidence}%"><span style="width:${confidence}%"></span></div><p class="mc-sum">${escapeHtml(result?.summary || "No evidence returned.")}</p></article>`;
 }
 
 function providerText(providers) {
@@ -340,15 +366,24 @@ export function renderResultCard(analysis) {
   const cachedRun = Boolean(state.tickers.get(ticker)?.cached);
   const fallbacks = analysis.data_quality?.provider_fallbacks || [];
   const tokens = analysis.token_usage || {};
-  const tokenFact = tokens.total_tokens
-    ? `<div><span>LLM tokens</span><strong>${Number(tokens.total_tokens).toLocaleString()}</strong><small>${Number(tokens.prompt_tokens || 0).toLocaleString()} prompt + ${Number(tokens.completion_tokens || 0).toLocaleString()} completion${tokens.reasoning_tokens ? ` · ${Number(tokens.reasoning_tokens).toLocaleString()} reasoning` : ""}</small></div>`
-    : "";
   const costEst = analysis.cost_estimate || {};
   const costRoles = Object.keys(costEst.by_role || {});
-  const costFact = costRoles.length
-    ? `<div><span>Model cost</span><strong>${costEst.priced ? "~" : "≥ "}${fmtCostUsd(costEst.total_usd)}</strong><small>estimate · provider list prices${(costEst.unpriced_models || []).length ? ` · unpriced: ${costEst.unpriced_models.map(escapeHtml).join(", ")}` : ` as of ${escapeHtml(costEst.prices_as_of || "")}`}</small></div>`
-    : "";
+  // Run metadata (tokens, model cost) becomes one muted footer line so the
+  // investment facts lead the brief.
+  const metaBits = [];
+  if (tokens.total_tokens) {
+    metaBits.push(`LLM tokens ${Number(tokens.total_tokens).toLocaleString()} (${Number(tokens.prompt_tokens || 0).toLocaleString()} prompt + ${Number(tokens.completion_tokens || 0).toLocaleString()} completion${tokens.reasoning_tokens ? ` + ${Number(tokens.reasoning_tokens).toLocaleString()} reasoning` : ""})`);
+  }
+  if (costRoles.length) {
+    metaBits.push(`model cost ${costEst.priced ? "~" : "at least "}${fmtCostUsd(costEst.total_usd)} (${(costEst.unpriced_models || []).length ? `no known price for ${costEst.unpriced_models.map(escapeHtml).join(", ")}` : `provider list prices as of ${escapeHtml(costEst.prices_as_of || "")}`})`);
+  }
+  const runMeta = metaBits.length ? `<p class="run-meta">${metaBits.join(" · ")}</p>` : "";
   const profile = depthProfile();
+  // One bar shows which side of the debate is stronger: widths are the two
+  // confidences as a share of their sum, the labels keep the raw strengths.
+  const bullConf = Math.round((analysis.bull?.confidence ?? 0) * 100);
+  const bearConf = Math.round((analysis.bear?.confidence ?? 0) * 100);
+  const bullShare = bullConf + bearConf > 0 ? Math.round((bullConf / (bullConf + bearConf)) * 100) : 50;
   const skippedResearch = Object.keys(EVIDENCE_META).filter((key) => !profile.research.includes(key));
   const evidenceHtml = profile.research.map((key) => evidenceCard(
     EVIDENCE_META[key].title,
@@ -372,11 +407,12 @@ export function renderResultCard(analysis) {
     <div class="decision-brief">
       ${changed}
       ${gated ? `<div class="gate-banner"><span class="gate-chip">risk-adjusted</span><span class="gate-line">${escapeHtml(gateLine(analysis))}</span>${downgradeFlag(analysis) ? `<small>⚠ ${escapeHtml(downgradeFlag(analysis))}</small>` : ""}</div>` : ""}
-      <div class="decision-facts"><div><span>Current price</span><strong>${analysis.price != null ? `$${Number(analysis.price).toFixed(2)}` : "Unavailable"}</strong></div><div><span>5-day forecast</span><strong>${analysis.forecast_price_5d != null ? `$${Number(analysis.forecast_price_5d).toFixed(2)} (${Number(analysis.forecast_change_5d_pct) >= 0 ? "+" : ""}${Number(analysis.forecast_change_5d_pct).toFixed(2)}%)` : "Unavailable"}</strong><small>${analysis.forecast_method === "timegpt-1" ? "TimeGPT" : analysis.forecast_trend_r2 != null ? `Local fit R² ${Number(analysis.forecast_trend_r2).toFixed(2)}` : "Local"}${forecastBandNote(analysis)}</small></div><div><span>Data age</span><strong>${age.stale ? '<span class="flag-warn">' : ""}${ageLabel(age.hours)}${cachedRun ? " · cached" : ""}${age.stale ? " · stale</span>" : ""}</strong><small>${escapeHtml(asOf)}</small></div><div><span>Evidence strength</span><strong>${convictionLabel(analysis.confidence)} · ${confidencePct}%</strong><small id="track-record-${ticker}" class="track-record"></small></div><div><span>Horizon</span><strong>${OUTLOOK_LABELS[state.outlook] || state.outlook}</strong><small>${profile.label} depth</small></div><div><span>Analyst coverage</span><strong>${analysis.error ? "n/a" : `${cov.available}/${cov.expected} analysts`}</strong>${!analysis.error && cov.split.available ? `<small>${splitLabel(cov.split)}</small>` : ""}${fallbacks.length ? `<small class="flag-warn">${fallbacks.map(escapeHtml).join(" · ")}</small>` : ""}</div><div><span>Suggested size</span><strong>${analysis.suggested_size_usd ? fmtUsd(analysis.suggested_size_usd) : "No position"}</strong></div>${tokenFact}${costFact}</div>
+      <div class="decision-facts"><div><span>Current price</span><strong>${analysis.price != null ? `$${Number(analysis.price).toFixed(2)}` : "Unavailable"}</strong></div><div><span>5-day forecast</span><strong>${analysis.forecast_price_5d != null ? `$${Number(analysis.forecast_price_5d).toFixed(2)} (${Number(analysis.forecast_change_5d_pct) >= 0 ? "+" : ""}${Number(analysis.forecast_change_5d_pct).toFixed(2)}%)` : "Unavailable"}</strong><small>${analysis.forecast_method === "timegpt-1" ? "TimeGPT" : analysis.forecast_trend_r2 != null ? `Local fit R² ${Number(analysis.forecast_trend_r2).toFixed(2)}` : "Local"}${forecastBandNote(analysis)}</small></div><div><span>Data age</span><strong>${age.stale ? '<span class="flag-warn">' : ""}${ageLabel(age.hours)}${cachedRun ? " · cached" : ""}${age.stale ? " · stale</span>" : ""}</strong><small>${escapeHtml(asOf)}</small></div><div><span>Evidence strength</span><strong>${convictionLabel(analysis.confidence)} · ${confidencePct}%</strong><small id="track-record-${ticker}" class="track-record"></small></div><div><span>Horizon</span><strong>${OUTLOOK_LABELS[state.outlook] || state.outlook}</strong><small>${profile.label} depth</small></div><div><span>Analyst coverage</span><strong>${analysis.error ? "n/a" : `${cov.available}/${cov.expected} analysts`}</strong>${!analysis.error && cov.split.available ? `<small>${splitLabel(cov.split)}</small>` : ""}${fallbacks.length ? `<small class="flag-warn">${fallbacks.map(escapeHtml).join(" · ")}</small>` : ""}</div><div><span>Suggested size</span><strong>${analysis.suggested_size_usd ? fmtUsd(analysis.suggested_size_usd) : "No position"}</strong></div></div>
       <div class="manager-conclusion"><span class="eyebrow">Manager conclusion</span><p class="thesis">${escapeHtml(analysis.summary || analysis.error || "No manager summary was returned.")}</p></div>
       ${conditions}
       ${analysis.error ? `<div class="risk-flags"><strong>Analysis unavailable</strong><span>⚠ ${escapeHtml(analysis.error)}</span></div>` : flags.length ? `<div class="risk-flags"><strong>Risk flags</strong>${flags.map((flag) => `<span>⚠ ${escapeHtml(flag)}</span>`).join("")}</div>` : '<div class="risk-clear"><span aria-hidden="true">✓</span> No risk rules were triggered.</div>'}
       ${concentrationBlock(analysis)}
+      ${runMeta}
     </div>
     ${analysis.error ? "" : `
     <div class="chat-block">
@@ -396,7 +432,7 @@ export function renderResultCard(analysis) {
     </div>`}
     <div class="result-detail" id="${detailId}" hidden>
       <section class="result-block price-context" aria-labelledby="price-title-${ticker}"><div class="block-heading"><h3 id="price-title-${ticker}">Price context</h3></div><div class="chart-holder" id="price-chart-${ticker}"><p class="hint">The six-month price chart loads when this panel opens.</p></div></section>
-      <section class="result-block" aria-labelledby="debate-title-${ticker}"><div class="block-heading"><h3 id="debate-title-${ticker}">Bull vs bear</h3></div><div class="debate"><article class="debate-side bull-side"><div class="mc-title">▲ Bull case</div><div class="mc-score">${Math.round((analysis.bull?.confidence ?? 0) * 100)}% argument strength</div><p class="mc-sum">${escapeHtml(analysis.bull?.summary || analysis.bull_case || "No bull case was returned.")}</p></article><article class="debate-side bear-side"><div class="mc-title">▼ Bear case</div><div class="mc-score">${Math.round((analysis.bear?.confidence ?? 0) * 100)}% risk strength</div><p class="mc-sum">${escapeHtml(analysis.bear?.summary || analysis.bear_case || "No bear case was returned.")}</p></article></div></section>
+      <section class="result-block" aria-labelledby="debate-title-${ticker}"><div class="block-heading"><h3 id="debate-title-${ticker}">Bull vs bear</h3></div><div class="tug" role="img" aria-label="Bull argument strength ${bullConf}% versus bear risk strength ${bearConf}%"><span class="tug-bull" style="width:${bullShare}%"></span><span class="tug-bear" style="width:${100 - bullShare}%"></span></div><div class="tug-labels"><span class="tug-bull-label">▲ Bull ${bullConf}%</span><span class="tug-bear-label">${bearConf}% Bear ▼</span></div><div class="debate"><article class="debate-side bull-side"><div class="mc-title">▲ Bull case</div><p class="mc-sum">${escapeHtml(analysis.bull?.summary || analysis.bull_case || "No bull case was returned.")}</p></article><article class="debate-side bear-side"><div class="mc-title">▼ Bear case</div><p class="mc-sum">${escapeHtml(analysis.bear?.summary || analysis.bear_case || "No bear case was returned.")}</p></article></div></section>
       <section class="result-block" aria-labelledby="evidence-title-${ticker}"><div class="block-heading"><h3 id="evidence-title-${ticker}">Analyst evidence</h3></div><div class="grid-3">${evidenceHtml}</div>${skippedResearch.length ? `<p class="hint">Skipped for speed: ${skippedResearch.map((key) => EVIDENCE_META[key].title).join(" · ")}</p>` : ""}</section>
       <section class="result-block sources-block" aria-labelledby="sources-title-${ticker}"><div class="block-heading"><h3 id="sources-title-${ticker}">Sources</h3><p>${escapeHtml(providerText(analysis.providers))}</p></div>${renderSources(analysis.source_references)}</section>
       ${renderTrackRecord(analysis, ticker)}

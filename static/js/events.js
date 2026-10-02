@@ -39,17 +39,38 @@ export function handleEvent(event) {
       break;
     }
     case "agent_started":
+      entry.runningAgents?.add(event.agent);
       setAgentStatus(ticker, event.agent, "running", "Running…");
       break;
     case "agent_completed": {
       const resultLabel = event.signal ? labelFor(event.agent, event.signal, event.confidence) : "Complete";
-      setAgentStatus(ticker, event.agent, "done", `✓ ${resultLabel}`, event.duration_s);
+      setAgentStatus(ticker, event.agent, "done", resultLabel, event.duration_s, event.signal);
       if (event.summary) entry.agents[event.agent] = { signal: event.signal, confidence: event.confidence, summary: event.summary };
+      entry.runningAgents?.delete(event.agent);
+      // No live token stream for this agent? Its row can still peek at the
+      // finished one-line summary while the rest of the run continues.
+      const cell = $(`cell-${ticker}-${event.agent}`);
+      if (cell && event.summary && !cell.classList.contains("has-stream") && !cell.classList.contains("has-peek")) {
+        const row = cell.querySelector(".agent-row");
+        const pane = $(`stream-${ticker}-${event.agent}`);
+        const pre = $(`stream-pre-${ticker}-${event.agent}`);
+        const label = AGENTS.find((agent) => agent.key === event.agent)?.label || event.agent;
+        pre.textContent = event.summary;
+        cell.classList.add("has-peek");
+        pane.classList.add("peek");
+        row.tabIndex = 0;
+        row.setAttribute("role", "button");
+        row.setAttribute("aria-expanded", "false");
+        row.setAttribute("aria-label", `${label} summary, press Enter to toggle`);
+        const hint = row.querySelector(".stream-hint");
+        if (hint) hint.hidden = false;
+      }
       markAgentDone(entry, event.agent);
       updateProgress(ticker, entry);
       break;
     }
     case "agent_failed":
+      entry.runningAgents?.delete(event.agent);
       setAgentStatus(ticker, event.agent, "failed", "⚠ Unavailable");
       markAgentDone(entry, event.agent);
       updateProgress(ticker, entry);
@@ -57,6 +78,7 @@ export function handleEvent(event) {
     case "ticker_failed":
       entry.failed = true;
       entry.done = entry.total;
+      entry.runningAgents?.clear();
       setHeader(ticker, null, `failed: ${event.error || "market data unavailable"}`, null);
       updateProgress(ticker, entry);
       announceTickerResult(ticker, true);
@@ -102,12 +124,17 @@ function announceTickerResult(ticker, failed, decision) {
 
 export function updateProgress(ticker, entry) {
   const progress = $(`progress-${ticker}`);
-  const fill = $(`prog-${ticker}`);
   const count = $(`progc-${ticker}`);
-  if (!progress || !fill || !count || !entry.total) return;
+  if (!progress || !count || !entry.total) return;
   const pct = Math.min(100, Math.round((entry.done / entry.total) * 100));
-  fill.style.width = `${pct}%`;
   progress.setAttribute("aria-valuenow", String(pct));
+  progress.querySelectorAll(".seg").forEach((seg) => {
+    const key = seg.dataset.agent;
+    let stateClass = "";
+    if (entry.completedAgents.has(key)) stateClass = entry.failed ? " failed" : " done";
+    else if (entry.runningAgents?.has(key)) stateClass = " running";
+    seg.className = `seg${stateClass}`;
+  });
   count.textContent = entry.failed ? "Failed · retry available" : `${entry.done}/${entry.total}`;
   updateOverallProgress();
 }

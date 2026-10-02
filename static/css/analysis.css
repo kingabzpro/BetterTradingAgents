@@ -157,9 +157,11 @@
 .agent-icon { display: inline-flex; align-items: center; color: var(--muted); flex: none; }
 .stage2 { margin-top: 6px; padding-top: 10px; border-top: 1px dashed var(--border-strong); }
 
-/* Live reasoning stream (ROADMAP 3.2): collapsible per-agent token pane. */
-.agent-cell.has-stream .agent-row { cursor: pointer; }
-.agent-cell.has-stream .agent-row:hover .agent-left { color: var(--text); }
+/* Live reasoning stream (ROADMAP 3.2): collapsible per-agent token pane.
+   Agents without a stream reuse the same pane for a peek at their finished
+   one-line summary (has-peek). */
+.agent-cell.has-stream .agent-row, .agent-cell.has-peek .agent-row { cursor: pointer; }
+.agent-cell.has-stream .agent-row:hover .agent-left, .agent-cell.has-peek .agent-row:hover .agent-left { color: var(--text); }
 .stream-hint {
   flex: none; color: #7fdc9f; font-size: 10px; font-weight: 700;
   letter-spacing: 0.07em; text-transform: uppercase; white-space: nowrap;
@@ -173,6 +175,11 @@
   margin: 0; white-space: pre-wrap; overflow-wrap: anywhere;
   color: #9fb0c8; font: 11px/1.55 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
+/* Summary peek: prose instead of tokens, so drop the mono treatment and
+   mute the caret affordance. */
+.stream-pane.peek { max-height: 190px; border-left-color: var(--border-strong); }
+.stream-pane.peek pre { color: #b9c1d0; font: 12px/1.6 var(--font); }
+.agent-cell.has-peek .stream-hint { color: #6b7690; }
 
 .status {
   display: inline-flex; align-items: center; justify-content: flex-end; gap: 6px;
@@ -187,14 +194,33 @@
 .status.failed { color: #f78da0; }
 .status.failed .icon { background: var(--sell); }
 
+/* Completed agents show their verdict as a tinted pill using the same
+   palette as the decision badges; the agent icon takes the matching tone. */
+.verdict {
+  display: inline-flex; align-items: center; padding: 1px 9px; border-radius: 999px;
+  font-size: 11px; font-weight: 700; letter-spacing: 0.03em; border: 1px solid; white-space: nowrap;
+}
+.verdict.up { color: #6fe0a0; border-color: rgba(34, 197, 94, 0.4); background: rgba(34, 197, 94, 0.1); }
+.verdict.down { color: #ff8296; border-color: rgba(244, 88, 107, 0.4); background: rgba(244, 88, 107, 0.1); }
+.verdict.hold { color: #ffc75e; border-color: rgba(245, 165, 36, 0.4); background: rgba(245, 165, 36, 0.1); }
+.verdict.flat { color: #b9c1d0; border-color: var(--border-strong); background: rgba(255, 255, 255, 0.05); }
+.agent-cell.tone-up .agent-icon { color: #4fd98a; }
+.agent-cell.tone-down .agent-icon { color: #ff8296; }
+.agent-cell.tone-hold .agent-icon { color: var(--hold); }
+.agent-cell.tone-flat .agent-icon { color: #9aa5ba; }
+
 @keyframes pulse-dot {
   0%, 100% { box-shadow: 0 0 0 0 rgba(16, 201, 115, 0.55); }
   60% { box-shadow: 0 0 0 6px rgba(16, 201, 115, 0); }
 }
 
-/* live run progress bar */
-.run-progress { height: 4px; border-radius: 999px; background: rgba(255, 255, 255, 0.08); margin: 8px 0 2px; overflow: hidden; }
-.run-progress-fill { height: 100%; width: 0%; border-radius: 999px; background: linear-gradient(90deg, #10c973, #0aa85d); transition: width 0.3s ease; }
+/* live run progress: one segment per agent, filled as each completes */
+.run-progress { display: flex; gap: 3px; height: 4px; margin: 8px 0 2px; }
+.run-progress .seg { flex: 1 1 0; border-radius: 999px; background: rgba(255, 255, 255, 0.09); transition: background 0.25s; }
+.run-progress .seg.running { background: rgba(16, 201, 115, 0.45); animation: pulse-seg 1.1s ease-in-out infinite; }
+.run-progress .seg.done { background: linear-gradient(90deg, #10c973, #0aa85d); }
+.run-progress .seg.failed { background: var(--sell); }
+@keyframes pulse-seg { 0%, 100% { opacity: 0.45; } 50% { opacity: 1; } }
 .prog-count { font-size: 11px; white-space: nowrap; }
 
 /* ---------- results ---------- */
@@ -222,7 +248,6 @@
 .sig-neutral, .sig-unknown { color: var(--hold); }
 
 .debate { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 14px; }
-.debate .mc-score { font-size: 12px; color: var(--muted); margin-bottom: 6px; font-variant-numeric: tabular-nums; }
 
 .added-note { font-size: 12px; color: #6fe0a0; }
 .risk-flags {
@@ -280,8 +305,9 @@
 }
 .ticker-head .tk { min-width: 0; overflow-wrap: anywhere; }
 .ticker-head .src {
-  grid-column: 1 / -1; grid-row: 2; min-width: 0; white-space: normal;
-  text-align: left; overflow-wrap: anywhere;
+  grid-column: 1 / -1; grid-row: 2; min-width: 0;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  text-align: left;
 }
 .ticker-head .prog-count { grid-column: 2; grid-row: 1; }
 .agent-row {
@@ -342,6 +368,7 @@
 .decision-facts small { margin-top: 3px; }
 .manager-conclusion { max-width: 850px; padding-top: 18px; }
 .thesis { margin: 0; color: #b9c1d0; font-size: 15px; line-height: 1.75; }
+.run-meta { margin: 15px 0 0; color: var(--muted); font-size: 11.5px; line-height: 1.6; }
 .risk-flags {
   display: flex; flex-direction: column; gap: 4px; margin: 15px 0 0;
   font-size: 13px; line-height: 1.55; border: 0; border-left: 3px solid rgba(245, 198, 107, 0.65);
@@ -390,16 +417,32 @@
 .block-heading > p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.55; }
 .grid-3 { gap: 15px; margin: 0; }
 .evidence-card {
-  min-width: 0; padding: 3px 15px 4px 0; border-right: 1px solid rgba(255, 255, 255, 0.07);
+  min-width: 0; padding: 3px 15px 4px 13px; border-right: 1px solid rgba(255, 255, 255, 0.07);
+  border-left: 3px solid var(--border-strong); border-radius: 4px;
 }
 .evidence-card:last-child { border-right: 0; }
+.evidence-card.tone-up { border-left-color: rgba(34, 197, 94, 0.6); }
+.evidence-card.tone-down { border-left-color: rgba(244, 88, 107, 0.6); }
+.evidence-card.tone-hold { border-left-color: rgba(245, 165, 36, 0.55); }
 .mc-title { color: #dce2ed; font-size: 12px; font-weight: 750; letter-spacing: 0.055em; text-transform: uppercase; }
 .evidence-card .mc-sig { margin-bottom: 7px; font-size: 13px; font-weight: 700; }
 .evidence-card .mc-sum, .debate-side .mc-sum { margin: 0; color: #b5bdcb; font-size: 14px; line-height: 1.7; overflow-wrap: break-word; }
+.conf-bar { height: 3px; border-radius: 999px; background: rgba(255, 255, 255, 0.08); margin: 0 0 9px; overflow: hidden; }
+.conf-bar span { display: block; height: 100%; border-radius: inherit; background: #9aa5ba; }
+.evidence-card.tone-up .conf-bar span { background: var(--buy); }
+.evidence-card.tone-down .conf-bar span { background: var(--sell); }
+.evidence-card.tone-hold .conf-bar span { background: var(--hold); }
 .debate { gap: 18px; margin: 0; }
 .debate-side { padding: 15px 17px; border-radius: 10px; background: rgba(255, 255, 255, 0.025); border-left: 3px solid var(--buy); }
 .debate-side.bear-side { border-left-color: var(--sell); }
-.debate-side .mc-score { margin: 3px 0 9px; }
+/* Bull vs bear strength bar: widths are each side's share of the sum. */
+.tug { display: flex; height: 8px; border-radius: 999px; overflow: hidden; background: rgba(255, 255, 255, 0.06); }
+.tug span { height: 100%; }
+.tug-bull { background: linear-gradient(90deg, rgba(34, 197, 94, 0.55), #22c55e); }
+.tug-bear { background: linear-gradient(90deg, #f4586b, rgba(244, 88, 107, 0.55)); }
+.tug-labels { display: flex; justify-content: space-between; margin: 7px 0 13px; font-size: 12px; font-weight: 650; }
+.tug-labels .tug-bull-label { color: #6fe0a0; }
+.tug-labels .tug-bear-label { color: #ff8296; }
 
 .source-list { list-style: none; margin: 0; padding: 0; }
 .source-list li { padding: 11px 0; border-top: 1px solid rgba(255, 255, 255, 0.065); }
@@ -557,7 +600,7 @@
   .result-summary { flex-wrap: wrap; row-gap: 10px; }
   .status { min-width: 118px; }
   .decision-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .evidence-card { padding: 13px 0; border-right: 0; border-top: 1px solid rgba(255, 255, 255, 0.065); }
+  .evidence-card { padding: 13px 0 13px 13px; border-right: 0; border-top: 1px solid rgba(255, 255, 255, 0.065); }
   .evidence-card:first-child { border-top: 0; padding-top: 2px; }
 }
 
