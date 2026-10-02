@@ -37,6 +37,17 @@ class DebateResult(BaseModel):
     summary: str = ""
 
 
+class JudgeResult(BaseModel):
+    """Output schema for the debate judge (replaces the bull/bear rebuttals)."""
+
+    agent: str = "judge"
+    signal: str = "neutral"
+    confidence: float = Field(default=0.5, ge=0.0, le=1.0)
+    bull_strength: float = Field(default=0.5, ge=0.0, le=1.0)
+    bear_strength: float = Field(default=0.5, ge=0.0, le=1.0)
+    summary: str = ""
+
+
 class ManagerResult(BaseModel):
     """Output schema for the portfolio manager."""
 
@@ -187,8 +198,9 @@ class StockAnalysis(BaseModel):
     forecast: AgentResult | None = None
     bull: AgentResult | None = None
     bear: AgentResult | None = None
-    bull_rebuttal: AgentResult | None = None
-    bear_rebuttal: AgentResult | None = None
+    bull_rebuttal: AgentResult | None = None  # deprecated: runs before the judge
+    bear_rebuttal: AgentResult | None = None  # deprecated: runs before the judge
+    judge: JudgeResult | None = None
     duration_s: float = 0.0
     error: str | None = None
     suggested_size_usd: float | None = None

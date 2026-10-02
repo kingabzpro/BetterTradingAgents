@@ -136,6 +136,17 @@ def _dossier(analysis: StockAnalysis, portfolio: PortfolioSummary | None) -> dic
         "debate": {
             "bull": _agent_view(analysis.bull),
             "bear": _agent_view(analysis.bear),
+            # JudgeResult carries the cross-examined case strengths; the
+            # deprecated rebuttal fields stay readable for runs before the judge.
+            "judge": None
+            if analysis.judge is None
+            else {
+                "signal": analysis.judge.signal,
+                "confidence": analysis.judge.confidence,
+                "bull_strength": analysis.judge.bull_strength,
+                "bear_strength": analysis.judge.bear_strength,
+                "verdict": analysis.judge.summary,
+            },
             "bull_rebuttal": _agent_view(analysis.bull_rebuttal),
             "bear_rebuttal": _agent_view(analysis.bear_rebuttal),
         },

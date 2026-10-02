@@ -3,7 +3,7 @@
 Agent counts per profile (bull, bear and the manager always run):
   fast   = technical + news             + bull/bear + manager = 5 agents
   medium = all five researchers         + bull/bear + manager = 8 agents
-  expert = all five researchers + rebuttals                = 10 agents
+  expert = all five researchers + the debate judge            = 9 agents
 """
 
 from typing import Any, Literal
@@ -17,20 +17,18 @@ DEPTH_PROFILES: dict[str, dict[str, Any]] = {
     "fast": {
         "label": "Fast",
         "research": ("technical", "news"),
-        "rebuttals": False,
         "note": "Technical + news research only, single debate round.",
     },
     "medium": {
         "label": "Medium",
         "research": _ALL_RESEARCH,
-        "rebuttals": False,
         "note": "All five researchers, single debate round.",
     },
     "expert": {
         "label": "Expert",
         "research": _ALL_RESEARCH,
-        "rebuttals": True,
-        "note": "All five researchers plus the bull/bear rebuttal round.",
+        "judge": True,
+        "note": "All five researchers plus the debate judge.",
     },
 }
 

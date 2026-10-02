@@ -92,8 +92,7 @@ export function handleEvent(event) {
       entry.agents = {
         technical: event.analysis.technical, fundamental: event.analysis.fundamental,
         news: event.analysis.news, sentiment: event.analysis.sentiment, forecast: event.analysis.forecast,
-        bull: event.analysis.bull, bear: event.analysis.bear,
-        bull_rebuttal: event.analysis.bull_rebuttal, bear_rebuttal: event.analysis.bear_rebuttal,
+        bull: event.analysis.bull, bear: event.analysis.bear, judge: event.analysis.judge,
         manager: { signal: event.decision, confidence: event.confidence, summary: event.analysis.summary },
       };
       updateProgress(ticker, entry);

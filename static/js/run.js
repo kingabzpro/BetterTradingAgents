@@ -267,8 +267,8 @@ function hydrateResults(results, restored) {
       // "Not recorded" instead of "Unavailable". Old rows serialize the
       // forecast agent as null with no forecast_method; a null agent on a
       // run that has forecast_method genuinely failed.
-      const legacyMissing = agent.rebuttal
-        ? !(agent.key in analysis)
+      const legacyMissing = agent.judge
+        ? !("judge" in analysis)
         : (agent.key === "forecast" && !result && !analysis.forecast_method)
           || (agent.key === "sentiment" && !result && analysis.providers && !("social" in analysis.providers));
       if (agent.rebuttal && legacyMissing && !restored) return;

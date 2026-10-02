@@ -445,6 +445,8 @@
 .tug-labels { display: flex; justify-content: space-between; margin: 7px 0 13px; font-size: 12px; font-weight: 650; }
 .tug-labels .tug-bull-label { color: #6fe0a0; }
 .tug-labels .tug-bear-label { color: #ff8296; }
+.judge-verdict { margin: 0 0 13px; color: #b9c1d0; font-size: 13px; line-height: 1.6; }
+.judge-verdict strong { color: #dce2ed; }
 
 .source-list { list-style: none; margin: 0; padding: 0; }
 .source-list li { padding: 11px 0; border-top: 1px solid rgba(255, 255, 255, 0.065); }

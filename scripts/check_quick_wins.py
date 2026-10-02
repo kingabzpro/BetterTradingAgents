@@ -123,16 +123,16 @@ finally:
     discovery._candidate_cache = None
 print("discovery cache OK: one-hour hit and expiry refresh")
 
-# ---- rebuttal mocks (deterministic, offline) --------------------------------
-from app.agents import bear, bull, forecast as forecast_agent  # noqa: E402
+# ---- debate judge mock (deterministic, offline) ------------------------------
+from app.agents import bear, bull, forecast as forecast_agent, judge  # noqa: E402
 
-_round = {"score": 0.8, "summary": "own argument"}
-_opp = {"score": 0.7, "summary": "opponent argument"}
-_bull_rebuttal = bull.mock("NVDA", {"own_round_1": _round, "opponent_round_1": _opp}, rebuttal=True)
-_bear_rebuttal = bear.mock("NVDA", {"own_round_1": _opp, "opponent_round_1": _round}, rebuttal=True)
-assert 0.0 <= _bull_rebuttal["score"] <= 1.0 and "Rebuttal" in _bull_rebuttal["summary"]
-assert 0.0 <= _bear_rebuttal["score"] <= 1.0 and "Rebuttal" in _bear_rebuttal["summary"]
-print("rebuttal mocks OK:", _bull_rebuttal["score"], _bear_rebuttal["score"])
+_verdict = judge.mock("NVDA", {"bull_round_1": {"score": 0.8, "summary": "bull"}, "bear_round_1": {"score": 0.7, "summary": "bear"}})
+assert 0.0 <= _verdict["bull_strength"] <= 1.0 and 0.0 <= _verdict["bear_strength"] <= 1.0
+assert _verdict["signal"] in ("bullish", "bearish", "neutral")
+assert 0.0 <= _verdict["confidence"] <= 1.0
+assert "[mock] Judge:" in _verdict["summary"]
+assert judge.to_result(_verdict, "NVDA").signal == _verdict["signal"]
+print("debate judge mocks OK:", _verdict["bull_strength"], _verdict["bear_strength"], _verdict["signal"])
 
 # ---- forecast analyst mock ---------------------------------------------------
 _fc_payload = {

@@ -15,7 +15,7 @@ import time
 from typing import Any, Awaitable, Callable
 
 from app import changes, cost, quality, risk
-from app.agents import bear, bull, forecast, fundamental, manager, news, sentiment, technical
+from app.agents import bear, bull, forecast, fundamental, judge, manager, news, sentiment, technical
 from app.config import settings
 from app.depth import DEFAULT_DEPTH, depth_profile
 from app.models import (
@@ -55,6 +55,7 @@ ROLE_BY_AGENT = {
     "forecast": "analysts",
     "bull": "debate",
     "bear": "debate",
+    "judge": "debate",
     "manager": "manager",
 }
 ROLES = ("manager", "analysts", "debate")
@@ -857,61 +858,40 @@ async def analyze_ticker(
         ),
     )
 
-    # Stage 2b: rebuttal round - each side answers the other's argument.
-    # Only expert depth asks for it (and the server must allow DEBATE_ROUNDS >= 2);
-    # it is skipped entirely when either first-round brief failed.
-    bull_rebuttal, bear_rebuttal = None, None
-    if prof["rebuttals"] and settings.debate_rounds >= 2:
+    # Stage 2b: the judge cross-examines both round-1 cases against the
+    # research and returns calibrated strengths plus a verdict (one neutral
+    # call replacing the old self-scored rebuttal round). Only expert depth
+    # asks for it (and the server must allow DEBATE_ROUNDS >= 2); it is
+    # skipped when either first-round brief failed.
+    judge_data = None
+    if prof["judge"] and settings.debate_rounds >= 2:
         if bull_data and bear_data:
-            bull_rebuttal, bear_rebuttal = await asyncio.gather(
-                _run_agent(
-                    bull,
-                    ticker,
-                    emit,
-                    name="bull_rebuttal",
-                    token_totals=token_totals,
-                    role_usage=role_usage,
-                    live=live_context,
-                    payload={
-                        "research": context,
-                        "own_round_1": bull_data,
-                        "opponent_round_1": bear_data,
-                    },
-                    rebuttal=True,
-                ),
-                _run_agent(
-                    bear,
-                    ticker,
-                    emit,
-                    name="bear_rebuttal",
-                    token_totals=token_totals,
-                    role_usage=role_usage,
-                    live=live_context,
-                    payload={
-                        "research": context,
-                        "own_round_1": bear_data,
-                        "opponent_round_1": bull_data,
-                    },
-                    rebuttal=True,
-                ),
+            judge_data = await _run_agent(
+                judge,
+                ticker,
+                emit,
+                token_totals=token_totals,
+                role_usage=role_usage,
+                live=live_context,
+                payload={
+                    "research": context,
+                    "bull_round_1": bull_data,
+                    "bear_round_1": bear_data,
+                },
             )
         else:
-            for side in ("bull_rebuttal", "bear_rebuttal"):
-                await emit(
-                    "agent_failed",
-                    {
-                        "ticker": ticker,
-                        "agent": side,
-                        "error": "skipped: first-round debate incomplete",
-                    },
-                )
+            await emit(
+                "agent_failed",
+                {
+                    "ticker": ticker,
+                    "agent": "judge",
+                    "error": "skipped: first-round debate incomplete",
+                },
+            )
 
-    bull_final = bull_rebuttal or bull_data
-    bear_final = bear_rebuttal or bear_data
-    bull_r = bull.to_result(bull_final, ticker) if bull_final else None
-    bear_r = bear.to_result(bear_final, ticker) if bear_final else None
-    bull_rebuttal_r = bull.to_result(bull_rebuttal, ticker) if bull_rebuttal else None
-    bear_rebuttal_r = bear.to_result(bear_rebuttal, ticker) if bear_rebuttal else None
+    bull_r = bull.to_result(bull_data, ticker) if bull_data else None
+    bear_r = bear.to_result(bear_data, ticker) if bear_data else None
+    judge_r = judge.to_result(judge_data, ticker) if judge_data else None
 
     # Stage 3: portfolio manager (sees existing holdings so decisions account
     # for exposure already taken; the debate transcript shows how the final
@@ -965,11 +945,10 @@ async def analyze_ticker(
         "bull": bull_r.model_dump() if bull_r else "FAILED - unavailable",
         "bear": bear_r.model_dump() if bear_r else "FAILED - unavailable",
         "debate": {
-            "rounds": 2 if (prof["rebuttals"] and settings.debate_rounds >= 2) else 1,
+            "rounds": 2 if (prof["judge"] and settings.debate_rounds >= 2) else 1,
             "bull_round_1": bull_data,
             "bear_round_1": bear_data,
-            "bull_rebuttal": bull_rebuttal,
-            "bear_rebuttal": bear_rebuttal,
+            "judge": judge_data,
         },
         "current_portfolio": _portfolio_context(portfolio_summ),
         "past_decisions": past_decisions_ctx,
@@ -1082,8 +1061,7 @@ async def analyze_ticker(
         forecast=forecast_r,
         bull=bull_r,
         bear=bear_r,
-        bull_rebuttal=bull_rebuttal_r,
-        bear_rebuttal=bear_rebuttal_r,
+        judge=judge_r,
         duration_s=round(time.perf_counter() - started, 1),
         suggested_size_usd=size_usd,
         risk_flags=risk_flags,

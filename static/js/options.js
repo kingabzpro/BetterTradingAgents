@@ -70,14 +70,14 @@ export function activeAgents() {
   const profile = depthProfile();
   return AGENTS.filter((agent) => {
     if (agent.stage === "Research") return profile.research.includes(agent.key);
-    if (agent.rebuttal) return profile.rebuttals && state.debateRounds >= 2;
+    if (agent.judge) return profile.judge && state.debateRounds >= 2;
     return true;
   });
 }
 
 function agentCount(profileKey) {
   const profile = DEPTH_PROFILES[profileKey];
-  return profile.research.length + 3 + (profile.rebuttals && state.debateRounds >= 2 ? 2 : 0);
+  return profile.research.length + 3 + (profile.judge && state.debateRounds >= 2 ? 1 : 0);
 }
 
 // Agent counts on the buttons depend on the server's debate-rounds setting.

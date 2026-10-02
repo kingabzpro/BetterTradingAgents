@@ -380,11 +380,16 @@ export function renderResultCard(analysis) {
   }
   const runMeta = metaBits.length ? `<p class="run-meta">${metaBits.join(" · ")}</p>` : "";
   const profile = depthProfile();
-  // One bar shows which side of the debate is stronger: widths are the two
-  // confidences as a share of their sum, the labels keep the raw strengths.
-  const bullConf = Math.round((analysis.bull?.confidence ?? 0) * 100);
-  const bearConf = Math.round((analysis.bear?.confidence ?? 0) * 100);
+  // One bar shows which side of the debate is stronger. When a judge ran,
+  // the strengths are its cross-examined calibration; otherwise they fall
+  // back to the sides' own argued confidence. Widths are shares of the sum.
+  const judged = analysis.judge != null;
+  const bullConf = Math.round((analysis.judge?.bull_strength ?? analysis.bull?.confidence ?? 0) * 100);
+  const bearConf = Math.round((analysis.judge?.bear_strength ?? analysis.bear?.confidence ?? 0) * 100);
   const bullShare = bullConf + bearConf > 0 ? Math.round((bullConf / (bullConf + bearConf)) * 100) : 50;
+  const judgeVerdict = judged && analysis.judge.summary
+    ? `<p class="judge-verdict"><strong>Judge:</strong> ${escapeHtml(analysis.judge.summary)}</p>`
+    : "";
   const skippedResearch = Object.keys(EVIDENCE_META).filter((key) => !profile.research.includes(key));
   const evidenceHtml = profile.research.map((key) => evidenceCard(
     EVIDENCE_META[key].title,
@@ -433,7 +438,7 @@ export function renderResultCard(analysis) {
     </div>`}
     <div class="result-detail" id="${detailId}" hidden>
       <section class="result-block price-context" aria-labelledby="price-title-${ticker}"><div class="block-heading"><h3 id="price-title-${ticker}">Price context</h3></div><div class="chart-holder" id="price-chart-${ticker}"><p class="hint">The six-month price chart loads when this panel opens.</p></div></section>
-      <section class="result-block" aria-labelledby="debate-title-${ticker}"><div class="block-heading"><h3 id="debate-title-${ticker}">Bull vs bear</h3></div><div class="tug" role="img" aria-label="Bull argument strength ${bullConf}% versus bear risk strength ${bearConf}%"><span class="tug-bull" style="width:${bullShare}%"></span><span class="tug-bear" style="width:${100 - bullShare}%"></span></div><div class="tug-labels"><span class="tug-bull-label">▲ Bull ${bullConf}%</span><span class="tug-bear-label">${bearConf}% Bear ▼</span></div><div class="debate"><article class="debate-side bull-side"><div class="mc-title">▲ Bull case</div><p class="mc-sum">${escapeHtml(analysis.bull?.summary || analysis.bull_case || "No bull case was returned.")}</p></article><article class="debate-side bear-side"><div class="mc-title">▼ Bear case</div><p class="mc-sum">${escapeHtml(analysis.bear?.summary || analysis.bear_case || "No bear case was returned.")}</p></article></div></section>
+      <section class="result-block" aria-labelledby="debate-title-${ticker}"><div class="block-heading"><h3 id="debate-title-${ticker}">Bull vs bear</h3></div><div class="tug" role="img" aria-label="Bull case strength ${bullConf}% versus bear case strength ${bearConf}%${judged ? ", judge-calibrated" : ""}"><span class="tug-bull" style="width:${bullShare}%"></span><span class="tug-bear" style="width:${100 - bullShare}%"></span></div><div class="tug-labels"><span class="tug-bull-label">▲ Bull ${bullConf}%</span><span class="tug-bear-label">${bearConf}% Bear ▼</span></div>${judgeVerdict}<div class="debate"><article class="debate-side bull-side"><div class="mc-title">▲ Bull case</div><p class="mc-sum">${escapeHtml(analysis.bull?.summary || analysis.bull_case || "No bull case was returned.")}</p></article><article class="debate-side bear-side"><div class="mc-title">▼ Bear case</div><p class="mc-sum">${escapeHtml(analysis.bear?.summary || analysis.bear_case || "No bear case was returned.")}</p></article></div></section>
       <section class="result-block" aria-labelledby="evidence-title-${ticker}"><div class="block-heading"><h3 id="evidence-title-${ticker}">Analyst evidence</h3></div><div class="grid-3">${evidenceHtml}</div>${skippedResearch.length ? `<p class="hint">Skipped for speed: ${skippedResearch.map((key) => EVIDENCE_META[key].title).join(" · ")}</p>` : ""}</section>
       <section class="result-block sources-block" aria-labelledby="sources-title-${ticker}"><div class="block-heading"><h3 id="sources-title-${ticker}">Sources</h3><p>${escapeHtml(providerText(analysis.providers))}</p></div>${renderSources(analysis.source_references)}</section>
       ${renderTrackRecord(analysis, ticker)}

@@ -8,8 +8,7 @@ export const ICONS = {
   forecast: '<svg aria-hidden="true" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 12.5 6 9l2.5 2.5L12 8"/><path d="M12 8l2.3-2.3" stroke-dasharray="1.5 1.3"/><path d="M12.2 5.7h2.1v2.1"/></svg>',
   bull: '<svg aria-hidden="true" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 12.5 12.5 3.5M6.5 3.5h6v6"/></svg>',
   bear: '<svg aria-hidden="true" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 3.5l9 9M12.5 6.5v6h-6"/></svg>',
-  bull_rebuttal: '<svg aria-hidden="true" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 12.5 12.5 3.5M6.5 3.5h6v6"/><path d="M2.5 5.5h3M2.5 8h2"/></svg>',
-  bear_rebuttal: '<svg aria-hidden="true" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 3.5l9 9M12.5 6.5v6h-6"/><path d="M2.5 5.5h3M2.5 8h2"/></svg>',
+  judge: '<svg aria-hidden="true" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2.5v10.5M5.5 13.5h5M3 5.5h10"/><path d="M3 5.5 1.8 8.6a1.9 1.9 0 0 0 2.4 0L3 5.5zM13 5.5l-1.2 3.1a1.9 1.9 0 0 0 2.4 0L13 5.5z"/></svg>',
   manager: '<svg aria-hidden="true" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="5" width="11" height="8" rx="2"/><path d="M6 5V3.6A1.6 1.6 0 0 1 7.6 2h.8A1.6 1.6 0 0 1 10 3.6V5M2.5 8.5h11"/></svg>',
 };
 
@@ -21,8 +20,7 @@ export const AGENTS = [
   { key: "forecast", label: "Forecast", stage: "Research" },
   { key: "bull", label: "Bull", stage: "Debate" },
   { key: "bear", label: "Bear", stage: "Debate" },
-  { key: "bull_rebuttal", label: "Bull rebuttal", stage: "Debate", rebuttal: true },
-  { key: "bear_rebuttal", label: "Bear rebuttal", stage: "Debate", rebuttal: true },
+  { key: "judge", label: "Judge", stage: "Debate", judge: true },
   { key: "manager", label: "Portfolio manager", stage: "Decision" },
 ];
 
@@ -42,7 +40,7 @@ export const DEPTH_KEY = "bta:depth";
 export const DEPTH_PROFILES = {
   fast: { label: "Fast", research: ["technical", "news"], rebuttals: false },
   medium: { label: "Medium", research: ["technical", "fundamental", "news", "forecast", "sentiment"], rebuttals: false },
-  expert: { label: "Expert", research: ["technical", "fundamental", "news", "forecast", "sentiment"], rebuttals: true },
+  expert: { label: "Expert", research: ["technical", "fundamental", "news", "forecast", "sentiment"], judge: true },
 };
 export const EVIDENCE_META = {
   technical: { title: "Technical" },
