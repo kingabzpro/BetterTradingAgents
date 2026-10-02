@@ -238,8 +238,9 @@ decision brief with trust state, run controls, confidence calibration, portfolio
 concentration risk, the watchlist, decision comparison, Alpaca paper trading with autopilot
 sessions, in-app settings with OS-keychain secret storage, browser notifications, the
 debate judge (one neutral cross-examination of the bull/bear cases replacing the old
-self-scored rebuttal round), and the market-regime analyst with the Fast/Pro/Max depth
-tiers (old "medium" and "expert" values keep working everywhere).
+self-scored rebuttal round), and the market-regime analyst with rebalanced depth tiers:
+Fast (3 agents, no debate), Pro (7), Max (10) - old "medium" and "expert" values keep
+working everywhere, and backtests exclude the market analyst to stay point-in-time honest.
 
 Next up: guided first-run onboarding in the web UI, an in-app accuracy report comparing past calls with realized 21-day stock performance (the data to settle whether the judge improves graded outcomes), and search and export across past runs.
 
