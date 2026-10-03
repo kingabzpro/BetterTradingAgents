@@ -15,6 +15,15 @@ os.environ["LLM_API_KEY"] = "test-key"
 os.environ["LLM_MODEL"] = "fast-model"
 os.environ["LLM_MODEL_MANAGER"] = "zai-org/GLM-5.3"
 os.environ["LLM_BASE_URL_MANAGER"] = "https://manager.example/v1"
+# A real .env may carry per-role overrides; blank the ones under test so the
+# fallback resolution asserted below is actually exercised.
+os.environ["LLM_MODEL_ANALYSTS"] = ""
+os.environ["LLM_BASE_URL_ANALYSTS"] = ""
+os.environ["LLM_MODEL_DEBATE"] = ""
+os.environ["LLM_BASE_URL_DEBATE"] = ""
+os.environ["LLM_API_KEY_MANAGER"] = ""
+os.environ["LLM_API_KEY_ANALYSTS"] = ""
+os.environ["LLM_API_KEY_DEBATE"] = ""
 
 from app import workflow  # noqa: E402
 from app.config import settings  # noqa: E402
