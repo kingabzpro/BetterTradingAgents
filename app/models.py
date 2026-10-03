@@ -348,58 +348,6 @@ class PortfolioSummary(BaseModel):
     history: list[PortfolioPosition] = []
 
 
-class AccuracyRow(BaseModel):
-    """One matured call with its realized outcome (P1.9 Accuracy page)."""
-
-    ticker: str
-    date: str
-    decision: str
-    confidence: float
-    entry_price: float
-    realized_return_pct: float | None = None
-    spy_return_pct: float | None = None
-    alpha_vs_spy_pct: float | None = None
-    window_days: float | None = None
-    verdict: str  # right / wrong / neutral / unknown, memory's shared rule
-    lesson: str = ""  # one-line plain-language why, the reflections' own text
-
-
-class AccuracyByDecision(BaseModel):
-    decision: str
-    n: int
-    right: int
-    wrong: int
-    neutral: int
-    hit_rate: float | None = None  # right / (right + wrong); None until a decisive call exists
-    mean_alpha_pct: float | None = None
-    mean_realized_pct: float | None = None
-
-
-class AccuracyPerSignal(BaseModel):
-    """Mean window outcome per decision, in percent: following the calls
-    (long-only) vs buying every graded ticker vs SPY."""
-
-    n: int
-    follow_calls_pct: float | None = None
-    always_buy_pct: float | None = None
-    spy_pct: float | None = None
-
-
-class AvoidedSlide(BaseModel):
-    ticker: str
-    realized_pct: float
-
-
-class AccuracyReport(BaseModel):
-    horizon_days: int
-    graded: int
-    pending: int
-    rows: list[AccuracyRow]
-    by_decision: list[AccuracyByDecision]
-    per_signal: AccuracyPerSignal
-    avoided_slides: list[AvoidedSlide]
-
-
 class BrokerStatus(BaseModel):
     """Whether the Alpaca paper connection exists and submissions are allowed.
 

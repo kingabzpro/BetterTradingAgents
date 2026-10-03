@@ -98,7 +98,6 @@ Copy [`.env.example`](.env.example) to `.env`; every setting is optional.
 |---|---|
 | **Home** | Run an analysis for up to 5 tickers with your outlook (day / short / long term) and depth (Fast / Medium / Expert), or let **I Am Feeling Lucky** screen the market for research candidates. |
 | **History** | Every run is saved with a direct `?run=<id>` link; rerun or cancel from the live view. |
-| **Accuracy** | Every past call graded after its window: realized return, SPY, alpha, and a right/wrong/neutral verdict, with per-decision hit rates, a $10k-per-signal comparison vs always-buy and SPY, and a pending count. |
 | **Trades** | Your Alpaca paper account: equity curve, open positions, the order lifecycle this app placed, and per-order return vs SPY. |
 | **Settings** | Every knob from `.env` editable in the app, applied live; API keys go to the OS keychain. |
 
@@ -238,8 +237,8 @@ module-by-module walkthrough in
 The detailed plan lives in the wiki's
 [Roadmap](https://github.com/kingabzpro/BetterTradingAgents/wiki/Roadmap) page. Shipped: the
 decision brief with trust state, run controls, confidence calibration, portfolio
-concentration risk, an accuracy report of past calls vs realized performance,
-Alpaca paper trading with autopilot
+concentration risk, an accuracy scorecard of past calls vs realized performance
+(`uv run python scripts/accuracy.py`), Alpaca paper trading with autopilot
 sessions, in-app settings with OS-keychain secret storage, browser notifications, the
 debate judge (one neutral cross-examination of the bull/bear cases replacing the old
 self-scored rebuttal round), and the market-regime analyst with rebalanced depth tiers:

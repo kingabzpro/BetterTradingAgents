@@ -1,4 +1,4 @@
-"""Offline checks for the Accuracy report (ROADMAP P1.9).
+"""Offline checks for the accuracy report engine (ROADMAP P1.9, now a script).
 
 Run: PYTHONPATH=. uv run python scripts/check_accuracy.py
 No network: closes are stubbed and decisions are seeded directly with past
@@ -19,8 +19,6 @@ os.environ["LLM_API_KEY"] = ""
 os.environ["OLOSTEP_API_KEY"] = ""
 os.environ["FINNHUB_API_KEY"] = ""
 os.environ["NIXTLA_API_KEY"] = ""
-
-import httpx  # noqa: E402
 
 from app import accuracy, memory  # noqa: E402
 from app.config import settings  # noqa: E402
@@ -142,22 +140,11 @@ async def checks() -> None:
     assert set(FETCHED) == {"GGGG", "SPY"}, FETCHED
     print("persistence OK")
 
-    # ---- the API and the page ------------------------------------------------
-    from app.main import app  # noqa: E402 - imported after env isolation
+    # ---- the script renders this report without crashing ---------------------
+    import scripts.accuracy as accuracy_script  # noqa: E402
 
-    transport = httpx.ASGITransport(app=app)
-    async with httpx.AsyncClient(transport=transport, base_url="http://127.0.0.1") as client:
-        body = (await client.get("/api/accuracy")).json()
-        assert body["graded"] == 6 and body["pending"] == 2
-        assert body["horizon_days"] == settings.memory_horizon_days
-        assert len(body["rows"]) == 6 and len(body["by_decision"]) == 3
-        assert body["per_signal"]["n"] == 6 and len(body["avoided_slides"]) == 1
-        assert body["rows"][0]["lesson"]
-
-        page = await client.get("/accuracy")
-        assert page.status_code == 200
-        assert "Past calls vs the market" in page.text
-    print("api + page OK")
+    accuracy_script.main(report2)
+    print("script output OK")
 
 
 asyncio.run(checks())
