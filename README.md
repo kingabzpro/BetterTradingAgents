@@ -98,7 +98,7 @@ Copy [`.env.example`](.env.example) to `.env`; every setting is optional.
 |---|---|
 | **Home** | Run an analysis for up to 5 tickers with your outlook (day / short / long term) and depth (Fast / Medium / Expert), or let **I Am Feeling Lucky** screen the market for research candidates. |
 | **History** | Every run is saved with a direct `?run=<id>` link; rerun or cancel from the live view. |
-| **Accuracy** | Every past call graded after its window: realized return, SPY, alpha, and a right/wrong/neutral verdict, with per-decision hit rates and a pending count. |
+| **Accuracy** | Every past call graded after its window: realized return, SPY, alpha, and a right/wrong/neutral verdict, with per-decision hit rates, a $10k-per-signal comparison vs always-buy and SPY, and a pending count. |
 | **Trades** | Your Alpaca paper account: equity curve, open positions, the order lifecycle this app placed, and per-order return vs SPY. |
 | **Settings** | Every knob from `.env` editable in the app, applied live; API keys go to the OS keychain. |
 
