@@ -713,6 +713,30 @@ def check_paper_portfolio(page) -> None:
         smoke_settings.alpaca_api_key_id, smoke_settings.alpaca_api_secret_key, smoke_settings.alpaca_trading_enabled = original_keys
 
 
+def check_accuracy_page(page) -> None:
+    """The Accuracy page renders graded calls or its honest empty states (P1.9)."""
+    page.goto(f"{BASE_URL}/accuracy", wait_until="networkidle")
+    # The smoke's same-day SMKE calls cannot be graded yet, so the pending
+    # count must carry them and the empty state must explain the wait.
+    page.wait_for_selector("#accuracy-empty:not(.hidden)", timeout=10_000)
+    pending = page.text_content("#accuracy-pending") or ""
+    assert "still inside the" in pending, pending
+    count = page.evaluate(
+        "parseInt(document.getElementById('accuracy-pending').textContent || '0')"
+    )
+    assert count >= 1, f"the smoke's fresh calls must count as pending: {pending}"
+    assert "No graded calls yet" in (page.text_content("#accuracy-empty") or "")
+    content = page.content()
+    for label in ("Ticker", "Call", "Confidence", "Realized", "SPY", "Alpha", "Verdict"):
+        assert label in content, f"accuracy column missing: {label}"
+    assert page.evaluate(
+        "[...document.querySelectorAll('button')].filter((b) => "
+        "!(b.getAttribute('aria-label') || b.textContent.trim())).length === 0"
+    ), "every button needs an accessible name"
+    assert_no_page_scroll(page, 320, "accuracy page")
+    page.set_viewport_size({"width": 1280, "height": 900})
+
+
 def main() -> None:
     try:
         from playwright.sync_api import sync_playwright
@@ -751,6 +775,7 @@ def main() -> None:
                 check_history_page(page)
                 check_p1_6_filters_and_exports(page)
                 check_paper_portfolio(page)
+                check_accuracy_page(page)
             finally:
                 browser.close()
     finally:

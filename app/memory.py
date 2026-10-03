@@ -189,6 +189,14 @@ def _close_on_or_before(closes: dict[str, float], day: str) -> tuple[str, float]
     return best, closes[best]
 
 
+def _final_day(target: date) -> date:
+    """The last trading day a horizon window can mature on; weekend targets
+    walk back to the Friday close, holidays merely delay one trading day."""
+    while target.weekday() >= 5:
+        target -= timedelta(days=1)
+    return target
+
+
 def compute_outcome(
     row: dict, closes: dict[str, float], spy_closes: dict[str, float]
 ) -> dict | None:
@@ -224,12 +232,6 @@ def compute_outcome(
         if spy_entry and spy_exit and spy_exit[0] >= spy_entry[0] and spy_entry[1]
         else None
     )
-    # A horizon ending on a weekend matures on the Friday close before it;
-    # otherwise a Saturday target could never be reached and the decision
-    # would stay partial forever. Holidays merely delay by one trading day.
-    final_day = date.fromisoformat(target)
-    while final_day.weekday() >= 5:
-        final_day -= timedelta(days=1)
     return {
         "outcome_date": exit_day,
         "realized_return_pct": round(realized, 2),
@@ -238,7 +240,7 @@ def compute_outcome(
         if spy_return is None
         else round(realized - spy_return, 2),
         "window_days": (date.fromisoformat(exit_day) - decided).days,
-        "mature": dates[-1] >= final_day.isoformat(),
+        "mature": dates[-1] >= _final_day(date.fromisoformat(target)).isoformat(),
     }
 
 
@@ -263,6 +265,32 @@ def lesson(decision: str, realized: float, alpha: float | None) -> str:
     if realized >= MOVE_EDGE_PCT:
         return f"standing aside missed a {realized:.1f}% gain."
     return "standing aside cost little."
+
+
+def verdict(decision: str, realized: float, alpha: float | None) -> str:
+    """Right/wrong/neutral call per the edges above; one shared rule for the
+    reflections, the benchmark scorecard, and the Accuracy page."""
+    if decision == "BUY":
+        if alpha is None:
+            return "unknown"
+        if alpha >= ALPHA_EDGE_PCT:
+            return "right"
+        if alpha <= -ALPHA_EDGE_PCT:
+            return "wrong"
+        return "neutral"
+    if decision == "SELL":
+        if alpha is None:
+            return "unknown"
+        if alpha <= -ALPHA_EDGE_PCT:
+            return "right"
+        if alpha >= ALPHA_EDGE_PCT:
+            return "wrong"
+        return "neutral"
+    if realized <= -MOVE_EDGE_PCT:
+        return "right"  # avoided a slide
+    if realized >= MOVE_EDGE_PCT:
+        return "wrong"  # missed a gain
+    return "neutral"
 
 
 def deterministic_reflection(row: dict, outcome: dict | None) -> str:
@@ -395,6 +423,15 @@ def _select_recent(ticker: str, limit: int) -> list[dict]:
             "SELECT * FROM decisions WHERE ticker = ? "
             "ORDER BY date DESC, id DESC LIMIT ?",
             (ticker, limit),
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def _select_all() -> list[dict]:
+    """Every recorded decision, newest first; the Accuracy page reads this."""
+    with _connect() as connection:
+        rows = connection.execute(
+            "SELECT * FROM decisions ORDER BY date DESC, id DESC"
         ).fetchall()
     return [dict(row) for row in rows]
 

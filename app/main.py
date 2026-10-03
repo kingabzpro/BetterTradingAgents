@@ -12,10 +12,11 @@ from fastapi import FastAPI, Header, HTTPException, Query
 from fastapi.responses import FileResponse, PlainTextResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
-from app import automation, broker, calibration, chat, memory, settings_store
+from app import accuracy, automation, broker, calibration, chat, memory, settings_store
 from app.config import settings
 from app.discovery import discover_stocks
 from app.models import (
+    AccuracyReport,
     AnalysisRequest,
     AnalysisResponse,
     BrokerAccount,
@@ -108,6 +109,7 @@ async def revalidate_assets(request, call_next):
         "/settings",
         "/portfolio",
         "/history",
+        "/accuracy",
     ):
         response.headers["Cache-Control"] = "no-cache"
     return response
@@ -145,6 +147,11 @@ async def portfolio_page():
 @app.get("/history")
 async def history_page():
     return FileResponse(STATIC_DIR / "history.html")
+
+
+@app.get("/accuracy")
+async def accuracy_page():
+    return FileResponse(STATIC_DIR / "accuracy.html")
 
 
 @app.get("/trading")
@@ -201,6 +208,13 @@ async def reset_settings():
     await asyncio.to_thread(settings_store.reset)
     logger.info("[settings] reset to .env defaults")
     return await asyncio.to_thread(settings_store.snapshot)
+
+
+@app.get("/api/accuracy", response_model=AccuracyReport)
+async def get_accuracy():
+    """Every past call graded against realized performance (P1.9): rows,
+    per-decision aggregates, and how many calls are still pending."""
+    return await accuracy.accuracy_report()
 
 
 @app.get("/api/calibration", response_model=CalibrationTrackRecord)

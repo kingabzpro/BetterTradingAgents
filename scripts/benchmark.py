@@ -15,7 +15,7 @@ from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 
 from app.config import settings
-from app.memory import ALPHA_EDGE_PCT, MOVE_EDGE_PCT, compute_outcome
+from app.memory import compute_outcome, verdict
 
 POSITION_USD = settings.default_position_size
 CRASH_PCT = -10.0  # a matured window this far down is a "collapse"
@@ -56,31 +56,6 @@ def load_decisions() -> list[dict]:
             add(ticker, day, a["decision"], a.get("confidence"), a.get("price"))
     con.close()
     return rows
-
-
-def verdict(decision: str, realized: float, alpha: float | None) -> str:
-    """The system's own right/wrong rule (app/memory.py lesson)."""
-    if decision == "BUY":
-        if alpha is None:
-            return "unknown"
-        if alpha >= ALPHA_EDGE_PCT:
-            return "right"
-        if alpha <= -ALPHA_EDGE_PCT:
-            return "wrong"
-        return "neutral"
-    if decision == "SELL":
-        if alpha is None:
-            return "unknown"
-        if alpha <= -ALPHA_EDGE_PCT:
-            return "right"
-        if alpha >= ALPHA_EDGE_PCT:
-            return "wrong"
-        return "neutral"
-    if realized <= MOVE_EDGE_PCT * -1:
-        return "right"  # avoided a slide
-    if realized >= MOVE_EDGE_PCT:
-        return "wrong"  # missed a gain
-    return "neutral"
 
 
 def names(pairs) -> str:
