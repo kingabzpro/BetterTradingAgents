@@ -12,10 +12,11 @@ from fastapi import FastAPI, Header, HTTPException, Query
 from fastapi.responses import FileResponse, PlainTextResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
-from app import automation, broker, calibration, chat, memory, settings_store
+from app import accuracy, automation, broker, calibration, chat, memory, settings_store, watchlist
 from app.config import settings
 from app.discovery import discover_stocks
 from app.models import (
+    AccuracyReport,
     AnalysisRequest,
     AnalysisResponse,
     BrokerAccount,
@@ -33,6 +34,10 @@ from app.models import (
     RunHistoryItem,
     RunStatus,
     SettingsUpdateRequest,
+    WatchlistAddRequest,
+    WatchlistAddResponse,
+    WatchlistItem,
+    WatchlistUpdateRequest,
 )
 from app.outlook import DEFAULT_OUTLOOK, Outlook
 from app.runs import store
@@ -108,6 +113,9 @@ async def revalidate_assets(request, call_next):
         "/settings",
         "/portfolio",
         "/history",
+        "/accuracy",
+        "/watchlist",
+        "/compare",
     ):
         response.headers["Cache-Control"] = "no-cache"
     return response
@@ -116,6 +124,7 @@ async def revalidate_assets(request, call_next):
 @app.on_event("startup")
 async def startup() -> None:
     await memory.init()
+    await watchlist.init()
     await broker.init()
     await store.init()
     await automation.init()
@@ -145,6 +154,45 @@ async def portfolio_page():
 @app.get("/history")
 async def history_page():
     return FileResponse(STATIC_DIR / "history.html")
+
+
+def _feature_enabled(name: str) -> bool:
+    """A retired/experimental UI is served only when experimentation is on
+    AND its own toggle is on; both are editable live on the Settings page."""
+    return settings.experimental_features and bool(
+        getattr(settings, f"feature_{name}", False)
+    )
+
+
+@app.get("/api/features")
+async def features():
+    return {
+        "experimental": settings.experimental_features,
+        "accuracy": _feature_enabled("accuracy"),
+        "compare": _feature_enabled("compare"),
+        "watchlist": _feature_enabled("watchlist"),
+    }
+
+
+@app.get("/accuracy")
+async def accuracy_page():
+    if not _feature_enabled("accuracy"):
+        raise HTTPException(status_code=404, detail="the accuracy page is disabled")
+    return FileResponse(STATIC_DIR / "accuracy.html")
+
+
+@app.get("/watchlist")
+async def watchlist_page():
+    if not _feature_enabled("watchlist"):
+        raise HTTPException(status_code=404, detail="the watchlist page is disabled")
+    return FileResponse(STATIC_DIR / "watchlist.html")
+
+
+@app.get("/compare")
+async def compare_page():
+    if not _feature_enabled("compare"):
+        raise HTTPException(status_code=404, detail="the compare page is disabled")
+    return FileResponse(STATIC_DIR / "compare.html")
 
 
 @app.get("/trading")
@@ -201,6 +249,15 @@ async def reset_settings():
     await asyncio.to_thread(settings_store.reset)
     logger.info("[settings] reset to .env defaults")
     return await asyncio.to_thread(settings_store.snapshot)
+
+
+@app.get("/api/accuracy", response_model=AccuracyReport)
+async def get_accuracy():
+    """Every past call graded against realized performance (experimental):
+    rows, per-decision aggregates, and how many calls are still pending."""
+    if not _feature_enabled("accuracy"):
+        raise HTTPException(status_code=404, detail="the accuracy report is disabled")
+    return await accuracy.accuracy_report()
 
 
 @app.get("/api/calibration", response_model=CalibrationTrackRecord)
@@ -501,3 +558,87 @@ async def automation_run_now():
     if not started:
         raise HTTPException(status_code=409, detail="a session is already running")
     return {"started": True}
+
+
+def _require_client(client_id: str | None) -> str:
+    if client_id is None or not CLIENT_ID_RE.match(client_id):
+        raise HTTPException(status_code=400, detail="invalid client id")
+    return client_id
+
+
+def _require_feature(name: str) -> None:
+    if not _feature_enabled(name):
+        raise HTTPException(status_code=404, detail=f"the {name} feature is disabled")
+
+
+@app.get("/api/watchlist", response_model=list[WatchlistItem])
+async def get_watchlist(
+    client_id: str | None = Header(default=None, alias="X-Client-ID"),
+):
+    _require_feature("watchlist")
+    if client_id is None:
+        return []
+    owner = _require_client(client_id)
+    return await watchlist.list_watchlist(owner)
+
+
+@app.post("/api/watchlist", response_model=WatchlistAddResponse)
+async def add_watchlist(
+    request: WatchlistAddRequest,
+    client_id: str | None = Header(default=None, alias="X-Client-ID"),
+):
+    _require_feature("watchlist")
+    owner = _require_client(client_id)
+    try:
+        item, already = await watchlist.add_item(
+            owner,
+            request.ticker,
+            note=request.note,
+            outlook=request.outlook,
+            depth=request.depth,
+            run_id=request.run_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return WatchlistAddResponse(item=item, already_watched=already)
+
+
+@app.patch("/api/watchlist/{item_id}", response_model=WatchlistItem)
+async def update_watchlist_item(
+    item_id: int,
+    request: WatchlistUpdateRequest,
+    client_id: str | None = Header(default=None, alias="X-Client-ID"),
+):
+    _require_feature("watchlist")
+    owner = _require_client(client_id)
+    try:
+        return await watchlist.update_item(
+            owner, item_id, request.note, request.outlook, request.depth
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.delete("/api/watchlist/{item_id}")
+async def remove_watchlist_item(
+    item_id: int,
+    client_id: str | None = Header(default=None, alias="X-Client-ID"),
+):
+    _require_feature("watchlist")
+    owner = _require_client(client_id)
+    try:
+        ticker = await watchlist.remove_item(owner, item_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return {"ticker": ticker, "removed": 1}
+
+
+@app.delete("/api/watchlist")
+async def clear_watchlist(
+    client_id: str | None = Header(default=None, alias="X-Client-ID"),
+):
+    _require_feature("watchlist")
+    owner = _require_client(client_id)
+    return {"deleted": await watchlist.clear(owner)}

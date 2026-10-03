@@ -44,7 +44,22 @@ const ICONS = {
   clock: '<svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>',
   dollar: '<svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/></svg>',
   play: '<svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10"/><polygon points="10 8 16 12 10 16 10 8"/></svg>',
+  flask: '<svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 2h6M10 2v6L4.7 18.4A2 2 0 0 0 6.5 21h11a2 2 0 0 0 1.8-2.6L14 8V2"/><line x1="7.5" y1="14" x2="16.5" y2="14"/></svg>',
 };
+
+/* A field's live value from the current spec payload (false before load). */
+function fieldOn(name) {
+  if (!spec) return false;
+  for (const group of spec.groups) {
+    for (const field of group.fields) if (field.name === name) return !!field.value;
+  }
+  return false;
+}
+
+/* The Experimentation tab exists only while its master toggle is on. */
+function groupVisible(group) {
+  return group.key !== "experimental" || fieldOn("experimental_features");
+}
 
 /* Sidebar grouping; keys match FIELD_GROUPS keys from the API. */
 const NAV = [
@@ -71,6 +86,12 @@ const NAV = [
       { key: "autopilot", label: "Autopilot" },
     ],
   },
+  {
+    caption: "Experimentation",
+    items: [
+      { key: "experimental", label: "Experimentation" },
+    ],
+  },
 ];
 
 const BLURBS = {
@@ -82,6 +103,7 @@ const BLURBS = {
   memory: "How past decisions are graded and reused.",
   alpaca: "Your Alpaca paper account; paper-only, no live trading.",
   autopilot: "Scheduled research-and-trade sessions on your paper account.",
+  experimental: "Retired UIs behind an opt-in; off for everyone by default.",
 };
 
 function allFields(payload) {
@@ -201,25 +223,31 @@ function autopilotRow() {
 /* ---- sidebar nav ---------------------------------------------------------------- */
 
 function renderNav() {
-  $("settings-nav").innerHTML = NAV.map((section) =>
-    `<span class="nav-caption">${esc(section.caption)}</span>` +
-    section.items.map((item) =>
-      `<button type="button" class="nav-item" id="tab-${esc(item.key)}" data-tab="${esc(item.key)}" ` +
-      `aria-controls="panel-${esc(item.key)}" title="${esc(BLURBS[item.key] || "")}">` +
-      `${ICONS[iconFor(item.key)]}` +
-      `<span>${esc(item.label)}</span>` +
-      `<span class="nav-dot" data-dot="${esc(item.key)}" hidden></span>` +
-      `</button>`
-    ).join("")
-  ).join("");
+  $("settings-nav").innerHTML = NAV.map((section) => {
+    const items = section.items.filter((item) => {
+      const group = spec && spec.groups.find((candidate) => candidate.key === item.key);
+      return !group || groupVisible(group);
+    });
+    if (!items.length) return "";
+    return `<span class="nav-caption">${esc(section.caption)}</span>` +
+      items.map((item) =>
+        `<button type="button" class="nav-item" id="tab-${esc(item.key)}" data-tab="${esc(item.key)}" ` +
+        `aria-controls="panel-${esc(item.key)}" title="${esc(BLURBS[item.key] || "")}">` +
+        `${ICONS[iconFor(item.key)]}` +
+        `<span>${esc(item.label)}</span>` +
+        `<span class="nav-dot" data-dot="${esc(item.key)}" hidden></span>` +
+        `</button>`
+      ).join("");
+  }).join("");
 }
 
 function iconFor(key) {
-  return { llm: "llm", llm_roles: "layers", providers: "globe", analysis: "search", risk: "shield", memory: "clock", alpaca: "dollar", autopilot: "play" }[key];
+  return { llm: "llm", llm_roles: "layers", providers: "globe", analysis: "search", risk: "shield", memory: "clock", alpaca: "dollar", autopilot: "play", experimental: "flask" }[key];
 }
 
 function renderPanels() {
   $("panels").innerHTML = spec.groups
+    .filter(groupVisible)
     .map((group) => {
       const body = group.key === "llm_roles"
         ? roleCards(group.fields)
@@ -234,7 +262,7 @@ function renderPanels() {
 }
 
 function switchTab(key) {
-  const tabIds = spec.groups.map((group) => group.key);
+  const tabIds = spec.groups.filter(groupVisible).map((group) => group.key);
   if (!tabIds.includes(key)) key = tabIds[0];
   activeTab = key;
   localStorage.setItem("bta_settings_tab", key);

@@ -158,6 +158,19 @@ FIELD_GROUPS: list[dict[str, Any]] = [
             _field("automation_allow_sells", "AUTOMATION_ALLOW_SELLS", "Allow SELLs", "bool", section="Trading rules", hint="A SELL decision exits the held position"),
         ],
     },
+    {
+        "key": "experimental",
+        "tab": "Experimentation",
+        "label": "Experimental features",
+        # Hidden until the master toggle is on (settings.js reads this flag).
+        "visible_when": "experimental_features",
+        "fields": [
+            _field("experimental_features", "EXPERIMENTAL_FEATURES", "Enable experimentation", "bool", hint="Unlocks the toggles below; a feature is served only when its own toggle is on too"),
+            _field("feature_accuracy", "FEATURE_ACCURACY", "Accuracy page", "bool", hint="The graded-calls report as an in-app page (also scripts/accuracy.py)"),
+            _field("feature_compare", "FEATURE_COMPARE", "Compare decisions", "bool", hint="Side-by-side comparison of saved runs"),
+            _field("feature_watchlist", "FEATURE_WATCHLIST", "Watchlist", "bool", hint="Track tickers and their decision changes"),
+        ],
+    },
 ]
 
 FIELDS: dict[str, dict[str, Any]] = {

@@ -3,7 +3,7 @@
 import { AGENTS, STREAM_WINDOW_CHARS } from "./constants.js?v=11";
 import { state } from "./state.js?v=11";
 import { $ } from "./util.js?v=11";
-import { labelFor, renderResultCard, renderSummaryTable, setAgentStatus, setHeader } from "./render.js?v=12";
+import { labelFor, renderResultCard, renderSummaryTable, setAgentStatus, setHeader } from "./render.js?v=13";
 
 export function handleEvent(event) {
   const { ticker } = event;

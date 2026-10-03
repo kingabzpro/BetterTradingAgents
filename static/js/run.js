@@ -5,7 +5,7 @@ import { activeAgents, setDepth, setOutlook } from "./options.js?v=11";
 import { state } from "./state.js?v=11";
 import { addTickerTags, setTickerTags } from "./tickers.js?v=11";
 import { handleEvent, updateOverallProgress, updateProgress } from "./events.js?v=11";
-import { labelFor, renderProgressCard, renderResultCard, renderSummaryTable, setAgentStatus, setHeader } from "./render.js?v=12";
+import { labelFor, renderProgressCard, renderResultCard, renderSummaryTable, setAgentStatus, setHeader } from "./render.js?v=13";
 import { $, getClientId, hideError, showError, showToast } from "./util.js?v=11";
 
 function storedRunId() {

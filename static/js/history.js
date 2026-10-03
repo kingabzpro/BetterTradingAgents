@@ -281,7 +281,11 @@ function runCard(run) {
       </div>
       <div class="history-tickers">${run.tickers.map((ticker) => {
         const decision = decisions[ticker];
-        return `<span class="history-ticker"><strong>${escapeHtml(ticker)}</strong>${decision ? decisionBadge(decision) : '<span class="muted">No decision</span>'}</span>`;
+        // Experimental Compare link (settings: Experimentation tab).
+        const compare = window.BTA_FEATURES?.compare && decision
+          ? `<a class="history-compare" href="/compare?items=${encodeURIComponent(`${run.run_id}:${ticker}`)}">Compare</a>`
+          : "";
+        return `<span class="history-ticker"><strong>${escapeHtml(ticker)}</strong>${decision ? decisionBadge(decision) : '<span class="muted">No decision</span>'}${compare}</span>`;
       }).join("")}</div>
       <div class="history-meta"><span>${Number(run.duration_s || 0).toFixed(1)}s</span><span>${run.result_count}/${run.tickers.length} result${run.tickers.length === 1 ? "" : "s"}</span>${run.outlook ? `<span>${escapeHtml(OUTLOOK_LABELS[run.outlook] || run.outlook)} outlook</span>` : ""}${run.depth ? `<span>${escapeHtml(DEPTH_LABELS[run.depth] || run.depth)} depth</span>` : ""}${cost}${run.mock_mode ? "<span>Mock mode</span>" : ""}</div>
       ${incomplete ? `<p class="history-partial">${run.result_count} of ${run.tickers.length} ticker${run.tickers.length === 1 ? "" : "s"} finished before the run was ${run.status === "cancelled" ? "cancelled" : "interrupted"}; the rest have no result.</p>` : ""}

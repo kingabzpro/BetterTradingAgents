@@ -79,6 +79,18 @@ class Settings:
     # warning-only; the caps above still block the trade.
     max_correlated_pct: float = float(_env("MAX_CORRELATED_PCT", "0.25"))
 
+    # Experimental features (retired UIs kept behind an opt-in): the master
+    # switch gates the three per-feature toggles; a feature is served only
+    # when both are on. Editable live on the Settings page.
+    experimental_features: bool = _env("EXPERIMENTAL_FEATURES", "0").lower() in (
+        "1",
+        "true",
+        "yes",
+    )
+    feature_accuracy: bool = _env("FEATURE_ACCURACY", "0").lower() in ("1", "true", "yes")
+    feature_compare: bool = _env("FEATURE_COMPARE", "0").lower() in ("1", "true", "yes")
+    feature_watchlist: bool = _env("FEATURE_WATCHLIST", "0").lower() in ("1", "true", "yes")
+
     # Decision memory (wiki Roadmap 1.1): days a decision is held before its
     # outcome is final; LLM-written reflections are opt-in (off = deterministic).
     memory_horizon_days: int = max(1, int(_env("MEMORY_HORIZON_DAYS", "21")))

@@ -713,12 +713,38 @@ def check_paper_portfolio(page) -> None:
         smoke_settings.alpaca_api_key_id, smoke_settings.alpaca_api_secret_key, smoke_settings.alpaca_trading_enabled = original_keys
 
 
-def check_accuracy_report_disabled(page) -> None:
-    """The Accuracy page is script-only for now (P1.9): the route must be
-    gone and the surviving pages must not link it."""
-    response = page.request.get(f"{BASE_URL}/accuracy")
-    assert response.status == 404, "the accuracy page should be disabled"
-    assert page.locator("nav a[href='/accuracy']").count() == 0
+def check_experimental_features(page) -> None:
+    """Retired UIs stay dark until the Settings Experimentation tab turns
+    them on; the toggles apply live through the settings API."""
+    for path in ("/accuracy", "/compare", "/watchlist"):
+        assert page.request.get(f"{BASE_URL}{path}").status == 404, path
+    page.goto(f"{BASE_URL}/history", wait_until="networkidle")
+    for href in ("/accuracy", "/compare", "/watchlist"):
+        assert page.locator(f"nav a[href='{href}']").count() == 0, href
+
+    # Flip every toggle; nav links and pages come alive without a restart.
+    request = urllib.request.Request(
+        f"{BASE_URL}/api/settings",
+        data=json.dumps({
+            "values": {
+                "experimental_features": True,
+                "feature_accuracy": True,
+                "feature_compare": True,
+                "feature_watchlist": True,
+            }
+        }).encode(),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    with urllib.request.urlopen(request, timeout=10) as response:
+        assert response.status == 200
+    page.goto(f"{BASE_URL}/history", wait_until="networkidle")
+    for href in ("/accuracy", "/compare", "/watchlist"):
+        assert page.locator(f"nav a[href='{href}']").count() == 1, href
+    for path in ("/accuracy", "/compare", "/watchlist"):
+        assert page.request.get(f"{BASE_URL}{path}").status == 200, path
+    features = json.load(urllib.request.urlopen(f"{BASE_URL}/api/features", timeout=10))
+    assert features == {"experimental": True, "accuracy": True, "compare": True, "watchlist": True}
 
 
 def main() -> None:
@@ -759,7 +785,7 @@ def main() -> None:
                 check_history_page(page)
                 check_p1_6_filters_and_exports(page)
                 check_paper_portfolio(page)
-                check_accuracy_report_disabled(page)
+                check_experimental_features(page)
             finally:
                 browser.close()
     finally:
