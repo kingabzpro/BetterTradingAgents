@@ -652,9 +652,13 @@ async def order_performance(limit: int = 50) -> list[dict]:
                 "current_price": round(price, 2),
                 "return_pct": return_pct,
                 "spy_return_pct": spy_pct,
-                "alpha_pct": round(return_pct - spy_pct, 2)
-                if spy_pct is not None
-                else None,
+                # P2.9: a SELL's good outcome is the ticker underperforming
+                # SPY after the exit, so its alpha sign is a BUY's inverse.
+                "alpha_pct": (
+                    round((spy_pct - return_pct) if row["side"] == "sell" else (return_pct - spy_pct), 2)
+                    if spy_pct is not None
+                    else None
+                ),
             }
         )
     return performance

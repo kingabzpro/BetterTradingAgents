@@ -65,7 +65,7 @@ class ManagerResult(BaseModel):
     bear_case: str = ""
     would_upgrade_if: str = ""
     would_downgrade_if: str = ""
-    # Probability of the frozen success event (app/calibration.py SUCCESS_EVENT):
+    # Probability of the frozen success event (app/calibration.py success_event()):
     # the call's direction beating SPY over the decision-memory horizon. It is
     # a separate, explicitly probabilistic field - `confidence` above stays
     # evidence strength and is never relabeled. HOLD carries no probability.
@@ -185,6 +185,12 @@ class StockAnalysis(BaseModel):
     forecast_z: float | None = None  # forecast change / noise band
     decision: Decision = "HOLD"
     confidence: float = 0.0
+    _bound_confidence = field_validator("confidence", mode="before")(
+        classmethod(
+            lambda cls, value: min(1.0, max(0.0, float(value if value is not None else 0.0)))
+        )
+    )  # P2.9: an LLM returning 62 or -1 must not leak in raw; autopilot
+    # compares this against AUTOMATION_MIN_CONFIDENCE, so it stays in 0-1
     manager_decision: Decision | None = None  # the manager's call before the risk gate
     manager_confidence: float | None = Field(
         default=None, ge=0.0, le=1.0

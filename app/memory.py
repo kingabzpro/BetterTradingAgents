@@ -76,8 +76,9 @@ def _init_db() -> None:
         ):
             try:
                 connection.execute(f"ALTER TABLE decisions ADD COLUMN {column}")
-            except sqlite3.OperationalError:
-                pass  # column already exists
+            except sqlite3.OperationalError as exc:
+                if "duplicate column" not in str(exc).lower():
+                    raise  # anything else is a real migration failure
         connection.execute(
             "CREATE INDEX IF NOT EXISTS idx_decisions_ticker_date "
             "ON decisions(ticker, date DESC, id DESC)"
@@ -181,7 +182,8 @@ async def _fetch_closes_pair(ticker: str, start: str) -> tuple[dict[str, float],
     return own, spy
 
 
-def _close_on_or_before(closes: dict[str, float], day: str) -> tuple[str, float] | None:
+def close_on_or_before(closes: dict[str, float], day: str) -> tuple[str, float] | None:
+    """The latest close at or before `day`. Shared with backtest grading."""
     candidates = [d for d in closes if d <= day]
     if not candidates:
         return None
@@ -189,22 +191,25 @@ def _close_on_or_before(closes: dict[str, float], day: str) -> tuple[str, float]
     return best, closes[best]
 
 
-def _final_day(target: date) -> date:
-    """The last trading day a horizon window can mature on; weekend targets
-    walk back to the Friday close, holidays merely delay one trading day."""
-    while target.weekday() >= 5:
-        target -= timedelta(days=1)
-    return target
+def close_on_or_after(closes: dict[str, float], day: str) -> tuple[str, float] | None:
+    """The earliest close at or after `day`. Shared with backtest grading."""
+    candidates = [d for d in closes if d >= day]
+    if not candidates:
+        return None
+    best = min(candidates)
+    return best, closes[best]
 
 
 def compute_outcome(
     row: dict, closes: dict[str, float], spy_closes: dict[str, float]
 ) -> dict | None:
-    """Grade one decision against realized closes.
-
-    Entry is the first close on/after the decision date; exit is the last close
-    within the horizon (or the latest close if the horizon is not reached yet).
-    Returns None while no close after the decision exists yet.
+    """Grade one decision against realized closes, using the same entry/exit
+    convention as the backtest harness: entry is the last close on/before the
+    decision date, exit is the FIRST close on/after the horizon target, so a
+    target on a weekend or holiday walks forward to the next close and short
+    horizons can always mature. Decisions whose window has not produced an
+    exit close yet get a partial grade at the latest close (mature=False) for
+    the reflections; None only when nothing can be graded at all.
     """
     try:
         decided = date.fromisoformat(row["date"])
@@ -213,20 +218,23 @@ def compute_outcome(
     horizon = settings.memory_horizon_days
     target = (decided + timedelta(days=horizon)).isoformat()
 
-    dates = sorted(closes)
-    entry = next(((d, closes[d]) for d in dates if d >= row["date"]), None)
+    entry = close_on_or_before(closes, row["date"])
     if entry is None:
         return None
     entry_day, entry_price = entry
-    limit = min(target, dates[-1])
-    exit_day = max((d for d in dates if entry_day < d <= limit), default=None)
-    if exit_day is None:
-        return None  # decided today (or on the last close) - nothing to grade yet
-
+    exit_point = close_on_or_after(closes, target)
+    mature = exit_point is not None
+    if mature:
+        exit_day = exit_point[0]
+    else:
+        later = [d for d in closes if d > entry_day]
+        if not later:
+            return None  # decided on the last close - nothing to grade yet
+        exit_day = max(later)
     exit_price = closes[exit_day]
     realized = (exit_price / entry_price - 1) * 100
-    spy_entry = _close_on_or_before(spy_closes, entry_day)
-    spy_exit = _close_on_or_before(spy_closes, exit_day)
+    spy_entry = close_on_or_before(spy_closes, entry_day)
+    spy_exit = close_on_or_before(spy_closes, exit_day)
     spy_return = (
         (spy_exit[1] / spy_entry[1] - 1) * 100
         if spy_entry and spy_exit and spy_exit[0] >= spy_entry[0] and spy_entry[1]
@@ -240,7 +248,7 @@ def compute_outcome(
         if spy_return is None
         else round(realized - spy_return, 2),
         "window_days": (date.fromisoformat(exit_day) - decided).days,
-        "mature": dates[-1] >= _final_day(date.fromisoformat(target)).isoformat(),
+        "mature": mature,
     }
 
 

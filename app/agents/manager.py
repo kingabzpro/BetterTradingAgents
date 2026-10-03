@@ -61,6 +61,13 @@ Respond with ONLY a JSON object, no markdown fences, no text outside the JSON:
     )
 
 
+def parse_decision(data: dict) -> str | None:
+    """Strict decision match: exactly BUY, HOLD, or SELL (case/whitespace
+    tolerated). "DO NOT BUY" and other prose are parse failures, not BUY."""
+    decision = str(data.get("decision", "")).strip().upper()
+    return decision if decision in ("BUY", "HOLD", "SELL") else None
+
+
 def to_result(data: dict, ticker: str) -> AgentResult:
     manager = to_manager_result(data, ticker)
     return AgentResult(
@@ -72,13 +79,7 @@ def to_result(data: dict, ticker: str) -> AgentResult:
 
 
 def to_manager_result(data: dict, ticker: str) -> ManagerResult:
-    decision = str(data.get("decision", "HOLD")).strip().upper()
-    if "BUY" in decision:
-        decision = "BUY"
-    elif "SELL" in decision:
-        decision = "SELL"
-    else:
-        decision = "HOLD"
+    decision = parse_decision(data) or "HOLD"
     raw_probability = data.get("probability_beat_spy")
     try:
         probability = None if raw_probability in (None, "") else float(raw_probability)

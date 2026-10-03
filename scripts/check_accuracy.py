@@ -31,14 +31,15 @@ TODAY = datetime.now(timezone.utc).date()
 OLD = TODAY - timedelta(days=settings.memory_horizon_days + 14)
 MID = (OLD + timedelta(days=20)).isoformat()  # the graded exit close, inside the window
 END = (OLD + timedelta(days=28)).isoformat()  # past the target: proves the window closed
-# Ticker closes: decision-day 100 -> exit close; SPY +0.2 over the window.
+# Ticker closes: decision-day 100 -> exit is the FIRST close on/after the
+# horizon target (END); MID sits inside the window, SPY +0.3 over it.
 CLOSES = {
-    "AAAA": {OLD.isoformat(): 100.0, MID: 103.0, END: 104.0},  # BUY,  alpha +2.8 -> right
-    "BBBB": {OLD.isoformat(): 100.0, MID: 90.0, END: 89.0},    # SELL, alpha -10.2 -> right
-    "CCCC": {OLD.isoformat(): 100.0, MID: 92.0, END: 91.0},    # HOLD, realized -8 -> right (avoided)
-    "DDDD": {OLD.isoformat(): 100.0, MID: 105.0, END: 106.0},  # HOLD, realized +5 -> wrong (missed)
+    "AAAA": {OLD.isoformat(): 100.0, MID: 103.0, END: 104.0},  # BUY,  alpha +3.7 -> right
+    "BBBB": {OLD.isoformat(): 100.0, MID: 90.0, END: 89.0},    # SELL, alpha -11.3 -> right
+    "CCCC": {OLD.isoformat(): 100.0, MID: 92.0, END: 91.0},    # HOLD, realized -9 -> right (avoided)
+    "DDDD": {OLD.isoformat(): 100.0, MID: 105.0, END: 106.0},  # HOLD, realized +6 -> wrong (missed)
     "EEEE": {OLD.isoformat(): 100.0, MID: 100.5, END: 100.6},  # BUY,  alpha +0.3 -> neutral
-    "HHHH": {OLD.isoformat(): 100.0, MID: 85.0, END: 84.0},    # HOLD, realized -15 -> right (slide avoided)
+    "HHHH": {OLD.isoformat(): 100.0, MID: 85.0, END: 84.0},    # HOLD, realized -16 -> right (slide avoided)
     "SPY": {OLD.isoformat(): 100.0, MID: 100.2, END: 100.3},
 }
 FETCHED: list[str] = []
@@ -103,30 +104,30 @@ async def checks() -> None:
         "AAAA", "HHHH", "EEEE", "DDDD", "CCCC", "BBBB",
     ]
     aaaa = next(row for row in report["rows"] if row["ticker"] == "AAAA")
-    assert aaaa["realized_return_pct"] == 3.0 and aaaa["spy_return_pct"] == 0.2
-    assert aaaa["alpha_vs_spy_pct"] == 2.8 and aaaa["entry_price"] == 100.0
+    assert aaaa["realized_return_pct"] == 4.0 and aaaa["spy_return_pct"] == 0.3
+    assert aaaa["alpha_vs_spy_pct"] == 3.7 and aaaa["entry_price"] == 100.0
     assert aaaa["lesson"], "each row must carry its one-line lesson"
 
     by = {group["decision"]: group for group in report["by_decision"]}
     assert by["BUY"] == {
         "decision": "BUY", "n": 2, "right": 1, "wrong": 0, "neutral": 1,
-        "hit_rate": 1.0, "mean_alpha_pct": (2.8 + 0.3) / 2,
-        "mean_realized_pct": (3.0 + 0.5) / 2,
+        "hit_rate": 1.0, "mean_alpha_pct": (3.7 + 0.3) / 2,
+        "mean_realized_pct": (4.0 + 0.6) / 2,
     }, by["BUY"]
     assert by["SELL"]["n"] == 1 and by["SELL"]["hit_rate"] == 1.0
     assert by["HOLD"]["n"] == 3 and abs(by["HOLD"]["hit_rate"] - 2 / 3) < 1e-9
-    assert abs(by["HOLD"]["mean_alpha_pct"] - (-8.2 + 4.8 - 15.2) / 3) < 1e-9
-    assert abs(by["HOLD"]["mean_realized_pct"] - (-8.0 + 5.0 - 15.0) / 3) < 1e-9
+    assert abs(by["HOLD"]["mean_alpha_pct"] - (-9.3 + 5.7 - 16.3) / 3) < 1e-9
+    assert abs(by["HOLD"]["mean_realized_pct"] - (-9.0 + 6.0 - 16.0) / 3) < 1e-9
 
     # Per-signal: long-only following (BUYs ride, others cash) vs always-buy vs SPY.
     per_signal = report["per_signal"]
     assert per_signal["n"] == 6
-    assert abs(per_signal["follow_calls_pct"] - (3.0 + 0.5) / 6) < 1e-9
-    assert abs(per_signal["always_buy_pct"] - (3.0 - 10.0 - 8.0 + 5.0 + 0.5 - 15.0) / 6) < 1e-9
-    assert abs(per_signal["spy_pct"] - 0.2) < 1e-9
+    assert abs(per_signal["follow_calls_pct"] - (4.0 + 0.6) / 6) < 1e-9
+    assert abs(per_signal["always_buy_pct"] - (4.0 - 11.0 - 9.0 + 6.0 + 0.6 - 16.0) / 6) < 1e-9
+    assert abs(per_signal["spy_pct"] - 0.3) < 1e-9
 
-    # Only HHHH's -15% slide clears the double-digit bar (CCCC -8% does not).
-    assert report["avoided_slides"] == [{"ticker": "HHHH", "realized_pct": -15.0}]
+    # Only HHHH's -16% slide clears the double-digit bar (CCCC -9% does not).
+    assert report["avoided_slides"] == [{"ticker": "HHHH", "realized_pct": -16.0}]
 
     # Only window-closed tickers were fetched: the seven stale tickers plus SPY,
     # never FFFF (window open).

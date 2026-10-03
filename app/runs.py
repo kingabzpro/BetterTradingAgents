@@ -172,6 +172,16 @@ class RunStore:
             settings.debate_rounds,
             run.mock_mode,
             portfolio.model_dump_json() if portfolio is not None else "unavailable",
+            # P2.9: sizing and gating settings change the result (suggested
+            # size, risk flags), so a changed setting must not serve stale
+            # cached analyses.
+            settings.default_position_size,
+            settings.max_position_pct,
+            settings.max_invested_pct,
+            settings.min_cash_pct,
+            settings.max_drawdown_pct,
+            settings.max_positions,
+            settings.max_correlated_pct,
         )
 
     @staticmethod

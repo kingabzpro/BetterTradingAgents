@@ -1157,8 +1157,11 @@ async def analyze_ticker(
     # Record the decision for future reflection (ROADMAP 1.1) with its
     # calibration provenance (P1.1). A failure here must never surface to the
     # user or block the result. Backtest replays never write - they are not
-    # live decisions.
-    if analysis.error is None and live_context:
+    # live decisions. A manager output whose decision did not parse exactly
+    # (P2.9) is not a real call either: it must not enter the track record as
+    # a phantom HOLD.
+    manager_parsed = mgr_data is None or manager.parse_decision(mgr_data) is not None
+    if analysis.error is None and live_context and manager_parsed:
         try:
             from app import calibration
             from app import memory
@@ -1173,7 +1176,7 @@ async def analyze_ticker(
                     if settings.llm_configured
                     else "mock",
                     "policy_version": calibration.DECISION_POLICY_VERSION,
-                    "success_event": calibration.SUCCESS_EVENT,
+                    "success_event": calibration.success_event(),
                 },
             )
         except Exception as exc:  # noqa: BLE001 - best-effort like the portfolio

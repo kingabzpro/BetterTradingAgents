@@ -144,8 +144,8 @@ async def accuracy_report() -> dict:
             pending += 1
             continue
         target = decided + timedelta(days=settings.memory_horizon_days)
-        if memory._final_day(target) > today:
-            pending += 1
+        if target > today:
+            pending += 1  # no close on/after the target can exist yet
             continue
         stale.setdefault(row["ticker"], []).append(row)
 

@@ -14,6 +14,8 @@ from math import sqrt
 from random import Random
 from statistics import fmean, pstdev
 
+from app.memory import close_on_or_after, close_on_or_before
+
 ROUND_TRIP_COST_PCT = 0.10  # 2 x 5bp, per positioned decision
 MIN_POSITIONED_FOR_PROMOTION = 30  # P1.2: fewer graded bets cannot support a headline
 BOOTSTRAP_REPS = 2000
@@ -41,22 +43,6 @@ class Outcome:
     spy_pct: float | None
     alpha_pct: float | None
     note: str = ""
-
-
-def close_on_or_before(closes: dict[str, float], day: str) -> tuple[str, float] | None:
-    candidates = [d for d in closes if d <= day]
-    if not candidates:
-        return None
-    best = max(candidates)
-    return best, closes[best]
-
-
-def close_on_or_after(closes: dict[str, float], day: str) -> tuple[str, float] | None:
-    candidates = [d for d in closes if d >= day]
-    if not candidates:
-        return None
-    best = min(candidates)
-    return best, closes[best]
 
 
 def grade(

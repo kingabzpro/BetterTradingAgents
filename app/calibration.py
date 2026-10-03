@@ -27,14 +27,16 @@ from app.config import settings
 # silently. Old rows keep the version they were recorded with.
 DECISION_POLICY_VERSION = "2026-10-d"
 
-# Frozen success event for ManagerResult.probability_beat_spy. Changing this
-# definition invalidates every recorded probability, so treat it as immutable;
-# introduce a new field instead of redefining this one.
-SUCCESS_EVENT = (
-    "the call's direction beats SPY over the "
-    f"{settings.memory_horizon_days}-day decision-memory horizon: "
-    "alpha_vs_spy_pct > 0 for BUY, alpha_vs_spy_pct < 0 for SELL"
-)
+def success_event() -> str:
+    """Frozen success event for ManagerResult.probability_beat_spy, built from
+    the horizon configured NOW (live-apply can change it after import), so the
+    text never silently disagrees with the setting. Changing this definition
+    invalidates every recorded probability; introduce a new field instead."""
+    return (
+        "the call's direction beats SPY over the "
+        f"{settings.memory_horizon_days}-day decision-memory horizon: "
+        "alpha_vs_spy_pct > 0 for BUY, alpha_vs_spy_pct < 0 for SELL"
+    )
 
 # Evidence buckets shown in the UI; keep in sync with convictionLabel in
 # static/js/render.js (low < 0.50, moderate < 0.70, strong >= 0.70).
@@ -225,7 +227,7 @@ def build_report(db_path=None, min_observations: int | None = None) -> str:
         f"Generated {datetime.now(timezone.utc).isoformat(timespec='seconds')} from `{path}` - SQLite only, no LLM calls.",
         "",
         f"- Decision policy version: `{DECISION_POLICY_VERSION}` (current); older rows keep the version they were recorded with.",
-        f"- Manager probability success event: {SUCCESS_EVENT}.",
+        f"- Manager probability success event: {success_event()}.",
         f"- Minimum mature observations per bucket: {min_n} (`CALIBRATION_MIN_OBSERVATIONS`).",
         "- `confidence` means evidence strength, never a probability of profit.",
         "",

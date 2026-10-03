@@ -8,6 +8,7 @@ fake, so every scenario is deterministic and key-less.
 import asyncio
 import json
 import os
+import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 import tempfile
@@ -524,6 +525,15 @@ async def checks() -> None:
 
         market_data.get_closes_between = fake_spy
         market_data.get_current_price = fake_live_price
+        # P2.9: a SELL's alpha is the BUY formula inverted - a good exit is
+        # the ticker lagging SPY afterwards.
+        with sqlite3.connect(os.environ["DB_PATH"]) as connection:
+            connection.execute(
+                "INSERT INTO broker_orders (client_order_id, run_id, ticker, side,"
+                " notional, status, filled_qty, filled_avg_price)"
+                " VALUES ('bta-sell-perf', 'paperrun06', 'MSFT', 'sell', 400,"
+                " 'filled', 2, 200.0)"
+            )
         perf = await broker.order_performance()
         filled = [row for row in perf if row["filled_avg_price"] == 191.0]
         assert filled, perf
@@ -532,8 +542,10 @@ async def checks() -> None:
         assert row["return_pct"] == round((110.0 / 191.0 - 1) * 100, 2)
         assert row["spy_return_pct"] == 5.0
         assert row["alpha_pct"] == round(row["return_pct"] - 5.0, 2)
+        sell = next(r for r in perf if r["client_order_id"] == "bta-sell-perf")
+        assert sell["alpha_pct"] == round(5.0 - sell["return_pct"], 2), sell
         assert all(row["run_id"] for row in perf), "every perf row links to its run"
-        print("filled-order return + alpha math OK")
+        print("filled-order return + alpha math OK (sell-side sign inverted)")
 
         transport = httpx.ASGITransport(app=app)
         async with httpx.AsyncClient(transport=transport, base_url="http://127.0.0.1") as client:

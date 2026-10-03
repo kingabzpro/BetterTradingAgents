@@ -139,7 +139,7 @@ async def checks() -> None:
         manager_decision="BUY", manager_confidence=0.72, manager_probability=0.66,
     )
     await memory.record_decision("run_rec", analysis, decision_date="2026-02-02", provenance={
-        **SCOPE, "success_event": calibration.SUCCESS_EVENT,
+        **SCOPE, "success_event": calibration.success_event(),
     })
     with sqlite3.connect(os.environ["DB_PATH"]) as connection:
         connection.row_factory = sqlite3.Row
@@ -150,7 +150,7 @@ async def checks() -> None:
     assert row["model"] == "model-m" and row["policy_version"] == calibration.DECISION_POLICY_VERSION
     assert row["manager_decision"] == "BUY" and row["manager_confidence"] == 0.72
     assert row["manager_probability"] == 0.66
-    assert calibration.SUCCESS_EVENT in row["success_event"]
+    assert calibration.success_event() in row["success_event"]
 
     # Manager parsing: probability is clamped, dropped for HOLD, and never
     # confused with evidence-strength confidence.
