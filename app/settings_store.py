@@ -116,6 +116,8 @@ FIELD_GROUPS: list[dict[str, Any]] = [
             _field("max_position_pct", "MAX_POSITION_PCT", "Max position", "float", lo=0.01, hi=1, hint="Largest single position, share of equity", example="0.1 (= 10%)"),
             _field("max_invested_pct", "MAX_INVESTED_PCT", "Max invested", "float", lo=0.01, hi=1, hint="Largest invested total, share of equity", example="0.6 (= 60%)"),
             _field("min_cash_pct", "MIN_CASH_PCT", "Min cash", "float", lo=0, hi=1, hint="Cash buffer the risk gate keeps, share of equity", example="0.1 (= 10%)"),
+            _field("max_drawdown_pct", "MAX_DRAWDOWN_PCT", "Drawdown brake", "float", lo=0.01, hi=1, hint="BUYs halt when open positions' unrealized loss exceeds this share", example="0.15 (= 15%)"),
+            _field("max_positions", "MAX_POSITIONS", "Max open positions", "int", lo=1, hi=50, hint="A BUY of a new ticker halts at this many open positions", example="10"),
             _field("max_correlated_pct", "MAX_CORRELATED_PCT", "Correlated-group cap", "float", lo=0, hi=1, hint="Warning-only cap for correlated holdings", example="0.25 (= 25%)"),
         ],
     },

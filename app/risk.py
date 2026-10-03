@@ -8,6 +8,13 @@ Rules, not an LLM: free, testable, no hallucination surface (wiki Roadmap 1.2).
 - Exposure caps: a BUY is downgraded to HOLD when the sized position would
   breach the max single-position share of equity, the max invested share,
   or the minimum cash buffer.
+- Drawdown brake: a BUY halts when open positions' unrealized loss exceeds
+  MAX_DRAWDOWN_PCT of the cash-plus-cost basis behind them. Losses already
+  realized through SELLs are invisible to it; persist an equity high-water
+  mark when that ceiling bites. SELLs still pass: reducing exposure in a
+  drawdown is recovery, not risk.
+- Position count cap: a BUY of a ticker not yet held halts at MAX_POSITIONS
+  open positions; adding to a position already held is exempt.
 - Concentration check (ROADMAP P1.3): a sized BUY whose exposure, combined
   with holdings whose daily returns correlate above CORRELATION_THRESHOLD,
   would push the group past settings.max_correlated_pct raises a warning with
@@ -265,6 +272,23 @@ def evaluate(
                 reasons.append(
                     f"cash buffer would fall below "
                     f"{settings.min_cash_pct:.0%} of equity"
+                )
+            pnl = portfolio.total_pnl
+            if pnl is not None and pnl < 0 and equity - pnl > 0:
+                # ponytail: total_pnl is open positions' unrealized P&L only,
+                # so realized losses drop out of the brake once a SELL settles;
+                # persist an equity high-water mark when that ceiling bites
+                drawdown = -pnl / (equity - pnl)
+                if drawdown > settings.max_drawdown_pct + 1e-9:
+                    reasons.append(
+                        f"open positions are {drawdown:.0%} underwater, past "
+                        f"the {settings.max_drawdown_pct:.0%} drawdown brake"
+                    )
+            held_tickers = {p.ticker for p in portfolio.positions}
+            if ticker not in held_tickers and len(held_tickers) >= settings.max_positions:
+                reasons.append(
+                    f"open positions would reach {len(held_tickers) + 1}, past "
+                    f"the {settings.max_positions}-position cap"
                 )
             if reasons:
                 flags.append("downgraded BUY to HOLD: " + "; ".join(reasons))

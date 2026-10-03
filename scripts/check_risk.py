@@ -64,10 +64,10 @@ d, c, s, f = risk.evaluate("BUY", 0.8, "AMD", (A(), A(), A()), 10.0, pf)
 assert d == "HOLD" and any("cash buffer" in flag for flag in f), f
 print("cash floor OK:", f)
 
-# ---- drawdown brake: down past MAX_DRAWDOWN_PCT halts BUYs, not SELLs -------
+# ---- drawdown brake: open losses past MAX_DRAWDOWN_PCT halt BUYs, not SELLs -
 pf = flat_portfolio(equity=110_000.0, cash=70_000.0)
 pf.positions = [position("MSFT", 40_000.0)]
-pf.total_pnl = -20_000.0  # start 130k -> down 15.4% > 15% brake
+pf.total_pnl = -20_000.0  # 20k open loss over 130k cash+cost -> 15.4% > 15% brake
 d, c, s, f_brake = risk.evaluate("BUY", 0.8, "AMD", (A(), A(), A()), 10.0, pf)
 assert d == "HOLD" and any("drawdown brake" in fl for fl in f_brake), f_brake
 d, c, s, f = risk.evaluate("SELL", 0.9, "MSFT", (A(), A(), A()), 10.0, pf)

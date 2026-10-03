@@ -66,6 +66,13 @@ class Settings:
     max_position_pct: float = float(_env("MAX_POSITION_PCT", "0.10"))
     max_invested_pct: float = float(_env("MAX_INVESTED_PCT", "0.60"))
     min_cash_pct: float = float(_env("MIN_CASH_PCT", "0.10"))
+    # Drawdown brake: BUYs halt once open positions' unrealized loss exceeds
+    # this share of the cash-plus-cost basis behind them (Alpaca's multi-agent
+    # example halts at 15% total drawdown).
+    max_drawdown_pct: float = float(_env("MAX_DRAWDOWN_PCT", "0.15"))
+    # Open-position count cap: a BUY of a new ticker halts at this many open
+    # positions; adding to one already held is unaffected.
+    max_positions: int = int(_env("MAX_POSITIONS", "10"))
     # Correlated-group cap (wiki Roadmap P1.3): a BUY whose exposure, combined
     # with holdings whose daily returns correlate at/above 0.7 (app/risk.py),
     # would push the group past this share of equity raises a warning. It is
