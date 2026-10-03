@@ -99,7 +99,7 @@ Copy [`.env.example`](.env.example) to `.env`; every setting is optional.
 | **Home** | Run an analysis for up to 5 tickers with your outlook (day / short / long term) and depth (Fast / Medium / Expert), or let **I Am Feeling Lucky** screen the market for research candidates. |
 | **History** | Every run is saved with a direct `?run=<id>` link; rerun or cancel from the live view. |
 | **Trades** | Your Alpaca paper account: equity curve, open positions, the order lifecycle this app placed, and per-order return vs SPY. |
-| **Settings** | Every knob from `.env` editable in the app, applied live; API keys go to the OS keychain. |
+| **Settings** | Every knob from `.env` editable in the app, applied live; API keys go to the OS keychain. The **Enable experimentation** switch (Analysis section) adds a tab with opt-in toggles for the retired Accuracy, Compare, and Watchlist pages. |
 
 Watch each agent move from waiting to running to complete, with a progress bar per ticker;
 if an agent fails, the manager still makes a call on the inputs that survived. The result
