@@ -13,6 +13,7 @@
   color: var(--text);
   font-size: 25px;
   letter-spacing: -0.02em;
+  text-transform: none;
 }
 .compare-intro p {
   max-width: 720px;
