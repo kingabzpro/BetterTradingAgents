@@ -23,7 +23,7 @@ print("size_position OK")
 
 def flat_portfolio(equity=100_000.0, cash=100_000.0):
     return PortfolioSummary(
-        starting_cash=100_000.0, cash=cash,
+        cash=cash,
         positions_value=equity - cash, total_equity=equity,
     )
 
@@ -63,6 +63,33 @@ pf.positions_value, pf.total_equity = 89_000.0, 100_000.0
 d, c, s, f = risk.evaluate("BUY", 0.8, "AMD", (A(), A(), A()), 10.0, pf)
 assert d == "HOLD" and any("cash buffer" in flag for flag in f), f
 print("cash floor OK:", f)
+
+# ---- drawdown brake: down past MAX_DRAWDOWN_PCT halts BUYs, not SELLs -------
+pf = flat_portfolio(equity=110_000.0, cash=70_000.0)
+pf.positions = [position("MSFT", 40_000.0)]
+pf.total_pnl = -20_000.0  # start 130k -> down 15.4% > 15% brake
+d, c, s, f_brake = risk.evaluate("BUY", 0.8, "AMD", (A(), A(), A()), 10.0, pf)
+assert d == "HOLD" and any("drawdown brake" in fl for fl in f_brake), f_brake
+d, c, s, f = risk.evaluate("SELL", 0.9, "MSFT", (A(), A(), A()), 10.0, pf)
+assert d == "SELL", f  # reducing exposure in a drawdown still passes
+print("drawdown brake OK:", f_brake)
+
+pf.total_pnl = -19_000.0  # down 14.7%: inside the brake, BUY proceeds
+d, c, s, f = risk.evaluate("BUY", 0.8, "AMD", (A(), A(), A()), 10.0, pf)
+assert d == "BUY" and f == [], f
+pf.total_pnl = None  # P&L unknown: the brake stays silent, other caps still run
+d, c, s, f = risk.evaluate("BUY", 0.8, "AMD", (A(), A(), A()), 10.0, pf)
+assert d == "BUY" and f == [], f
+print("drawdown brake thresholds OK")
+
+# ---- position count cap: 11th name halts, adding to a held name passes ------
+pf = flat_portfolio(equity=100_000.0, cash=95_000.0)
+pf.positions = [position(f"T{i}", 500.0) for i in range(settings.max_positions)]
+d, c, s, f_cap = risk.evaluate("BUY", 0.8, "AMD", (A(), A(), A()), 10.0, pf)
+assert d == "HOLD" and any("position cap" in fl for fl in f_cap), f_cap
+d, c, s, f = risk.evaluate("BUY", 0.8, "T0", (A(), A(), A()), 10.0, pf)
+assert d == "BUY", f  # existing holder tops up: count cap exempt
+print("position count cap OK:", f_cap)
 
 # ---- missing-input brake: 2/3 analysts failed --------------------------------
 d, c, s, f = risk.evaluate("BUY", 0.9, "NVDA", (A(), None, None), 30.0, flat_portfolio())
@@ -164,6 +191,9 @@ print("concentration edges OK")
 from app.config import settings as _settings  # noqa: E402
 
 _settings.llm_api_key = ""  # force mock mode
+# Offline checks never read a live paper account: the manager then weighs the
+# research without holdings, which is the honest unconfigured path asserted below.
+_settings.alpaca_api_key_id = _settings.alpaca_api_secret_key = ""
 
 from app.workflow import analyze_ticker  # noqa: E402
 import asyncio  # noqa: E402

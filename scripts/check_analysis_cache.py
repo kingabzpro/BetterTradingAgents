@@ -18,7 +18,7 @@ async def main() -> None:
 
     runs.analyze_ticker = fake_analyze
     cache = runs.RunStore()
-    portfolio = PortfolioSummary(starting_cash=100_000, cash=100_000)
+    portfolio = PortfolioSummary(cash=100_000)
     first_run = runs.Run(["NVDA"], outlook="short_term", depth="medium")
     second_run = runs.Run(["NVDA"], outlook="short_term", depth="medium")
     try:

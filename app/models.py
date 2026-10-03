@@ -332,7 +332,6 @@ class PortfolioPosition(BaseModel):
 
 
 class PortfolioSummary(BaseModel):
-    starting_cash: float
     cash: float
     positions_value: float | None = None
     total_equity: float | None = None
