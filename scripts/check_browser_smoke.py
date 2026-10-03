@@ -714,37 +714,34 @@ def check_paper_portfolio(page) -> None:
 
 
 def check_experimental_features(page) -> None:
-    """Retired UIs stay dark until the Settings Experimentation tab turns
-    them on; the toggles apply live through the settings API."""
+    """Retired UIs stay dark until the Settings toggles turn them on. The
+    master toggle lives in the always-visible Analysis panel; the
+    Experimentation tab appears only after it is saved on."""
     for path in ("/accuracy", "/compare", "/watchlist"):
         assert page.request.get(f"{BASE_URL}{path}").status == 404, path
-    page.goto(f"{BASE_URL}/history", wait_until="networkidle")
-    for href in ("/accuracy", "/compare", "/watchlist"):
-        assert page.locator(f"nav a[href='{href}']").count() == 0, href
+    page.goto(f"{BASE_URL}/settings", wait_until="networkidle")
+    assert page.locator("#tab-experimental").count() == 0, "tab must not exist while off"
 
-    # Flip every toggle; nav links and pages come alive without a restart.
-    request = urllib.request.Request(
-        f"{BASE_URL}/api/settings",
-        data=json.dumps({
-            "values": {
-                "experimental_features": True,
-                "feature_accuracy": True,
-                "feature_compare": True,
-                "feature_watchlist": True,
-            }
-        }).encode(),
-        headers={"Content-Type": "application/json"},
-        method="POST",
-    )
-    with urllib.request.urlopen(request, timeout=10) as response:
-        assert response.status == 200
+    # Flip the master toggle like a user would; the tab appears after save.
+    page.click("#tab-analysis")
+    page.check("#f-experimental_features")
+    page.click("#save-btn")
+    page.wait_for_selector("#tab-experimental", timeout=10_000)
+
+    # Turn the three features on inside the new tab, then save.
+    page.click("#tab-experimental")
+    for name in ("feature_accuracy", "feature_compare", "feature_watchlist"):
+        page.check(f"#f-{name}")
+    page.click("#save-btn")
+    page.wait_for_timeout(500)
+
+    features = json.load(urllib.request.urlopen(f"{BASE_URL}/api/features", timeout=10))
+    assert features == {"experimental": True, "accuracy": True, "compare": True, "watchlist": True}
     page.goto(f"{BASE_URL}/history", wait_until="networkidle")
     for href in ("/accuracy", "/compare", "/watchlist"):
         assert page.locator(f"nav a[href='{href}']").count() == 1, href
     for path in ("/accuracy", "/compare", "/watchlist"):
         assert page.request.get(f"{BASE_URL}{path}").status == 200, path
-    features = json.load(urllib.request.urlopen(f"{BASE_URL}/api/features", timeout=10))
-    assert features == {"experimental": True, "accuracy": True, "compare": True, "watchlist": True}
 
 
 def main() -> None:

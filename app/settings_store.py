@@ -105,6 +105,7 @@ FIELD_GROUPS: list[dict[str, Any]] = [
             _field("max_tickers", "MAX_TICKERS", "Max tickers", "int", lo=1, hi=20, hint="Tickers accepted in one analysis", example="5"),
             _field("debate_rounds", "DEBATE_ROUNDS", "Debate rounds", "int", lo=1, hi=3, hint="2 or more adds one bull/bear rebuttal exchange", example="2"),
             _field("stream_reasoning", "STREAM_REASONING", "Stream agent tokens", "bool", hint="Live agent tokens in the run view"),
+            _field("experimental_features", "EXPERIMENTAL_FEATURES", "Enable experimentation", "bool", hint="Shows the Experimentation tab with the retired-UI toggles"),
         ],
     },
     {
@@ -162,10 +163,9 @@ FIELD_GROUPS: list[dict[str, Any]] = [
         "key": "experimental",
         "tab": "Experimentation",
         "label": "Experimental features",
-        # Hidden until the master toggle is on (settings.js reads this flag).
+        # Hidden until the master toggle (in the Analysis group) is on.
         "visible_when": "experimental_features",
         "fields": [
-            _field("experimental_features", "EXPERIMENTAL_FEATURES", "Enable experimentation", "bool", hint="Unlocks the toggles below; a feature is served only when its own toggle is on too"),
             _field("feature_accuracy", "FEATURE_ACCURACY", "Accuracy page", "bool", hint="The graded-calls report as an in-app page (also scripts/accuracy.py)"),
             _field("feature_compare", "FEATURE_COMPARE", "Compare decisions", "bool", hint="Side-by-side comparison of saved runs"),
             _field("feature_watchlist", "FEATURE_WATCHLIST", "Watchlist", "bool", hint="Track tickers and their decision changes"),
