@@ -44,7 +44,7 @@ reference list and how each finding shapes the roadmap.
 | 🌍 | **Market regime** | A dedicated analyst reads the S&P 500, Nasdaq, VIX and the 10-year yield, so every call knows the weather it trades in. |
 | ⚔️ | **Real debate** | Bull and bear argue their strongest cases, then a neutral judge cross-examines both against the research before the call. |
 | 🗣️ | **Social sentiment** | A sixth researcher reads Reddit and StockTwits chatter, and says so when the crowd is too thin to mean anything. |
-| ⚖️ | **Risk-gated decisions** | BUYs are volatility-scaled and capped by per-ticker, invested, and cash-buffer limits; downgrades are flagged, never silent. |
+| ⚖️ | **Risk-gated decisions** | BUYs are volatility-scaled and capped against your paper account by per-ticker, invested, and cash-buffer limits; downgrades are flagged, never silent. |
 | 📜 | **Learns from its calls** | Every decision is graded on realized return and alpha vs SPY; the manager weighs those lessons on the next run. |
 | 💬 | **Chat with the manager** | Every finished ticker gets a follow-up chat grounded in that run's research. |
 | 🧪 | **Walk-forward backtests** | Replay the pipeline at past dates with point-in-time data only, graded against SPY after costs. |
@@ -63,7 +63,9 @@ flowchart LR
     S --> B["⚔️ Bull vs bear debate<br/>+ judge at Max · skipped at Fast"]
     B --> PM["👔 Portfolio Manager"]
     TR["📜 Every call graded vs SPY"] -.-> PM
-    PM --> RG["🛡️ Risk gate<br/>sizing · caps · forecast check"]
+    PA["🏦 Paper account"] -.-> PM
+    PM --> RG["🛡️ Risk gate<br/>sizing · caps vs paper equity · forecast check"]
+    PA -.-> RG
     RG --> OUT["✅ BUY · HOLD · SELL"]
     OUT --> C["💬 Manager chat"]
     OUT --> O["🧾 Paper order"]
