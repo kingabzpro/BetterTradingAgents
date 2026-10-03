@@ -1,6 +1,7 @@
-"""Offline checks for decision comparison and `What changed` (ROADMAP P1.5).
+"""Offline checks for the `What changed` diff engine (app/changes.py) and the
+price-history endpoint it shares a page with.
 
-Run: PYTHONPATH=. uv run python scripts/check_compare.py
+Run: PYTHONPATH=. uv run python scripts/check_changes.py
 No network: prices are stubbed and run history is written directly to SQLite.
 """
 
@@ -11,7 +12,7 @@ from pathlib import Path
 import tempfile
 
 # Isolated DB before app.config is imported.
-_TMP = Path(tempfile.mkdtemp()) / "compare_test.db"
+_TMP = Path(tempfile.mkdtemp()) / "changes_test.db"
 os.environ["DB_PATH"] = str(_TMP)
 os.environ["LLM_API_KEY"] = ""
 os.environ["OLOSTEP_API_KEY"] = ""
@@ -30,7 +31,7 @@ from app.models import (  # noqa: E402
     StockAnalysis,
 )
 
-OWNER = "device_compare_test"
+OWNER = "device_changes_test"
 
 
 def _analysis(
@@ -128,31 +129,31 @@ async def checks() -> None:
     print("attach OK")
 
     # ---- previous_call lookup ----------------------------------------------
-    run1 = _run("comprun000001", 1_780_000_000.0, _analysis("BUY", 0.72, price=190.0))
+    run1 = _run("chg_run000001", 1_780_000_000.0, _analysis("BUY", 0.72, price=190.0))
     await run_history.save(run1, completed_at=1_780_000_010.0, owner_id=OWNER)
-    run2 = _run("comprun000002", 1_780_100_000.0, _analysis("SELL", 0.40, price=175.0))
+    run2 = _run("chg_run000002", 1_780_100_000.0, _analysis("SELL", 0.40, price=175.0))
     await run_history.save(run2, completed_at=1_780_100_011.0, owner_id=OWNER)
 
     # A third run in progress picks the newest completed call before its start.
-    call = await changes.previous_call(OWNER, "AAPL", "comprun000003", 1_780_200_000.0)
-    assert call is not None and call.run_id == "comprun000002"
+    call = await changes.previous_call(OWNER, "AAPL", "chg_run000003", 1_780_200_000.0)
+    assert call is not None and call.run_id == "chg_run000002"
     assert call.decision == "SELL" and call.analyzed_at == 1_780_100_000.0
     assert call.signals.get("technical") == "bullish"
 
     # The run itself is never its own previous; the older call wins then.
-    call = await changes.previous_call(OWNER, "AAPL", "comprun000002", 1_780_100_000.0)
-    assert call is not None and call.run_id == "comprun000001" and call.decision == "BUY"
+    call = await changes.previous_call(OWNER, "AAPL", "chg_run000002", 1_780_100_000.0)
+    assert call is not None and call.run_id == "chg_run000001" and call.decision == "BUY"
 
     # Nothing before the first call, nothing for an unanalyzed ticker.
-    assert await changes.previous_call(OWNER, "AAPL", "comprun000001", 1_780_000_000.0) is None
-    assert await changes.previous_call(OWNER, "MSFT", "comprun000003", 1_780_200_000.0) is None
+    assert await changes.previous_call(OWNER, "AAPL", "chg_run000001", 1_780_000_000.0) is None
+    assert await changes.previous_call(OWNER, "MSFT", "chg_run000003", 1_780_200_000.0) is None
 
     # Failed results are skipped: a later failed run is not a previous call.
-    failed = _run("comprun000004", 1_780_300_000.0, _analysis("BUY", 0.5))
+    failed = _run("chg_run000004", 1_780_300_000.0, _analysis("BUY", 0.5))
     failed.results["AAPL"].error = "boom"
     await run_history.save(failed, completed_at=1_780_300_001.0, owner_id=OWNER)
-    call = await changes.previous_call(OWNER, "AAPL", "comprun000005", 1_780_400_000.0)
-    assert call is not None and call.run_id == "comprun000002"
+    call = await changes.previous_call(OWNER, "AAPL", "chg_run000005", 1_780_400_000.0)
+    assert call is not None and call.run_id == "chg_run000002"
     print("previous_call OK")
 
     # ---- price-history endpoint --------------------------------------------
@@ -182,15 +183,8 @@ async def checks() -> None:
         empty = await client.get("/api/price-history/AAPL")
         assert empty.status_code == 200
         assert empty.json() == {"ticker": "AAPL", "dates": [], "closes": []}
-
-        # ---- compare page ----------------------------------------------------
-        page = await client.get("/compare")
-        assert page.status_code == 200
-        assert "Compare decisions" in page.text
-        assert "Add to compare" in page.text
-        assert "What changed" in page.text
-    print("price-history + compare page OK")
+    print("price-history OK")
 
 
 asyncio.run(checks())
-print("COMPARE CHECKS PASSED")
+print("CHANGES CHECKS PASSED")

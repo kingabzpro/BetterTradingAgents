@@ -6,7 +6,6 @@ import {
 } from "./constants.js?v=11";
 import { activeAgents, depthProfile } from "./options.js?v=11";
 import { state } from "./state.js?v=11";
-import { saveToWatchlist } from "./watchlist-actions.js?v=11";
 import { attachPaperOrder } from "./broker-actions.js?v=11";
 import { loadPriceChart } from "./price-chart.js?v=11";
 import { retryTicker } from "./tickers.js?v=11";
@@ -403,9 +402,6 @@ export function renderResultCard(analysis) {
   const changed = analysis.what_changed?.length
     ? `<div class="what-changed"><span class="eyebrow eyebrow-flat">What changed</span><ul>${analysis.what_changed.map((line) => `<li>${escapeHtml(line)}</li>`).join("")}</ul>${analysis.previous?.analyzed_at ? `<small class="muted">vs the call on ${escapeHtml(formatDateTime(analysis.previous.analyzed_at * 1000))}${analysis.previous.run_id ? ` · run ${escapeHtml(analysis.previous.run_id)}` : ""}</small>` : ""}</div>`
     : "";
-  const compareLink = state.runId && !analysis.error
-    ? `<a class="secondary-btn compare-btn" href="/compare?items=${encodeURIComponent(`${state.runId}:${ticker}`)}">Compare</a>`
-    : "";
   const printBtn = '<button class="secondary-btn print-btn" type="button">Print brief</button>';
 
   card.innerHTML = `
@@ -442,7 +438,7 @@ export function renderResultCard(analysis) {
       <section class="result-block" aria-labelledby="evidence-title-${ticker}"><div class="block-heading"><h3 id="evidence-title-${ticker}">Analyst evidence</h3></div><div class="grid-3">${evidenceHtml}</div>${skippedResearch.length ? `<p class="hint">Skipped for speed: ${skippedResearch.map((key) => EVIDENCE_META[key].title).join(" · ")}</p>` : ""}</section>
       <section class="result-block sources-block" aria-labelledby="sources-title-${ticker}"><div class="block-heading"><h3 id="sources-title-${ticker}">Sources</h3><p>${escapeHtml(providerText(analysis.providers))}</p></div>${renderSources(analysis.source_references)}</section>
       ${renderTrackRecord(analysis, ticker)}
-      <div class="result-actions">${analysis.decision === "BUY" && analysis.price ? "" : '<span class="muted">Paper orders are offered on BUY calls with a live price.</span>'}<div class="add-row watch-row">${analysis.error ? '<span class="muted">Watchlist saves need a finished call.</span>' : `<button class="secondary-btn watch-btn" id="watch-${ticker}" type="button">Save to watchlist</button><span class="added-note hidden" id="watched-${ticker}" role="status"></span>`}${compareLink}${printBtn}<button class="secondary-btn retry-btn" type="button">Retry ${escapeHtml(ticker)}</button></div></div>
+      <div class="result-actions">${analysis.decision === "BUY" && analysis.price ? "" : '<span class="muted">Paper orders are offered on BUY calls with a live price.</span>'}<div class="add-row">${printBtn}<button class="secondary-btn retry-btn" type="button">Retry ${escapeHtml(ticker)}</button></div></div>
     </div>`;
 
   const existing = $(`result-${ticker}`);
@@ -469,12 +465,6 @@ export function renderResultCard(analysis) {
   // SELL when the paper account holds the ticker. Appends itself only then.
   if (!analysis.error) {
     attachPaperOrder(card.querySelector(".result-actions"), analysis, state.runId || "");
-  }
-  if (!analysis.error && $(`watch-${ticker}`)) {
-    $(`watch-${ticker}`).addEventListener("click", () => {
-      const runId = state.runId || "";
-      saveToWatchlist(ticker, runId);
-    });
   }
   if (!analysis.error) {
     $(`chat-toggle-${ticker}`).addEventListener("click", () => toggleChat(ticker));

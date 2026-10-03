@@ -299,69 +299,9 @@ def check_history_page(page) -> None:
         "document.activeElement && document.activeElement.id === 'results-heading'",
         timeout=10_000,
     )
-
-
-def check_compare_page(page) -> None:
-    # Two completed runs of the same ticker exist by now; the rerun was a
-    # cache hit whose result carries the deterministic `What changed` diff.
-    page.goto(f"{BASE_URL}/history", wait_until="networkidle")
-    client_id = page.evaluate("localStorage.getItem('bta:clientId')") or ""
-    request = urllib.request.Request(
-        f"{BASE_URL}/api/runs?limit=10", headers={"X-Client-ID": client_id}
-    )
-    with urllib.request.urlopen(request, timeout=10) as response:
-        history_runs = json.load(response)
-    assert len(history_runs) >= 2, "the smoke journey should leave at least two runs"
-    new_run, old_run = history_runs[0]["run_id"], history_runs[1]["run_id"]
-
-    page.goto(
-        f"{BASE_URL}/compare?items={new_run}:{TICKER},{old_run}:{TICKER}",
-        wait_until="networkidle",
-    )
-    page.wait_for_selector(".compare-col", timeout=10_000)
-    assert page.locator(".compare-col").count() == 2, "two items must render two columns"
-    content = page.content()
-    for label in ("Final call", "Manager call", "Evidence strength", "Analyst split",
-                  "Price", "5-day forecast", "Data age", "Risk flags", "Suggested size"):
-        assert label in content, f"comparison row missing: {label}"
-    assert "What changed" in content, "repeat analyses must lead with What changed"
-    assert "Decision unchanged" in content, "the repeat-run diff must be shown"
-    assert page.evaluate(
-        "[...document.querySelectorAll('button')].filter((b) => "
-        "!(b.getAttribute('aria-label') || b.textContent.trim())).length === 0"
-    ), "every button needs an accessible name"
-
-    # Keyboard reorder: move the second column left, the URL follows.
-    tab_until_focused(page, ".compare-col:nth-child(2) .move-btn")
-    page.keyboard.press("Enter")
-    assert page.evaluate("new URLSearchParams(location.search).get('items')") == \
-        f"{old_run}:{TICKER},{new_run}:{TICKER}", "reorder must update the shareable URL"
-    page.wait_for_function(
-        "(run) => document.querySelector('.compare-col')?.textContent.includes(run)",
-        arg=old_run,
-        timeout=10_000,
-    )
-
-    # Keyboard remove: one column left, still in the URL.
-    tab_until_focused(page, ".compare-col .remove-btn")
-    page.keyboard.press("Enter")
-    page.wait_for_function(
-        "document.querySelectorAll('.compare-col').length === 1", timeout=10_000
-    )
-    assert page.evaluate("new URLSearchParams(location.search).get('items')") == \
-        f"{new_run}:{TICKER}"
-
-    # Add the other run back through the form, keyboard-activated.
-    page.select_option("#add-run", old_run)
-    page.select_option("#add-ticker", TICKER)
-    tab_until_focused(page, "#add-compare")
-    page.keyboard.press("Enter")
-    page.wait_for_function(
-        "document.querySelectorAll('.compare-col').length === 2", timeout=10_000
-    )
-
-    assert_no_page_scroll(page, 1440, "compare page")
-    assert_no_page_scroll(page, 320, "compare page")
+    # The rerun is a cache-hit repeat analysis: it must lead with What changed.
+    assert "What changed" in (page.text_content("#results-list .result-card") or ""), \
+        "repeat analyses must lead with What changed"
     page.set_viewport_size({"width": 1280, "height": 900})
 
 
@@ -809,7 +749,6 @@ def main() -> None:
                 page = browser.new_page(viewport={"width": 1280, "height": 900})
                 check_analysis_page(page)
                 check_history_page(page)
-                check_compare_page(page)
                 check_p1_6_filters_and_exports(page)
                 check_paper_portfolio(page)
             finally:

@@ -342,63 +342,6 @@ class PortfolioSummary(BaseModel):
     history: list[PortfolioPosition] = []
 
 
-class WatchlistCall(BaseModel):
-    """One recorded analysis used as a watchlist baseline or current call (P1.4)."""
-
-    run_id: str = ""
-    analyzed_at: float | None = None
-    decision: Decision | None = None
-    confidence: float | None = None  # evidence strength, never a profit probability
-    price: float | None = None
-    as_of: str = ""
-    risk_flags: list[str] = Field(default_factory=list)
-
-
-class WatchlistItem(BaseModel):
-    """A saved ticker with its baseline call and any newer reanalysis (P1.4)."""
-
-    id: int
-    ticker: str
-    note: str = ""
-    outlook: Outlook = DEFAULT_OUTLOOK
-    depth: Depth = DEFAULT_DEPTH
-    _depth_validator = field_validator("depth", mode="before")(classmethod(lambda cls, value: _depth_value(value)))
-    added_at: str = ""
-    last_call: WatchlistCall | None = None  # baseline: the call being tracked
-    current_call: WatchlistCall | None = None  # newest comparable completed call, if any
-    change_status: Literal["not_reanalyzed", "no_change", "changed"] = "not_reanalyzed"
-    decision_changed: bool = False
-    evidence_changed: bool = False  # Low/Moderate/Strong bucket moved
-    price_move_pct: float | None = None  # baseline price -> live price
-    live_price: float | None = None
-    data_age_hours: float | None = None  # age of current_call.as_of when present
-    unresolved_risk_flags: list[str] = Field(default_factory=list)
-    view_run_id: str | None = None  # prefer current call's run, else baseline
-
-
-class WatchlistAddRequest(BaseModel):
-    ticker: str = Field(min_length=1, max_length=12)
-    note: str = Field(default="", max_length=500)
-    outlook: Outlook = DEFAULT_OUTLOOK
-    depth: Depth = DEFAULT_DEPTH
-    _depth_validator = field_validator("depth", mode="before")(classmethod(lambda cls, value: _depth_value(value)))
-    run_id: str | None = Field(
-        default=None, max_length=64
-    )  # snapshot the baseline from this run's result
-
-
-class WatchlistUpdateRequest(BaseModel):
-    note: str | None = Field(default=None, max_length=500)
-    outlook: Outlook | None = None
-    depth: Depth | None = None
-    _depth_validator = field_validator("depth", mode="before")(classmethod(lambda cls, value: _depth_value(value)))
-
-
-class WatchlistAddResponse(BaseModel):
-    item: WatchlistItem
-    already_watched: bool = False
-
-
 class BrokerStatus(BaseModel):
     """Whether the Alpaca paper connection exists and submissions are allowed.
 
