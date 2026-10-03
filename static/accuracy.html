@@ -12,7 +12,7 @@
   <link rel="icon" type="image/png" href="/static/favicon.png?v=2">
   <link rel="apple-touch-icon" href="/static/favicon.png?v=2">
   <link rel="stylesheet" href="/static/css/base.css?v=6">
-  <link rel="stylesheet" href="/static/css/accuracy.css?v=1">
+  <link rel="stylesheet" href="/static/css/accuracy.css?v=2">
 </head>
 <body>
   <a class="skip-link" href="#main-content">Skip to content</a>
@@ -42,14 +42,27 @@
         <div>
           <span class="eyebrow">Graded automatically</span>
           <h2 id="accuracy-heading" tabindex="-1">Past calls vs the market</h2>
-          <p>Every call is graded <span id="horizon-note">after its window closes</span>: what the stock returned, what SPY returned over the same days, and the verdict by the app's own rule. Right and wrong are decided by the same edges the reflections use, and small samples stay labeled: read n=3 as a curiosity, not a statistic.</p>
+          <p>Every call is graded after its window closes: what the stock returned, what SPY returned over the same days, and the verdict by the app's own rule. Right and wrong are decided by the same edges the reflections use, and small samples stay labeled: read n=3 as a curiosity, not a statistic.</p>
         </div>
       </section>
 
       <p id="accuracy-status" class="accuracy-status" role="status" aria-live="polite">Loading the accuracy report…</p>
 
+      <details class="grading-explainer" open>
+        <summary>How calls are graded</summary>
+        <ul>
+          <li>A call is graded once its <span class="horizon-fill">window</span> closes: entry is the first close on/after the call date, exit the last close inside the window, and SPY is graded over the same days.</li>
+          <li><strong>BUY and SELL</strong> are right or wrong by alpha vs SPY beyond ±1%; inside that band they are neutral. <strong>HOLD</strong> is right when the stock slides more than 2% (standing aside saved money), wrong when it gains more than 2% (a missed gain), neutral in between.</li>
+          <li>Hit rate counts decisive calls only; neutrals stay visible as their own count. A repeated analysis of the same call on the same day counts once, so re-runs cannot multiply one outcome.</li>
+        </ul>
+      </details>
+
+      <p id="accuracy-small-sample" class="accuracy-small-sample hidden"></p>
+
       <section id="accuracy-aggregates" class="accuracy-aggregates hidden" aria-label="Aggregates by decision"></section>
 
+      <p id="accuracy-per-signal" class="accuracy-per-signal hidden"></p>
+      <p id="accuracy-slides" class="accuracy-slides hidden"></p>
       <p id="accuracy-pending" class="accuracy-pending hidden"></p>
 
       <section id="accuracy-table-card" class="card table-wrap hidden" aria-label="Graded decisions">
@@ -81,6 +94,6 @@
   </div>
 
   <div id="toast" class="toast hidden" role="alert" aria-live="assertive" aria-atomic="true"></div>
-  <script src="/static/js/accuracy.js?v=1"></script>
+  <script src="/static/js/accuracy.js?v=2"></script>
 </body>
 </html>

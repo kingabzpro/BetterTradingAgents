@@ -11,6 +11,25 @@
 .accuracy-intro p { max-width: 760px; margin: 0; color: var(--muted); font-size: 14px; line-height: 1.65; }
 .accuracy-status { margin: 0 0 14px; color: var(--muted); font-size: 12px; }
 
+.grading-explainer {
+  border: 1px solid var(--border); border-radius: 12px; background: var(--panel);
+  padding: 12px 16px; margin: 0 0 14px;
+}
+.grading-explainer summary {
+  cursor: pointer; color: var(--text); font-size: 13px; font-weight: 700;
+}
+.grading-explainer ul { margin: 10px 0 2px; padding-left: 18px; }
+.grading-explainer li { color: var(--muted); font-size: 12.5px; line-height: 1.65; margin-bottom: 6px; }
+.grading-explainer strong { color: var(--text); }
+
+.accuracy-small-sample {
+  margin: 0 0 14px; padding: 9px 14px; border-radius: 10px; font-size: 12.5px;
+  color: #f5c66b; background: rgba(245, 198, 107, 0.08); border: 1px solid rgba(245, 198, 107, 0.3);
+}
+.accuracy-per-signal { margin: 0 0 10px; color: var(--text); font-size: 13px; }
+.accuracy-per-signal small { color: var(--muted); }
+.accuracy-slides { margin: 0 0 14px; color: #6fe0a0; font-size: 12.5px; }
+
 .accuracy-aggregates {
   display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin: 0 0 14px;
 }

@@ -38,6 +38,7 @@ CLOSES = {
     "CCCC": {OLD.isoformat(): 100.0, MID: 92.0, END: 91.0},    # HOLD, realized -8 -> right (avoided)
     "DDDD": {OLD.isoformat(): 100.0, MID: 105.0, END: 106.0},  # HOLD, realized +5 -> wrong (missed)
     "EEEE": {OLD.isoformat(): 100.0, MID: 100.5, END: 100.6},  # BUY,  alpha +0.3 -> neutral
+    "HHHH": {OLD.isoformat(): 100.0, MID: 85.0, END: 84.0},    # HOLD, realized -15 -> right (slide avoided)
     "SPY": {OLD.isoformat(): 100.0, MID: 100.2, END: 100.3},
 }
 FETCHED: list[str] = []
@@ -63,9 +64,11 @@ async def seed() -> None:
     await memory.init()
     for ticker, decision in (
         ("AAAA", "BUY"), ("BBBB", "SELL"), ("CCCC", "HOLD"),
-        ("DDDD", "HOLD"), ("EEEE", "BUY"), ("GGGG", "BUY"),
+        ("DDDD", "HOLD"), ("EEEE", "BUY"), ("GGGG", "BUY"), ("HHHH", "HOLD"),
     ):
         await memory.record_decision("acc0000001", analysis_for(ticker, decision), OLD.isoformat())
+    # A rerun of the same call on the same day: one call, must count once.
+    await memory.record_decision("acc0000001", analysis_for("AAAA", "BUY"), OLD.isoformat())
     # Decided today: the window is open, so no price fetch may happen for it.
     await memory.record_decision("acc0000002", analysis_for("FFFF", "BUY"), TODAY.isoformat())
 
@@ -87,39 +90,54 @@ async def checks() -> None:
 
     # ---- first report: grade, aggregate, count pending -----------------------
     report = await accuracy.accuracy_report()
-    assert report["graded"] == 5 and report["pending"] == 2, report
+    assert report["graded"] == 6 and report["pending"] == 2, report
     verdicts = {row["ticker"]: row["verdict"] for row in report["rows"]}
     assert verdicts == {
         "AAAA": "right", "BBBB": "right", "CCCC": "right",
-        "DDDD": "wrong", "EEEE": "neutral",
+        "DDDD": "wrong", "EEEE": "neutral", "HHHH": "right",
     }, verdicts
-    # Newest first; same-date rows fall back to newest inserted.
+    # The duplicate AAAA rerun must not appear: one call counts once.
+    assert len(report["rows"]) == 6 and len(verdicts) == 6
+    # Newest first; the deduped AAAA keeps its newest id (the rerun row), so it leads.
     assert [row["ticker"] for row in report["rows"]] == [
-        "EEEE", "DDDD", "CCCC", "BBBB", "AAAA",
+        "AAAA", "HHHH", "EEEE", "DDDD", "CCCC", "BBBB",
     ]
     aaaa = next(row for row in report["rows"] if row["ticker"] == "AAAA")
     assert aaaa["realized_return_pct"] == 3.0 and aaaa["spy_return_pct"] == 0.2
     assert aaaa["alpha_vs_spy_pct"] == 2.8 and aaaa["entry_price"] == 100.0
+    assert aaaa["lesson"], "each row must carry its one-line lesson"
 
     by = {group["decision"]: group for group in report["by_decision"]}
     assert by["BUY"] == {
         "decision": "BUY", "n": 2, "right": 1, "wrong": 0, "neutral": 1,
         "hit_rate": 1.0, "mean_alpha_pct": (2.8 + 0.3) / 2,
+        "mean_realized_pct": (3.0 + 0.5) / 2,
     }, by["BUY"]
     assert by["SELL"]["n"] == 1 and by["SELL"]["hit_rate"] == 1.0
-    assert by["HOLD"]["n"] == 2 and by["HOLD"]["hit_rate"] == 0.5
-    assert by["HOLD"]["mean_alpha_pct"] == (-8.2 + 4.8) / 2
+    assert by["HOLD"]["n"] == 3 and abs(by["HOLD"]["hit_rate"] - 2 / 3) < 1e-9
+    assert abs(by["HOLD"]["mean_alpha_pct"] - (-8.2 + 4.8 - 15.2) / 3) < 1e-9
+    assert abs(by["HOLD"]["mean_realized_pct"] - (-8.0 + 5.0 - 15.0) / 3) < 1e-9
 
-    # Only window-closed tickers were fetched: the six stale tickers plus SPY,
+    # Per-signal: long-only following (BUYs ride, others cash) vs always-buy vs SPY.
+    per_signal = report["per_signal"]
+    assert per_signal["n"] == 6
+    assert abs(per_signal["follow_calls_pct"] - (3.0 + 0.5) / 6) < 1e-9
+    assert abs(per_signal["always_buy_pct"] - (3.0 - 10.0 - 8.0 + 5.0 + 0.5 - 15.0) / 6) < 1e-9
+    assert abs(per_signal["spy_pct"] - 0.2) < 1e-9
+
+    # Only HHHH's -15% slide clears the double-digit bar (CCCC -8% does not).
+    assert report["avoided_slides"] == [{"ticker": "HHHH", "realized_pct": -15.0}]
+
+    # Only window-closed tickers were fetched: the seven stale tickers plus SPY,
     # never FFFF (window open).
     assert "FFFF" not in FETCHED
-    assert set(FETCHED) == {"AAAA", "BBBB", "CCCC", "DDDD", "EEEE", "GGGG", "SPY"}
+    assert set(FETCHED) == {"AAAA", "BBBB", "CCCC", "DDDD", "EEEE", "GGGG", "HHHH", "SPY"}
     print("grading + aggregates OK")
 
     # ---- outcomes persist; the second report re-fetches only the gap --------
     FETCHED.clear()
     report2 = await accuracy.accuracy_report()
-    assert report2["graded"] == 5 and report2["pending"] == 2
+    assert report2["graded"] == 6 and report2["pending"] == 2
     assert set(FETCHED) == {"GGGG", "SPY"}, FETCHED
     print("persistence OK")
 
@@ -129,9 +147,11 @@ async def checks() -> None:
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://127.0.0.1") as client:
         body = (await client.get("/api/accuracy")).json()
-        assert body["graded"] == 5 and body["pending"] == 2
+        assert body["graded"] == 6 and body["pending"] == 2
         assert body["horizon_days"] == settings.memory_horizon_days
-        assert len(body["rows"]) == 5 and len(body["by_decision"]) == 3
+        assert len(body["rows"]) == 6 and len(body["by_decision"]) == 3
+        assert body["per_signal"]["n"] == 6 and len(body["avoided_slides"]) == 1
+        assert body["rows"][0]["lesson"]
 
         page = await client.get("/accuracy")
         assert page.status_code == 200
