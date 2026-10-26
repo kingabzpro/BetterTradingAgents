@@ -23,7 +23,7 @@ export function setDepth(depth) {
   // Old saved depths keep working: medium -> pro, expert -> max.
   const aliases = { medium: "pro", expert: "max" };
   const key = aliases[depth] || depth;
-  state.depth = DEPTH_PROFILES[key] ? key : "pro";
+  state.depth = DEPTH_PROFILES[key] ? key : "fast";
   document.querySelectorAll("[data-depth]").forEach((button) => {
     const selected = button.dataset.depth === state.depth;
     button.classList.toggle("selected", selected);

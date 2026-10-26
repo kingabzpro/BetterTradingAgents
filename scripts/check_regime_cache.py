@@ -110,6 +110,7 @@ async def _analyze(ticker: str, incognito: bool = False, indices=None):
             market_data=_snapshot(ticker),
             held_closes={},
             incognito=incognito,
+            depth="pro",
         ),
         120,
     )

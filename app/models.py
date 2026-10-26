@@ -617,7 +617,7 @@ class AutomationStatus(BaseModel):
     candidates: int = 0
     min_confidence: float = 0.0
     outlook: str = "short_term"
-    depth: str = "pro"
+    depth: str = "fast"
     allow_sells: bool = True
     next_check_at: float | None = None
     sessions: list[AutomationSession] = Field(default_factory=list)

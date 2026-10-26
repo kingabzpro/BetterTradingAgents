@@ -204,6 +204,7 @@ _result = asyncio.run(
             market_data=_snapshot,
             live_context=False,
             exclude_analysts=("market", "fundamental", "news", "sentiment"),
+            depth="pro",
         ),
         90,
     )

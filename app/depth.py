@@ -17,7 +17,7 @@ runs and links saved before the rename keep working.
 from typing import Any, Literal
 
 Depth = Literal["fast", "pro", "max"]
-DEFAULT_DEPTH: Depth = "pro"
+DEFAULT_DEPTH: Depth = "fast"
 _DEPTH_ALIASES = {"medium": "pro", "expert": "max"}
 
 _ALL_RESEARCH = ("market", "technical", "fundamental", "news", "forecast", "sentiment")

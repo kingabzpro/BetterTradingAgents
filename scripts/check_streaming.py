@@ -185,7 +185,7 @@ async def e2e():
 
     # live_context=True (with an isolated empty DB) so the mock token stream runs.
     result = await asyncio.wait_for(
-        workflow.analyze_ticker("NVDA", emit, market_data=snapshot("NVDA"),
+        workflow.analyze_ticker("NVDA", emit, depth="pro", market_data=snapshot("NVDA"),
                                 live_context=True),
         timeout=90,
     )
@@ -223,7 +223,7 @@ async def e2e():
     # Backtest replay (live_context=False): no token events at all.
     stream_events.clear()
     await asyncio.wait_for(
-        workflow.analyze_ticker("AMD", emit, market_data=snapshot("AMD"),
+        workflow.analyze_ticker("AMD", emit, depth="pro", market_data=snapshot("AMD"),
                                 live_context=False),
         timeout=90,
     )
