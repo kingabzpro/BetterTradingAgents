@@ -1225,6 +1225,22 @@ async def analyze_ticker(
         "forecast": slot("forecast", forecast_r),
     }
 
+    # Phase 5, improvement 1: annotate the research context with each
+    # analyst's graded hit rate so the LLM manager weights evidence by
+    # demonstrated skill. Live only (replays read no live history) and
+    # best-effort (no scorecard yet = no annotation).
+    if live_context and not incognito:
+        try:
+            from app import calibration
+
+            scorecard = await asyncio.to_thread(calibration.analyst_scorecard)
+            for key, stats in scorecard.get("analysts", {}).items():
+                if key in context and isinstance(context[key], dict) and stats.get("available"):
+                    context[key]["scorecard_hit_rate_pct"] = stats["hit_rate_pct"]
+                    context[key]["scorecard_directional_calls"] = stats["directional_calls"]
+        except Exception as exc:  # noqa: BLE001 - annotation is best-effort
+            logger.debug("[analysis] scorecard annotation unavailable: %s", exc)
+
     # Stage 2: bull and bear in parallel. Fast depth skips the debate
     # entirely; the manager then weighs the research directly (its payload
     # marks the debate SKIPPED via slot()).
@@ -1481,6 +1497,42 @@ async def analyze_ticker(
             risk_flags.append(f"risk regime: {regime.detail}")
         if calibration_note:
             risk_flags.append(calibration_note)
+
+        # Phase 5, improvement 2: the judge's strength scores become a sizing
+        # signal, not another vote. A judge that found the bull case strongly
+        # supported (bull_strength 0.8) and the bear weakly (bear_strength
+        # 0.3) scales the position UP toward the manager's proposal; a judge
+        # that found both cases equally strong scales it DOWN. This converts
+        # the judge from "another signal that averages toward neutral" into
+        # "a risk lens that modulates conviction" - the measured problem
+        # with deeper rosters was over-caution, not bad picks.
+        if judge_r is not None and decision == "BUY" and size_usd:
+            _bull_strength = getattr(judge_r, "bull_strength", None) or 0.5
+            _bear_strength = getattr(judge_r, "bear_strength", None) or 0.5
+            # conviction = how one-sided the debate was (0 = even, 1 = one
+            # side dominated); direction = which side won
+            _conviction = round(abs(_bull_strength - _bear_strength), 2)
+            _winner_strength = max(_bull_strength, _bear_strength)
+            # The multiplier: 1.0 when the debate was one-sided and the
+            # winner supports this BUY, scaled down toward 0.5 when both
+            # sides were equally strong (a genuine coin-flip).
+            if _bull_strength > _bear_strength:
+                # judge agrees with the BUY: high conviction = full size
+                _multiplier = 1.0 - (_conviction * 0)  # agrees = no penalty
+            else:
+                # judge leans against the BUY: scale by how strongly
+                _multiplier = max(0.5, 1.0 - _conviction)
+            if _multiplier < 1.0:
+                original_size = size_usd
+                size_usd = round(size_usd * _multiplier, 2)
+                risk_flags.append(
+                    f"judge sizing x{_multiplier:.2f}: debate conviction "
+                    f"({_bull_strength:.1f} bull vs {_bear_strength:.1f} bear)"
+                )
+                logger.info(
+                    "[risk] %s judge sizing x%.2f ($%.0f -> $%.0f)",
+                    ticker, _multiplier, original_size, size_usd,
+                )
         # Weight contract (item 11): the manager's proposed share of equity
         # can only shrink the deterministic size, never raise it - the gate
         # stays the upper bound. The final weight is the actual position the
