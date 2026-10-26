@@ -10,6 +10,7 @@ reproducibility manifests, and paired one-change comparisons.
 
 import asyncio
 import json
+import math
 import os
 import tempfile
 from datetime import date, timedelta
@@ -31,6 +32,7 @@ from app.backtest.experiments import parse_pair  # noqa: E402
 from app.backtest.grade import (  # noqa: E402
     Decision,
     aggregate,
+    analyst_scorecard,
     bootstrap_mean_ci,
     buy_hold_pct,
     cumulative_return_pct,
@@ -39,6 +41,8 @@ from app.backtest.grade import (  # noqa: E402
     momentum_decision,
     momentum_signal,
     period_stats,
+    portfolio_returns,
+    probability_calibration,
     promotion_verdict,
     sharpe,
 )
@@ -87,9 +91,18 @@ out = grade(Decision("NVDA", "2024-01-22", "SELL", 0.7), CLOSES, SPY, 21, short=
 assert out.net_pct == 9.9 and out.alpha_pct == 9.4, out  # stock fell 10%, short wins
 print("short SELL grading OK:", out.net_pct)
 
+# long-only SELL: cash position (0 net) but the call is graded on relative
+# weakness vs SPY - the stock fell 10% while SPY rose 0.5%, so it was right.
 out = grade(Decision("NVDA", "2024-01-22", "SELL", 0.7), CLOSES, SPY, 21, short=False)
-assert out.net_pct == 0.0 and out.alpha_pct is None and "long-only" in out.note, out
-print("long-only SELL grading OK: scores 0, no alpha")
+assert out.net_pct == 0.0 and "long-only" in out.note, out
+assert out.alpha_pct == 10.5, out  # SPY +0.5% minus stock -10%
+print("long-only SELL grading OK: relative alpha", out.alpha_pct)
+
+# and the same call wrong-way: stock rose 10% while SPY rose 0.5%
+WRONG_WAY = {"2024-01-01": 100.0, "2024-01-22": 110.0, "2024-02-12": 115.0, "2024-03-04": 120.0}
+out = grade(Decision("NVDA", "2024-01-01", "SELL", 0.7), WRONG_WAY, SPY, 21, short=False)
+assert out.net_pct == 0.0 and out.alpha_pct == -9.5, out
+print("long-only SELL wrong-way OK: relative alpha", out.alpha_pct)
 
 out = grade(Decision("NVDA", "2024-02-12", "HOLD", 0.5), CLOSES, SPY, 21)
 assert out.net_pct == 0.0 and out.gross_pct == 6.06 and out.alpha_pct is None, out
@@ -120,6 +133,51 @@ assert buy_hold_pct(CLOSES, [one]) == 10.0  # 100 -> 110 (that outcome's exit)
 assert buy_hold_pct(CLOSES, [one, two]) == -1.0  # 100 -> 99 across both windows
 print("aggregate math OK: cum", metrics["cumulative_pct"], "hit", metrics["hit_rate_pct"])
 
+# ---- equal-weight portfolio accounting ------------------------------------------
+# Two decisions on one date split the capital: +9.9% and -10.1% mean -0.1%.
+same_day_a = grade(Decision("A", "2024-01-01", "BUY", 0.8), CLOSES, SPY, 21)
+same_day_b = grade(
+    Decision("B", "2024-01-01", "BUY", 0.8),
+    {"2024-01-01": 100.0, "2024-01-22": 90.0},
+    SPY,
+    21,
+)
+same_day_returns = portfolio_returns([same_day_a, same_day_b])
+assert len(same_day_returns) == 1 and math.isclose(same_day_returns[0], -0.1, abs_tol=1e-9), same_day_returns
+dual = aggregate([same_day_a, same_day_b], 21)
+assert dual["cumulative_pct"] == -0.1 and dual["hit_rate_pct"] == 50.0, dual
+# one decision per date keeps the old arithmetic (per-date mean == that net)
+assert metrics["cumulative_pct"] == -1.2
+print("equal-weight portfolio accounting OK: dual", dual["cumulative_pct"])
+
+# ---- manager probability calibration (backtest view of app.calibration) ----------
+cal_outcomes = [
+    grade(Decision("A", "2024-01-01", "BUY", 0.8, 0.8), CLOSES, SPY, 21),  # right
+    grade(Decision("A", "2024-01-22", "SELL", 0.7, 0.7), CLOSES, SPY, 21),  # right (relative)
+    grade(Decision("A", "2024-02-12", "SELL", 0.6, 0.6), WRONG_WAY, SPY, 21),  # wrong (relative)
+]
+cal = probability_calibration(cal_outcomes, min_observations=3)
+assert cal["n"] == 3 and cal["brier"] == 0.1633, cal  # (0.04 + 0.09 + 0.36) / 3
+bands = {b["label"]: b for b in cal["bands"]}
+assert bands["0.80 - 0.89"]["observed_rate"] == 1.0 and bands["0.60 - 0.69"]["observed_rate"] == 0.0
+gated = probability_calibration(cal_outcomes, min_observations=30)
+assert all(not b["available"] for b in gated["bands"])
+assert probability_calibration([])["brier"] is None
+print("probability calibration OK: brier", cal["brier"])
+
+# ---- analyst scorecard (pure) -----------------------------------------------------
+sc = analyst_scorecard([
+    ("technical", "bullish", 10.0, 0.5),   # right: stock beat SPY
+    ("technical", "bearish", -8.0, 0.5),   # right: stock lagged
+    ("news", "neutral", 5.0, 0.5),         # no-call: excluded
+    ("news", "bearish", 4.0, 0.5),         # wrong
+    ("bull", "bullish", None, None),       # ungradable: excluded
+])
+assert sc["technical"]["directional_calls"] == 2 and sc["technical"]["hit_rate_pct"] == 100.0, sc
+assert sc["news"]["directional_calls"] == 1 and sc["news"]["hit_rate_pct"] == 0.0, sc
+assert "neutral" not in str(sc["news"]) and "bull" not in sc
+print("analyst scorecard OK:", sc)
+
 # ---- anti-look-ahead news filter -------------------------------------------------
 assert published_on_or_before({"published": "2024-01-05T10:00:00+00:00"}, "2024-01-10")
 assert not published_on_or_before({"published": "2024-01-15T10:00:00+00:00"}, "2024-01-10")
@@ -135,6 +193,15 @@ assert "LOOK-AHEAD BIAS" in build_flags("mock", "current")["fundamentals_bias"]
 assert build_flags("mock", "sec_edgar")["fundamentals_vintage"] == "sec_edgar"
 assert "as filed" in build_flags("mock", "sec_edgar")["fundamentals_bias"]
 assert "no look-ahead" in build_flags("mock", "sec_edgar")["fundamentals_bias"]
+# forward/historical window labels: recent grid ends flip LLM risk to reduced
+today = date.today().isoformat()
+assert build_flags("llm", end="2024-01-01")["window"] == "historical"
+assert build_flags("llm", end="2024-01-01")["memorization_risk"] == "high"
+assert build_flags("llm", end=today)["window"] == "forward"
+assert build_flags("llm", end=today)["memorization_risk"].startswith("reduced")
+assert build_flags("mock", end=today)["memorization_risk"].startswith("low")
+assert build_flags("mock")["window"].startswith("unknown")
+assert "Headline performance claims" in build_flags("mock")["claims_policy"]
 print("report flags OK")
 
 # ---- fundamentals vintage views (P1.2) ---------------------------------------------
@@ -400,6 +467,20 @@ async def e2e():
     report_md = (OUT_DIR / "report-mock.md").read_text()
     assert "all HOLD" in report_md and "deterministic momentum" in report_md
     print("baselines OK: momentum positioned", baselines["momentum"]["positioned_n"])
+
+    # batch-1 additions: calibration, analyst scorecard, QQQ benchmark,
+    # equal-weight accounting note, and the historical window label
+    cal = payload["overall"]["calibration"]
+    assert cal["n"] >= 1 and isinstance(cal["brier"], float), cal
+    scorecard = payload["overall"]["analyst_scorecard"]
+    assert scorecard and all("hit_rate_pct" in v for v in scorecard.values()), scorecard
+    assert payload["overall"]["qqq_cumulative_pct"] is not None
+    assert payload["flags"]["window"] == "historical", payload["flags"]["window"]
+    assert "Manager probability calibration" in report_md
+    assert "Analyst scorecard" in report_md
+    assert "equal weight per decision date" in report_md
+    assert "QQQ" in report_md
+    print("batch-1 report sections OK:", sorted(scorecard))
 
     # manifest beside the report: revision, policy version, per-snapshot hashes
     manifest = json.loads((OUT_DIR / "manifest-mock.json").read_text())

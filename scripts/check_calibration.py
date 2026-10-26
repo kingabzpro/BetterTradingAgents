@@ -2,15 +2,18 @@
 
 Seeds a temporary decisions database with known outcomes, then verifies the
 bucket math, the minimum-sample gate, HOLD treatment (no invented win rate),
-the manager-probability Brier score, provenance recording, and the
-/api/calibration endpoint. No LLM and no network access.
+the manager-probability Brier score, the per-analyst scorecard join,
+provenance recording, and the /api/calibration endpoint. No LLM and no
+network access.
 
 Run: uv run python -m scripts.check_calibration
 """
 
 import asyncio
+import json
 import math
 import os
+from datetime import date
 from pathlib import Path
 import sqlite3
 import tempfile
@@ -21,7 +24,7 @@ os.environ["CALIBRATION_MIN_OBSERVATIONS"] = "4"
 
 import httpx  # noqa: E402
 
-from app import calibration, memory  # noqa: E402
+from app import calibration, memory, run_history  # noqa: E402
 from app.agents import manager as manager_agent  # noqa: E402
 from app.main import app  # noqa: E402
 from app.models import StockAnalysis  # noqa: E402
@@ -168,6 +171,59 @@ async def checks() -> None:
     assert mock_buy["decision"] == "BUY" and mock_buy["probability_beat_spy"] == 0.8
     mock_hold = manager_agent.mock("T", {"bull": {"confidence": 0.5}, "bear": {"confidence": 0.55}})
     assert mock_hold["decision"] == "HOLD" and mock_hold["probability_beat_spy"] is None
+
+    # Analyst scorecard: a mature decision joins its stored run results and
+    # every directional analyst call is graded against realized SPY alpha.
+    await run_history.init()
+    today = date.today().isoformat()
+    with sqlite3.connect(os.environ["DB_PATH"]) as connection:
+        connection.execute(
+            """
+            INSERT INTO decisions (
+                run_id, ticker, date, decision, confidence, price_at_decision,
+                realized_return_pct, spy_return_pct, alpha_vs_spy_pct,
+                mature, window_days, outlook, depth, model, policy_version
+            ) VALUES (
+                'run_sc', 'SC', ?, 'BUY', 0.45, 100, 3.0, 1.0, 2.0,
+                1, 21, 'short_term', 'medium', 'model-m', ?
+            )
+            """,
+            (today, calibration.DECISION_POLICY_VERSION),
+        )
+        connection.execute(
+            """
+            INSERT INTO analysis_runs (
+                run_id, tickers_json, status, mock_mode, started_at,
+                results_json, updated_at
+            ) VALUES ('run_sc', '["SC"]', 'completed', 1, 0, ?, 0)
+            """,
+            (
+                json.dumps(
+                    {
+                        "SC": {
+                            "technical": {"signal": "bullish"},   # right: alpha +2
+                            "news": {"signal": "bearish"},        # wrong: alpha -2
+                            "sentiment": {"signal": "neutral"},   # no-call
+                        }
+                    }
+                ),
+            ),
+        )
+    scorecard = calibration.analyst_scorecard(min_observations=1)
+    assert scorecard["window_days"] == calibration.ROLLING_WINDOW_DAYS
+    assert scorecard["analysts"]["technical"]["n"] == 1
+    assert scorecard["analysts"]["technical"]["hit_rate_pct"] == 100.0
+    assert scorecard["analysts"]["news"]["hit_rate_pct"] == 0.0
+    assert "sentiment" not in scorecard["analysts"], "neutral is a no-call"
+    text = calibration.scorecard_text(scorecard)
+    assert "technical: 100%" in text and "news: 0%" in text, text
+    assert "none yet" in calibration.scorecard_text(
+        {"analysts": {}, "min_observations": 30, "window_days": 90}
+    )
+    # a staler copy of the same join at the check's gate reports unavailable
+    gated_scorecard = calibration.analyst_scorecard(min_observations=4)
+    assert not gated_scorecard["analysts"]["technical"]["available"]
+    print("analyst scorecard OK:", text)
 
     # Endpoint: same scope as the report, 422 on a malformed decision.
     transport = httpx.ASGITransport(app=app)

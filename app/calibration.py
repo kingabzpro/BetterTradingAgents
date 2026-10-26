@@ -16,9 +16,10 @@ LLM calls - so a report can be regenerated with one command:
 
 from __future__ import annotations
 
+import json
 import sqlite3
 import statistics
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
 from app.config import settings
 
@@ -26,6 +27,30 @@ from app.config import settings
 # debate structure) so outcomes from different systems are never pooled
 # silently. Old rows keep the version they were recorded with.
 DECISION_POLICY_VERSION = "2026-10-e"
+
+# Analyst result fields scored in the per-analyst scorecard, and the signal
+# vocabulary that counts as a directional call (everything else is a no-call).
+ANALYST_FIELDS = (
+    "technical",
+    "fundamental",
+    "news",
+    "sentiment",
+    "forecast",
+    "market",
+    "bull",
+    "bear",
+    "judge",
+)
+SIGNAL_DIRECTIONS = {
+    "bullish": 1,
+    "buy": 1,
+    "long": 1,
+    "bearish": -1,
+    "sell": -1,
+    "short": -1,
+}
+ROLLING_WINDOW_DAYS = 90  # analyst record window: recent enough to stay relevant
+SCORECARD_LIMIT = 200  # most recent mature decisions considered per lookup
 
 def success_event(horizon_days: int | None = None) -> str:
     """Frozen success event for ManagerResult.probability_beat_spy, built from
@@ -203,6 +228,106 @@ def _probability_score(
     return bands, brier, len(scored)
 
 
+def analyst_scorecard(
+    db_path=None,
+    window_days: int = ROLLING_WINDOW_DAYS,
+    min_observations: int | None = None,
+) -> dict:
+    """Per-analyst directional record from the live decision memory.
+
+    Joins mature graded decisions with the stored run results
+    (analysis_runs.results_json) to recover what each researcher said at
+    decision time, then scores every directional call against the realized
+    SPY alpha: a bullish call is right when the stock beat SPY, a bearish
+    call when it lagged. The rolling window keeps the record recent; the
+    minimum-sample gate keeps thin samples from becoming advice. SQLite
+    reads only, no LLM calls.
+    """
+    min_n = (
+        settings.calibration_min_observations
+        if min_observations is None
+        else min_observations
+    )
+    path = settings.db_path if db_path is None else db_path
+    cutoff = (date.today() - timedelta(days=window_days)).isoformat()
+    rows: list = []
+    results: dict[str, dict] = {}
+    with sqlite3.connect(path) as connection:
+        connection.row_factory = sqlite3.Row
+        try:
+            rows = connection.execute(
+                "SELECT run_id, ticker, alpha_vs_spy_pct FROM decisions "
+                "WHERE mature = 1 AND alpha_vs_spy_pct IS NOT NULL AND run_id != '' "
+                "AND date >= ? ORDER BY date DESC LIMIT ?",
+                (cutoff, SCORECARD_LIMIT),
+            ).fetchall()
+            for run_id in {row["run_id"] for row in rows}:
+                try:
+                    raw = connection.execute(
+                        "SELECT results_json FROM analysis_runs WHERE run_id = ?",
+                        (run_id,),
+                    ).fetchone()
+                except sqlite3.OperationalError:
+                    break  # older databases may predate analysis_runs
+                if raw is None:
+                    continue
+                try:
+                    results[run_id] = json.loads(raw["results_json"] or "{}")
+                except ValueError:
+                    continue  # one corrupt run must not sink the scorecard
+        except sqlite3.OperationalError:
+            pass  # fresh database: no decisions table yet
+
+    alphas: dict[str, list[float]] = {}
+    for row in rows:
+        result = (results.get(row["run_id"]) or {}).get(row["ticker"])
+        if not isinstance(result, dict):
+            continue
+        alpha = row["alpha_vs_spy_pct"]
+        for key in ANALYST_FIELDS:
+            agent = result.get(key)
+            if not isinstance(agent, dict):
+                continue
+            direction = SIGNAL_DIRECTIONS.get(
+                str(agent.get("signal") or "").strip().lower(), 0
+            )
+            if direction:
+                alphas.setdefault(key, []).append(direction * alpha)
+
+    analysts: dict[str, dict] = {}
+    for name, values in sorted(alphas.items()):
+        n = len(values)
+        analysts[name] = {
+            "n": n,
+            "available": n >= min_n,
+            "hit_rate_pct": round(sum(1 for v in values if v > 0) / n * 100, 1),
+            "mean_alpha_pct": round(statistics.fmean(values), 2),
+        }
+    return {"window_days": window_days, "min_observations": min_n, "analysts": analysts}
+
+
+def scorecard_text(scorecard: dict) -> str:
+    """One compact block for the judge prompt (never invent a record)."""
+    analysts = scorecard.get("analysts") or {}
+    available = {name: stats for name, stats in analysts.items() if stats["available"]}
+    if not available:
+        return (
+            "none yet - no analyst has a mature record at the "
+            f"{scorecard.get('min_observations', '?')}-call minimum "
+            f"(window {scorecard.get('window_days', '?')}d)"
+        )
+    parts = [
+        f"{name}: {stats['hit_rate_pct']:.0f}% directional hit rate "
+        f"(n={stats['n']}, mean alpha {stats['mean_alpha_pct']:+.2f}%)"
+        for name, stats in available.items()
+    ]
+    text = "; ".join(parts)
+    thin = [name for name in analysts if name not in available]
+    if thin:
+        text += f". Below the minimum sample: {', '.join(thin)}"
+    return text
+
+
 def build_report(db_path=None, min_observations: int | None = None) -> str:
     """Full calibration report as markdown. SQLite reads only, no LLM calls."""
     min_n = settings.calibration_min_observations if min_observations is None else min_observations
@@ -306,8 +431,34 @@ def build_report(db_path=None, min_observations: int | None = None) -> str:
     lines += [
         "",
         f"Brier score: {'n/a' if brier is None else f'{brier:.4f}'} (lower is better; a constant 0.5 prediction scores 0.25).",
-        "",
     ]
+
+    scorecard = analyst_scorecard(db_path, min_observations=min_n)
+    lines += [
+        "",
+        "## Analyst scorecard",
+        "",
+        f"Every directional analyst call recovered from the stored runs and scored "
+        f"against realized SPY alpha, rolling {scorecard['window_days']}-day window; "
+        f"minimum {min_n} mature calls per analyst.",
+        "",
+        "| Analyst | Directional calls | Hit rate | Mean alpha |",
+        "|---|---|---|---|",
+    ]
+    for name, stats in scorecard["analysts"].items():
+        if stats["available"]:
+            lines.append(
+                f"| {name} | {stats['n']} | {_fmt_pct(stats['hit_rate_pct'] / 100)} "
+                f"| {_fmt_alpha(stats['mean_alpha_pct'])} |"
+            )
+        else:
+            lines.append(
+                f"| {name} | {stats['n']} | Track record unavailable "
+                f"(n={stats['n']} < {min_n}) | - |"
+            )
+    if not scorecard["analysts"]:
+        lines.append("| - | 0 | no mature graded decisions in the window | - |")
+    lines.append("")
     return "\n".join(lines)
 
 

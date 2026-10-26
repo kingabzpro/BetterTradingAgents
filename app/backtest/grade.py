@@ -2,10 +2,18 @@
 
 A BUY graded over the horizon window earns the stock's return minus the
 round-trip cost; a SELL earns the inverse when shorting is enabled, otherwise
-0 (long-only mode); a HOLD earns 0. Alpha compares the net decision return
-with SPY over the same window. Entry is the last close on/before the decision
-date, exit the first close on/after decision date + horizon days - windows
-without an exit close (too recent) are ungraded and excluded from aggregates.
+the position is cash (0 net) and the call is graded on relative weakness:
+alpha_pct = SPY - stock, positive when the stock underperformed. A HOLD earns
+0. alpha_pct is a call alpha throughout: positive always means the call's
+direction was right (for a BUY, net return above SPY; for a SELL, the stock
+below SPY). Entry is the last close on/before the decision date, exit the
+first close on/after decision date + horizon days - windows without an exit
+close (too recent) are ungraded and excluded from aggregates.
+
+Portfolio accounting is equal-weight: at each decision date the capital is
+split evenly across that date's decisions (positioned or cash), and the
+per-date returns compound. This replaces the old cash-except-BUY basis where
+each BUY compounded at 100% weight.
 """
 
 from dataclasses import dataclass, field
@@ -27,6 +35,7 @@ class Decision:
     date: str
     decision: str
     confidence: float
+    manager_probability: float | None = None  # P1.1 frozen success-event estimate
 
 
 @dataclass
@@ -39,10 +48,11 @@ class Outcome:
     exit: float
     window_days: int
     gross_pct: float  # the stock's own move over the window
-    net_pct: float  # what the decision earned after costs
+    net_pct: float  # what the decision earned after costs (0 for long-only SELL/HOLD)
     spy_pct: float | None
-    alpha_pct: float | None
+    alpha_pct: float | None  # call alpha: > 0 always means the call was right
     note: str = ""
+    manager_probability: float | None = None
 
 
 def grade(
@@ -70,7 +80,7 @@ def grade(
         if short:
             net = -gross - cost_pct
         else:
-            net, note = 0.0, "long-only mode: SELL scores 0"
+            net, note = 0.0, "long-only: SELL is cash, graded on relative weakness vs SPY"
     else:
         net, note = 0.0, "HOLD scores 0"
 
@@ -85,8 +95,15 @@ def grade(
     ):
         spy_pct = (spy_exit[1] / spy_entry[1] - 1) * 100
 
-    positioned = decision.decision == "BUY" or (decision.decision == "SELL" and short)
-    alpha = (net - spy_pct) if (spy_pct is not None and positioned) else None
+    # Call alpha, positive = the call's direction was right: a BUY must beat
+    # SPY on its net return; a long-only SELL must see the stock underperform
+    # (no shorting simulated); a short SELL is scored like a positioned BUY.
+    alpha = None
+    if spy_pct is not None:
+        if decision.decision == "BUY":
+            alpha = net - spy_pct
+        elif decision.decision == "SELL":
+            alpha = (net - spy_pct) if short else (spy_pct - gross)
 
     return Outcome(
         ticker=decision.ticker,
@@ -101,6 +118,7 @@ def grade(
         spy_pct=None if spy_pct is None else round(spy_pct, 2),
         alpha_pct=None if alpha is None else round(alpha, 2),
         note=note,
+        manager_probability=decision.manager_probability,
     )
 
 
@@ -109,7 +127,23 @@ def grade(
 # ---------------------------------------------------------------------------
 
 
+def portfolio_returns(outcomes: list[Outcome]) -> list[float]:
+    """Equal-weight per-date portfolio returns, oldest date first.
+
+    At each decision date the capital is split evenly across that date's
+    decisions; HOLD and long-only SELL slices stay in cash (0%), BUY slices
+    earn their net. The returned series feeds the compounding helpers below,
+    so cumulative return, drawdown, and Sharpe all describe one coherent
+    portfolio rather than a 100%-weight bet per decision.
+    """
+    by_date: dict[str, list[float]] = {}
+    for outcome in outcomes:
+        by_date.setdefault(outcome.date, []).append(outcome.net_pct)
+    return [fmean(by_date[day]) for day in sorted(by_date)]
+
+
 def cumulative_return_pct(nets: list[float]) -> float:
+    """Compounded return of a return series (per-date portfolio returns)."""
     equity = 1.0
     for net in nets:
         equity *= 1 + net / 100
@@ -117,7 +151,7 @@ def cumulative_return_pct(nets: list[float]) -> float:
 
 
 def max_drawdown_pct(nets: list[float]) -> float:
-    """Largest peak-to-trough drop of the compounded equity curve, in %."""
+    """Largest peak-to-trough drop of the compounded curve, in %."""
     equity, peak, drawdown = 1.0, 1.0, 0.0
     for net in nets:
         equity *= 1 + net / 100
@@ -127,7 +161,7 @@ def max_drawdown_pct(nets: list[float]) -> float:
 
 
 def sharpe(nets: list[float], periods_per_year: float) -> float:
-    """Annualized Sharpe of the per-decision returns (0 without variance)."""
+    """Annualized Sharpe of a return series (0 without variance)."""
     if len(nets) < 2:
         return 0.0
     std = pstdev(nets)
@@ -136,15 +170,29 @@ def sharpe(nets: list[float], periods_per_year: float) -> float:
     return round(fmean(nets) / std * (periods_per_year**0.5), 2)
 
 
+def _win(outcome: Outcome) -> bool:
+    """Did this call work? A BUY wins when it made money after costs; a SELL
+    wins when its direction was right vs SPY (net-based when shorting, the
+    relative-weakness alpha in long-only mode)."""
+    if outcome.decision == "BUY":
+        return outcome.net_pct > 0
+    return outcome.alpha_pct is not None and outcome.alpha_pct > 0
+
+
 def aggregate(outcomes: list[Outcome], step_days: int) -> dict:
-    """Per-run metrics: hit rate, averages, cumulative, Sharpe, drawdown."""
+    """Per-run metrics on the equal-weight portfolio basis.
+
+    Hit rate counts BUY and SELL calls (SELLs are graded relatively in
+    long-only mode, so they are no longer invisible in the denominator).
+    Cumulative, Sharpe, and max drawdown compound the per-date equal-weight
+    portfolio returns; avg_net and avg_alpha stay per-decision.
+    """
     nets = [o.net_pct for o in outcomes]
-    positioned = [
-        o for o in outcomes if o.decision == "BUY" or (o.decision == "SELL" and o.note == "")
-    ]
-    wins = [o for o in positioned if o.net_pct > 0]
+    positioned = [o for o in outcomes if o.decision in ("BUY", "SELL")]
+    wins = [o for o in positioned if _win(o)]
     alphas = [o.alpha_pct for o in outcomes if o.alpha_pct is not None]
     periods_per_year = 365.0 / max(1, step_days)
+    portfolio = portfolio_returns(outcomes)
     return {
         "decisions": len(outcomes),
         "counts": {
@@ -154,9 +202,9 @@ def aggregate(outcomes: list[Outcome], step_days: int) -> dict:
         "hit_rate_pct": round(len(wins) / len(positioned) * 100, 1) if positioned else None,
         "avg_net_pct": round(fmean(nets), 2) if nets else None,
         "avg_alpha_pct": round(fmean(alphas), 2) if alphas else None,
-        "cumulative_pct": cumulative_return_pct(nets),
-        "sharpe": sharpe(nets, periods_per_year),
-        "max_drawdown_pct": max_drawdown_pct(nets),
+        "cumulative_pct": cumulative_return_pct(portfolio),
+        "sharpe": sharpe(portfolio, periods_per_year),
+        "max_drawdown_pct": max_drawdown_pct(portfolio),
         "periods_per_year": round(periods_per_year, 1),
     }
 
@@ -182,7 +230,7 @@ def buy_hold_pct(closes: dict[str, float], outcomes: list[Outcome]) -> float | N
 
 
 def positioned_alphas(outcomes: list[Outcome]) -> list[float]:
-    """Alphas of decisions that took a position (BUY, or SELL when shorting)."""
+    """Call alphas of every directional decision (BUY and SELL, any mode)."""
     return [o.alpha_pct for o in outcomes if o.alpha_pct is not None]
 
 
@@ -234,6 +282,95 @@ def period_stats(
     metrics["alpha_ci_pct"] = ci
     metrics["verdict"] = promotion_verdict(len(alphas), ci)
     return metrics
+
+
+def probability_calibration(
+    outcomes: list[Outcome], min_observations: int | None = None
+) -> dict:
+    """Reliability of the manager's probability_beat_spy on this run's calls.
+
+    Mirrors app.calibration in the backtest (the live module reads SQLite):
+    the frozen success event is "the call's direction beats SPY over the
+    horizon", which on this harness is alpha_pct > 0 (call-alpha convention).
+    Rows without a recorded probability or a gradable SPY window stay out.
+    """
+    from app.calibration import PROBABILITY_BANDS
+    from app.config import settings
+
+    min_n = (
+        settings.calibration_min_observations
+        if min_observations is None
+        else min_observations
+    )
+    scored = [
+        o for o in outcomes if o.manager_probability is not None and o.alpha_pct is not None
+    ]
+
+    def outcome(outcome: Outcome) -> int:
+        return 1 if outcome.alpha_pct > 0 else 0
+
+    bands: list[dict] = []
+    lower = 0.0
+    for edge, label in PROBABILITY_BANDS:
+        band = [
+            o
+            for o in scored
+            if o.manager_probability >= lower
+            and (edge is None or o.manager_probability < edge)
+        ]
+        if edge is not None:
+            lower = edge
+        if not band:
+            continue
+        bands.append(
+            {
+                "label": label,
+                "n": len(band),
+                "available": len(band) >= min_n,
+                "mean_predicted": round(fmean(o.manager_probability for o in band), 3),
+                "observed_rate": round(fmean(outcome(o) for o in band), 3),
+            }
+        )
+    brier = (
+        round(fmean((o.manager_probability - outcome(o)) ** 2 for o in scored), 4)
+        if scored
+        else None
+    )
+    return {
+        "n": len(scored),
+        "min_observations": min_n,
+        "event": "the call's direction beats SPY over the horizon (alpha_pct > 0)",
+        "brier": brier,
+        "bands": bands,
+    }
+
+
+def analyst_scorecard(calls: list[tuple[str, str, float | None, float | None]]) -> dict:
+    """Per-analyst directional record from graded replay calls.
+
+    Each call is (analyst, signal, stock_gross_pct, spy_pct). A directional
+    signal (bullish/bearish + synonyms) is right when the stock moved its way
+    relative to SPY; neutral/unknown signals are no-calls and stay out of the
+    denominator. The scorecard answers "which researchers were worth
+    listening to" with the same SPY benchmark the decisions are graded on.
+    """
+    from app.calibration import SIGNAL_DIRECTIONS
+
+    by_analyst: dict[str, list[float]] = {}
+    for analyst, signal, gross, spy in calls:
+        direction = SIGNAL_DIRECTIONS.get(str(signal or "").strip().lower(), 0)
+        if direction == 0 or gross is None or spy is None:
+            continue
+        by_analyst.setdefault(analyst, []).append(direction * (gross - spy))
+    scorecard: dict[str, dict] = {}
+    for analyst, alphas in sorted(by_analyst.items()):
+        n = len(alphas)
+        scorecard[analyst] = {
+            "directional_calls": n,
+            "hit_rate_pct": round(sum(1 for a in alphas if a > 0) / n * 100, 1),
+            "mean_alpha_pct": round(fmean(alphas), 2),
+        }
+    return scorecard
 
 
 def momentum_signal(closes: list[float], outlook: str = "short_term") -> float | None:

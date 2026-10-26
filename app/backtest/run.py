@@ -32,10 +32,12 @@ from app.backtest.grade import (
     BacktestResult,
     Decision,
     aggregate,
+    analyst_scorecard,
     buy_hold_pct,
     grade,
     momentum_decision,
     period_stats,
+    probability_calibration,
 )
 from app.backtest.manifest import build_manifest, write_manifest
 from app.backtest.report import build_flags, write_report
@@ -115,7 +117,7 @@ async def run_backtest(
     `exclude_analysts` drops further researchers (paired experiments).
     """
     from app import workflow
-    from app.calibration import DECISION_POLICY_VERSION
+    from app.calibration import ANALYST_FIELDS, DECISION_POLICY_VERSION
 
     if mode not in ("mock", "llm"):
         raise ValueError(f"mode must be mock or llm, got {mode!r}")
@@ -181,15 +183,26 @@ async def run_backtest(
     await asyncio.gather(*(snap(ticker, day) for ticker, day in jobs))
 
     # 2. Close series for grading (lookback to the first grid date so entries
-    #    always resolve, through tomorrow so exits do too).
+    #    always resolve, through tomorrow so exits do too). QQQ is an
+    #    informational benchmark only: a cache miss (offline) degrades its
+    #    report row, never the run.
     grade_start = (
         date.fromisoformat(start) - timedelta(days=LOOKBACK_DAYS)
     ).isoformat()
     grade_end = (datetime.now(timezone.utc).date() + timedelta(days=1)).isoformat()
-    series, spy_series = await asyncio.gather(
+
+    async def benchmark_series(ticker: str) -> dict[str, float] | None:
+        try:
+            return await _series(ticker, grade_start, grade_end, cache, offline)
+        except Exception as exc:  # noqa: BLE001 - benchmark row is best-effort
+            logger.warning("[backtest] %s benchmark unavailable: %s", ticker, exc)
+            return None
+
+    series, spy_series, qqq_series = await asyncio.gather(
         *(
             asyncio.gather(*(_series(t, grade_start, grade_end, cache, offline) for t in tickers)),
             _series("SPY", grade_start, grade_end, cache, offline),
+            benchmark_series("QQQ"),
         )
     )
     closes_by_ticker = dict(zip(tickers, series))
@@ -218,13 +231,18 @@ async def run_backtest(
 
     analyses = await asyncio.gather(*(analyze(t, d) for t, d in jobs))
 
-    # 4. Grade, plus the cheap baselines the pipeline must beat (P1.2).
+    # 4. Grade, plus the cheap baselines the pipeline must beat (P1.2). Every
+    #    directional analyst call is collected alongside for the scorecard.
     outcomes, ungraded = [], []
     momentum_outcomes = []
+    analyst_calls: list[tuple[str, str, float | None, float | None]] = []
     for (ticker, day), analysis in zip(jobs, analyses):
         if analysis is None or analysis.error:
             continue
-        decision = Decision(ticker, day, analysis.decision, analysis.confidence)
+        decision = Decision(
+            ticker, day, analysis.decision, analysis.confidence,
+            analysis.manager_probability,
+        )
         outcome = grade(
             decision,
             closes_by_ticker.get(ticker, {}),
@@ -232,7 +250,14 @@ async def run_backtest(
             horizon_days,
             short=short,
         )
-        (outcomes if outcome is not None else ungraded).append(outcome or decision)
+        if outcome is None:
+            ungraded.append(decision)
+            continue
+        outcomes.append(outcome)
+        for key in ANALYST_FIELDS:
+            result = getattr(analysis, key, None)
+            if result is not None:
+                analyst_calls.append((key, result.signal, outcome.gross_pct, outcome.spy_pct))
     for (ticker, day), snapshot in snapshots.items():
         if snapshot is None:
             continue
@@ -256,6 +281,11 @@ async def run_backtest(
         per_ticker[ticker] = metrics
     overall = aggregate(outcomes, step_days)
     overall["spy_cumulative_pct"] = buy_hold_pct(spy_series, outcomes)
+    overall["qqq_cumulative_pct"] = (
+        buy_hold_pct(qqq_series, outcomes) if qqq_series else None
+    )
+    overall["calibration"] = probability_calibration(outcomes)
+    overall["analyst_scorecard"] = analyst_scorecard(analyst_calls)
     overall["baselines"] = {
         "all_hold": {
             "decisions": len(outcomes),
@@ -297,7 +327,7 @@ async def run_backtest(
     }
     result = BacktestResult(
         config=config,
-        flags=build_flags(mode, fundamentals),
+        flags=build_flags(mode, fundamentals, start=start, end=end),
         tickers=per_ticker,
         overall=overall,
         outcomes=outcomes,

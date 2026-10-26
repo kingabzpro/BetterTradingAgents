@@ -4,19 +4,32 @@ Reports carry the honesty flags the roadmap demands: the LLM memorization
 risk on historical dates, the fundamentals vintage actually replayed, and the
 point-in-time news rule. Baselines (all-HOLD, buy-and-hold, deterministic
 momentum) and - when a holdout split exists - per-period sample sizes,
-bootstrap intervals, and promotion verdicts are part of every report.
+bootstrap intervals, and promotion verdicts are part of every report. Each
+report also carries the manager-probability reliability table (Brier score)
+and the per-analyst scorecard for the graded run.
 """
 
 import json
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 from app.backtest.grade import BacktestResult
+
+# Decisions this close to today are treated as forward windows: the outcome
+# window is recent enough that memorized training data is a smaller concern
+# (never zero - the label says which side of the line a run sits on).
+FORWARD_WINDOW_DAYS = 45
 
 MEMORIZATION_NOTE = (
     "LLM-mode backtests on dates inside the model's training data are inflated: "
     "the model may already know how each window resolved. Prefer mock mode or "
     "very recent dates for headline numbers."
+)
+
+CLAIMS_POLICY = (
+    "Headline performance claims belong to forward paper-trading windows "
+    "(recent live runs on unresolved outcomes). Historical replays are "
+    "qualitative evidence only."
 )
 
 CURRENT_FUNDAMENTALS_WARNING = (
@@ -26,7 +39,23 @@ CURRENT_FUNDAMENTALS_WARNING = (
 )
 
 
-def build_flags(mode: str, fundamentals: str = "excluded") -> dict:
+def _window_label(end: str | None) -> str:
+    """Historical vs forward window from the grid end date (unknown = historical,
+    the conservative side: it keeps the memorization warning on)."""
+    if not end:
+        return "unknown (treated as historical)"
+    try:
+        last = date.fromisoformat(end)
+    except ValueError:
+        return "unknown (treated as historical)"
+    if last >= date.today() - timedelta(days=FORWARD_WINDOW_DAYS):
+        return "forward"
+    return "historical"
+
+
+def build_flags(
+    mode: str, fundamentals: str = "excluded", start: str | None = None, end: str | None = None
+) -> dict:
     if fundamentals == "current":
         fundamentals_bias = (
             "current-vintage fundamentals replayed - LOOK-AHEAD BIAS, opt-in only"
@@ -41,8 +70,17 @@ def build_flags(mode: str, fundamentals: str = "excluded") -> dict:
             "fundamentals excluded from replay: opt in to the point-in-time "
             "SEC EDGAR source with --sec-edgar-fundamentals"
         )
+    window = _window_label(end)
+    if mode != "llm":
+        memorization_risk = "low (mock mode - no LLM)"
+    elif window == "forward":
+        memorization_risk = "reduced (forward window - recent dates)"
+    else:
+        memorization_risk = "high"
     return {
-        "memorization_risk": "high" if mode == "llm" else "low (mock mode - no LLM)",
+        "window": window,
+        "claims_policy": CLAIMS_POLICY,
+        "memorization_risk": memorization_risk,
         "memorization_note": MEMORIZATION_NOTE if mode == "llm" else "",
         "fundamentals_vintage": fundamentals,
         "fundamentals_bias": fundamentals_bias,
@@ -133,7 +171,10 @@ def _markdown(payload: dict) -> str:
         f"| Outlook | {config['outlook']} |",
         f"| Fundamentals | {flags['fundamentals_vintage']} |",
         f"| Round-trip cost | {config['cost_pct']:.2f}% |",
-        f"| Short selling | {'enabled' if config['short'] else 'disabled (SELL scores 0)'} |",
+        f"| Short selling | {'enabled' if config['short'] else 'disabled (SELL is cash, graded on relative weakness vs SPY)'} |",
+        "| Portfolio accounting | equal weight per decision date, compounded |",
+        f"| Benchmarks (buy & hold) | SPY {_pct(overall.get('spy_cumulative_pct'))} · "
+        f"QQQ {_pct(overall.get('qqq_cumulative_pct'))} |",
         f"| Decision policy | `{config.get('policy_version', '')}` · debate rounds {config.get('debate_rounds', '')} |",
         f"| Manifest | `manifest-{config.get('name', config['mode'])}.json` (revision, data hashes, seeds) |",
         "",
@@ -143,12 +184,18 @@ def _markdown(payload: dict) -> str:
     lines += [
         "## Flags",
         "",
+        f"- window: **{flags['window']}** - {flags['claims_policy']}",
         f"- memorization risk: **{flags['memorization_risk']}**"
         + (f" - {flags['memorization_note']}" if flags["memorization_note"] else ""),
         f"- {flags['fundamentals_bias']}",
         f"- {flags['news_rule']}",
         "",
         "## Results",
+        "",
+        "Hit rate counts BUY and SELL calls; a long-only SELL is graded on relative "
+        "weakness vs SPY (right when the stock underperforms), so SELLs are no longer "
+        "invisible. Cumulative, Sharpe, and max drawdown compound the equal-weight "
+        "per-date portfolio.",
         "",
         "| Scope | Decisions | BUY / SELL / HOLD | Hit rate | Avg net | Avg alpha | Cumulative | Sharpe | Max DD | Buy & hold |",
         "|---|---|---|---|---|---|---|---|---|---|",
@@ -157,6 +204,49 @@ def _markdown(payload: dict) -> str:
     rows.append(("overall", overall))
     for name, m in rows:
         lines.append(_metrics_row(name, m))
+
+    calibration = overall.get("calibration")
+    if calibration:
+        brier = calibration.get("brier")
+        lines += [
+            "",
+            "## Manager probability calibration",
+            "",
+            f"`probability_beat_spy` scored against its frozen success event "
+            f"({calibration['event']}); n={calibration['n']} gradable positioned calls. "
+            f"Brier score: {'n/a' if brier is None else f'{brier:.4f}'} "
+            "(lower is better; a constant 0.5 prediction scores 0.25).",
+            "",
+            "| Predicted band | n | Mean predicted | Observed rate |",
+            "|---|---|---|---|",
+        ]
+        for band in calibration["bands"]:
+            observed = (
+                _pct(band["observed_rate"] * 100, signed=False)
+                if band["available"]
+                else f"Track record unavailable (n={band['n']} < {calibration['min_observations']})"
+            )
+            lines.append(
+                f"| {band['label']} | {band['n']} | {band['mean_predicted']:.2f} | {observed} |"
+            )
+
+    scorecard = overall.get("analyst_scorecard")
+    if scorecard:
+        lines += [
+            "",
+            "## Analyst scorecard",
+            "",
+            "Each researcher's directional calls graded against SPY over the horizon "
+            "(neutral signals are no-calls and stay out).",
+            "",
+            "| Analyst | Directional calls | Hit rate | Mean alpha |",
+            "|---|---|---|---|",
+        ]
+        for analyst, stats in scorecard.items():
+            lines.append(
+                f"| {analyst} | {stats['directional_calls']} | "
+                f"{_pct(stats['hit_rate_pct'], signed=False)} | {_pct(stats['mean_alpha_pct'])} |"
+            )
 
     baselines = overall.get("baselines") or {}
     if baselines:
@@ -199,12 +289,14 @@ def _markdown(payload: dict) -> str:
         "",
         "## Decisions",
         "",
-        "| Ticker | Date | Decision | Conf. | Entry | Exit | Net | SPY | Alpha |",
-        "|---|---|---|---|---|---|---|---|---|",
+        "| Ticker | Date | Decision | Conf. | Prob. | Entry | Exit | Net | SPY | Alpha |",
+        "|---|---|---|---|---|---|---|---|---|---|",
     ]
     for o in payload["outcomes"]:
+        probability = o.get("manager_probability")
         lines.append(
             f"| {o['ticker']} | {o['date']} | {o['decision']} | {o['confidence']:.2f} "
+            f"| {'-' if probability is None else f'{probability:.2f}'} "
             f"| {o['entry']:.2f} | {o['exit']:.2f} | {_pct(o['net_pct'])} | "
             f"{_pct(o['spy_pct'])} | {_pct(o['alpha_pct'])} |"
         )

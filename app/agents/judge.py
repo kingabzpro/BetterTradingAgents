@@ -46,7 +46,10 @@ Bull's argument:
 Bear's argument:
 {json.dumps(payload["bear_round_1"], indent=2, default=str)}
 
-Cross-examine both cases against the research. Score each side 0.0-1.0 on how well its strongest claims are actually supported: drop points for claims the evidence does not back, credit concrete evidence, and ignore confidence the evidence does not justify. Then state which case survived scrutiny and the one point each side still must answer.
+Analyst track record (this system's own graded history: each researcher's share of directional calls that beat SPY over the horizon, with sample size. "unavailable" or "none yet" means no reliable record exists for this run - weight researchers by today's evidence alone and never invent a record):
+{payload.get("analyst_track_record") or "unavailable"}
+
+Cross-examine both cases against the research. Score each side 0.0-1.0 on how well its strongest claims are actually supported: drop points for claims the evidence does not back, credit concrete evidence, and ignore confidence the evidence does not justify. A thin or unavailable track record is not evidence against a debater; a strong record is only weak context, never proof. Then state which case survived scrutiny and the one point each side still must answer.
 
 Respond with ONLY a JSON object, no markdown fences, no text outside the JSON:
 {{"signal": <"bullish" if the bull case is stronger, "bearish" if the bear case is, "neutral" if they genuinely balance>, "confidence": <number 0.0-1.0 = strength of the winning case>, "bull_strength": <number 0.0-1.0 = how well the bull case is supported>, "bear_strength": <number 0.0-1.0 = how well the bear case is supported>, "summary": "<at most 3 sentences: which case held up, the key concession, and what would change the call>"}}""",

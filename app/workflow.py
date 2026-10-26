@@ -750,6 +750,25 @@ async def fetch_past_decisions(ticker: str) -> dict | None:
         return None
 
 
+async def fetch_analyst_track_record(live: bool) -> str:
+    """Per-analyst graded hit rates for the judge, best-effort (SQLite only).
+
+    Replay runs read no live history (point-in-time rule) and incognito runs
+    read nothing at all; both get an explicit unavailable marker instead of an
+    empty string so the judge can tell "no record" from "lookup broke".
+    """
+    if not live:
+        return "unavailable in this run (replay or incognito: no graded history is read)"
+    try:
+        from app import calibration
+
+        scorecard = await asyncio.to_thread(calibration.analyst_scorecard)
+        return calibration.scorecard_text(scorecard)
+    except Exception as exc:  # noqa: BLE001 - track record is best-effort
+        logger.warning("[judge] analyst track record lookup failed: %s", exc)
+        return "UNAVAILABLE - analyst track record lookup failed"
+
+
 def _portfolio_context(
     summary: PortfolioSummary | None, incognito: bool = False
 ) -> list[dict] | str:
@@ -1205,6 +1224,9 @@ async def analyze_ticker(
     judge_data = None
     if prof.get("judge") and settings.debate_rounds >= 2:
         if bull_data and bear_data:
+            analyst_record = await fetch_analyst_track_record(
+                live=live_context and not incognito
+            )
             judge_data = await timed(
                 "judge",
                 _run_agent(
@@ -1218,6 +1240,7 @@ async def analyze_ticker(
                         "research": context,
                         "bull_round_1": bull_data,
                         "bear_round_1": bear_data,
+                        "analyst_track_record": analyst_record,
                     },
                 ),
             )
