@@ -1,9 +1,10 @@
 {
-  "generated_at": "2026-10-20T20:33:21.561522+00:00",
+  "generated_at": "2026-10-26T12:55:30.775505+00:00",
   "config": {
     "mode": "mock",
     "name": "mock-depth-left",
     "model": "rule-based mock",
+    "temperature": 0.0,
     "tickers": [
       "NVDA",
       "AMD",
@@ -19,6 +20,7 @@
     "depth": "fast",
     "outlook": "short_term",
     "cost_pct": 0.1,
+    "risk_regime_enabled": false,
     "short": false,
     "fundamentals": "excluded",
     "holdout": "2026-02-15",
@@ -28,6 +30,8 @@
     "debate_rounds": 2
   },
   "flags": {
+    "window": "forward",
+    "claims_policy": "Headline performance claims belong to forward paper-trading windows (recent live runs on unresolved outcomes). Historical replays are qualitative evidence only.",
     "memorization_risk": "low (mock mode - no LLM)",
     "memorization_note": "",
     "fundamentals_vintage": "excluded",
@@ -37,18 +41,58 @@
   "overall": {
     "decisions": 138,
     "counts": {
-      "BUY": 71,
-      "SELL": 18,
-      "HOLD": 49
+      "BUY": 89,
+      "SELL": 25,
+      "HOLD": 24
     },
-    "hit_rate_pct": 53.5,
-    "avg_net_pct": 0.32,
-    "avg_alpha_pct": -0.49,
-    "cumulative_pct": 29.41,
-    "sharpe": 0.26,
-    "max_drawdown_pct": 49.52,
+    "hit_rate_pct": 54.4,
+    "avg_net_pct": 2.18,
+    "avg_alpha_pct": 1.43,
+    "cumulative_pct": 60.73,
+    "sharpe": 2.03,
+    "max_drawdown_pct": 13.74,
     "periods_per_year": 17.4,
     "spy_cumulative_pct": 31.31,
+    "qqq_cumulative_pct": 41.76,
+    "calibration": {
+      "n": 114,
+      "min_observations": 30,
+      "event": "the call's direction beats SPY over the horizon (alpha_pct > 0)",
+      "brier": 0.4209,
+      "bands": [
+        {
+          "label": "0.90 - 1.00",
+          "n": 114,
+          "available": true,
+          "mean_predicted": 0.95,
+          "observed_rate": 0.535
+        }
+      ]
+    },
+    "analyst_scorecard": {
+      "technical": {
+        "directional_calls": 114,
+        "hit_rate_pct": 53.5,
+        "mean_alpha_pct": 1.51
+      }
+    },
+    "stop_replay": {
+      "buy_decisions": 89,
+      "stopped": 6,
+      "absolute_stops": 4,
+      "trailing_stops": 2,
+      "stop_loss_pct": 12.0,
+      "trailing_stop_pct": 15.0,
+      "mean_delta_pct": -0.52,
+      "sum_delta_pct": -46.51
+    },
+    "llm_usage": {
+      "prompt_tokens": 0,
+      "completion_tokens": 0,
+      "total_tokens": 0,
+      "cost_usd": 0.0,
+      "priced_runs": 0
+    },
     "baselines": {
       "all_hold": {
         "decisions": 138,
@@ -65,9 +109,9 @@
         "hit_rate_pct": 54.8,
         "avg_net_pct": 0.83,
         "avg_alpha_pct": 0.59,
-        "cumulative_pct": 132.16,
-        "sharpe": 0.52,
-        "max_drawdown_pct": 58.23,
+        "cumulative_pct": 19.46,
+        "sharpe": 1.08,
+        "max_drawdown_pct": 11.96,
         "periods_per_year": 17.4,
         "positioned_n": 73,
         "alpha_ci_pct": [
@@ -81,44 +125,44 @@
       "tune": {
         "decisions": 78,
         "counts": {
-          "BUY": 46,
-          "SELL": 3,
-          "HOLD": 29
+          "BUY": 54,
+          "SELL": 10,
+          "HOLD": 14
         },
-        "hit_rate_pct": 52.2,
-        "avg_net_pct": 0.58,
-        "avg_alpha_pct": -0.37,
-        "cumulative_pct": 42.51,
-        "sharpe": 0.48,
-        "max_drawdown_pct": 29.32,
+        "hit_rate_pct": 51.6,
+        "avg_net_pct": 0.94,
+        "avg_alpha_pct": -0.14,
+        "cumulative_pct": 11.66,
+        "sharpe": 0.96,
+        "max_drawdown_pct": 13.0,
         "periods_per_year": 17.4,
-        "positioned_n": 46,
+        "positioned_n": 64,
         "alpha_ci_pct": [
-          -2.1,
-          1.32
+          -1.92,
+          1.88
         ],
-        "verdict": "CI [-2.10%, +1.32%] crosses 0: not distinguishable from no edge"
+        "verdict": "CI [-1.92%, +1.88%] crosses 0: not distinguishable from no edge"
       },
       "test": {
         "decisions": 60,
         "counts": {
-          "BUY": 25,
+          "BUY": 35,
           "SELL": 15,
-          "HOLD": 20
+          "HOLD": 10
         },
-        "hit_rate_pct": 56.0,
-        "avg_net_pct": -0.01,
-        "avg_alpha_pct": -0.71,
-        "cumulative_pct": -9.19,
-        "sharpe": -0.01,
-        "max_drawdown_pct": 44.62,
+        "hit_rate_pct": 58.0,
+        "avg_net_pct": 3.81,
+        "avg_alpha_pct": 3.45,
+        "cumulative_pct": 43.95,
+        "sharpe": 3.54,
+        "max_drawdown_pct": 0.85,
         "periods_per_year": 17.4,
-        "positioned_n": 25,
+        "positioned_n": 50,
         "alpha_ci_pct": [
-          -3.99,
-          2.23
+          0.73,
+          6.61
         ],
-        "verdict": "insufficient sample (n=25 < 30): do not promote"
+        "verdict": "CI [+0.73%, +6.61%] excludes 0 with n=50"
       }
     }
   },
@@ -126,64 +170,64 @@
     "NVDA": {
       "decisions": 23,
       "counts": {
-        "BUY": 16,
-        "SELL": 2,
-        "HOLD": 5
+        "BUY": 17,
+        "SELL": 4,
+        "HOLD": 2
       },
-      "hit_rate_pct": 43.8,
-      "avg_net_pct": 0.77,
-      "avg_alpha_pct": 0.02,
-      "cumulative_pct": 16.63,
-      "sharpe": 0.7,
-      "max_drawdown_pct": 11.69,
+      "hit_rate_pct": 52.4,
+      "avg_net_pct": 1.58,
+      "avg_alpha_pct": 0.86,
+      "cumulative_pct": 40.53,
+      "sharpe": 1.53,
+      "max_drawdown_pct": 8.82,
       "periods_per_year": 17.4,
       "buy_hold_pct": 67.01
     },
     "AMD": {
       "decisions": 23,
       "counts": {
-        "BUY": 12,
-        "SELL": 1,
-        "HOLD": 10
+        "BUY": 16,
+        "SELL": 2,
+        "HOLD": 5
       },
-      "hit_rate_pct": 50.0,
-      "avg_net_pct": 1.32,
-      "avg_alpha_pct": 1.29,
-      "cumulative_pct": 28.21,
-      "sharpe": 0.78,
-      "max_drawdown_pct": 18.62,
+      "hit_rate_pct": 61.1,
+      "avg_net_pct": 8.74,
+      "avg_alpha_pct": 8.42,
+      "cumulative_pct": 456.52,
+      "sharpe": 2.4,
+      "max_drawdown_pct": 10.57,
       "periods_per_year": 17.4,
       "buy_hold_pct": 430.29
     },
     "META": {
       "decisions": 23,
       "counts": {
-        "BUY": 6,
-        "SELL": 3,
-        "HOLD": 14
+        "BUY": 13,
+        "SELL": 5,
+        "HOLD": 5
       },
-      "hit_rate_pct": 50.0,
-      "avg_net_pct": -0.04,
-      "avg_alpha_pct": -1.93,
-      "cumulative_pct": -1.65,
-      "sharpe": -0.08,
-      "max_drawdown_pct": 11.34,
+      "hit_rate_pct": 27.8,
+      "avg_net_pct": -0.67,
+      "avg_alpha_pct": -2.68,
+      "cumulative_pct": -18.25,
+      "sharpe": -0.45,
+      "max_drawdown_pct": 38.99,
       "periods_per_year": 17.4,
       "buy_hold_pct": 7.18
     },
     "MSFT": {
       "decisions": 23,
       "counts": {
-        "BUY": 12,
+        "BUY": 16,
         "SELL": 4,
-        "HOLD": 7
+        "HOLD": 3
       },
-      "hit_rate_pct": 75.0,
-      "avg_net_pct": 0.51,
-      "avg_alpha_pct": -0.36,
-      "cumulative_pct": 11.4,
-      "sharpe": 0.8,
-      "max_drawdown_pct": 8.5,
+      "hit_rate_pct": 70.0,
+      "avg_net_pct": 1.39,
+      "avg_alpha_pct": 1.38,
+      "cumulative_pct": 32.52,
+      "sharpe": 0.99,
+      "max_drawdown_pct": 14.57,
       "periods_per_year": 17.4,
       "buy_hold_pct": 11.32
     },
@@ -191,31 +235,31 @@
       "decisions": 23,
       "counts": {
         "BUY": 15,
-        "SELL": 2,
-        "HOLD": 6
+        "SELL": 3,
+        "HOLD": 5
       },
-      "hit_rate_pct": 60.0,
-      "avg_net_pct": 0.89,
-      "avg_alpha_pct": 0.77,
-      "cumulative_pct": 19.61,
-      "sharpe": 0.8,
-      "max_drawdown_pct": 15.93,
+      "hit_rate_pct": 55.6,
+      "avg_net_pct": 1.08,
+      "avg_alpha_pct": 0.46,
+      "cumulative_pct": 24.92,
+      "sharpe": 0.96,
+      "max_drawdown_pct": 10.52,
       "periods_per_year": 17.4,
       "buy_hold_pct": 68.58
     },
     "TSLA": {
       "decisions": 23,
       "counts": {
-        "BUY": 10,
-        "SELL": 6,
-        "HOLD": 7
+        "BUY": 12,
+        "SELL": 7,
+        "HOLD": 4
       },
-      "hit_rate_pct": 40.0,
-      "avg_net_pct": -1.52,
-      "avg_alpha_pct": -4.61,
-      "cumulative_pct": -33.96,
-      "sharpe": -0.92,
-      "max_drawdown_pct": 40.74,
+      "hit_rate_pct": 57.9,
+      "avg_net_pct": 0.99,
+      "avg_alpha_pct": 0.32,
+      "cumulative_pct": 20.1,
+      "sharpe": 0.66,
+      "max_drawdown_pct": 14.31,
       "periods_per_year": 17.4,
       "buy_hold_pct": 4.31
     }
@@ -232,36 +276,48 @@
       "gross_pct": -0.1,
       "net_pct": 0.0,
       "spy_pct": 1.55,
-      "alpha_pct": null,
-      "note": "long-only mode: SELL scores 0"
+      "alpha_pct": 1.65,
+      "note": "long-only: SELL is cash, graded on relative weakness vs SPY",
+      "manager_probability": 0.95,
+      "target_weight_pct": 0.0,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "AMD",
       "date": "2025-06-02",
-      "decision": "HOLD",
+      "decision": "BUY",
       "confidence": 0.95,
       "entry": 114.63,
       "exit": 129.58,
       "window_days": 21,
       "gross_pct": 13.04,
-      "net_pct": 0.0,
+      "net_pct": 12.94,
       "spy_pct": 1.55,
-      "alpha_pct": null,
-      "note": "HOLD scores 0"
+      "alpha_pct": 11.39,
+      "note": "",
+      "manager_probability": 0.95,
+      "target_weight_pct": 6.0,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "META",
       "date": "2025-06-02",
-      "decision": "HOLD",
+      "decision": "BUY",
       "confidence": 0.95,
       "entry": 667.6672,
       "exit": 695.6991,
       "window_days": 21,
       "gross_pct": 4.2,
-      "net_pct": 0.0,
+      "net_pct": 4.1,
       "spy_pct": 1.55,
-      "alpha_pct": null,
-      "note": "HOLD scores 0"
+      "alpha_pct": 2.54,
+      "note": "",
+      "manager_probability": 0.95,
+      "target_weight_pct": 6.0,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "MSFT",
@@ -275,21 +331,29 @@
       "net_pct": 5.1,
       "spy_pct": 1.55,
       "alpha_pct": 3.55,
-      "note": ""
+      "note": "",
+      "manager_probability": 0.95,
+      "target_weight_pct": 6.0,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "NVDA",
       "date": "2025-06-02",
-      "decision": "HOLD",
-      "confidence": 0.5,
+      "decision": "BUY",
+      "confidence": 0.95,
       "entry": 137.0344,
       "exit": 143.8173,
       "window_days": 21,
       "gross_pct": 4.95,
-      "net_pct": 0.0,
+      "net_pct": 4.85,
       "spy_pct": 1.55,
-      "alpha_pct": null,
-      "note": "HOLD scores 0"
+      "alpha_pct": 3.3,
+      "note": "",
+      "manager_probability": 0.95,
+      "target_weight_pct": 6.0,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "TSLA",
@@ -303,7 +367,11 @@
       "net_pct": 1.65,
       "spy_pct": 1.55,
       "alpha_pct": 0.09,
-      "note": ""
+      "note": "",
+      "manager_probability": 0.95,
+      "target_weight_pct": 6.0,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "AAPL",
@@ -317,7 +385,11 @@
       "net_pct": 0.0,
       "spy_pct": 4.11,
       "alpha_pct": null,
-      "note": "HOLD scores 0"
+      "note": "HOLD scores 0",
+      "manager_probability": null,
+      "target_weight_pct": null,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "AMD",
@@ -331,7 +403,11 @@
       "net_pct": 12.76,
       "spy_pct": 4.11,
       "alpha_pct": 8.65,
-      "note": ""
+      "note": "",
+      "manager_probability": 0.95,
+      "target_weight_pct": 6.0,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "META",
@@ -345,7 +421,11 @@
       "net_pct": 3.11,
       "spy_pct": 4.11,
       "alpha_pct": -1.0,
-      "note": ""
+      "note": "",
+      "manager_probability": 0.95,
+      "target_weight_pct": 6.0,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "MSFT",
@@ -359,7 +439,11 @@
       "net_pct": 3.4,
       "spy_pct": 4.11,
       "alpha_pct": -0.71,
-      "note": ""
+      "note": "",
+      "manager_probability": 0.95,
+      "target_weight_pct": 6.0,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "NVDA",
@@ -373,7 +457,11 @@
       "net_pct": 13.7,
       "spy_pct": 4.11,
       "alpha_pct": 9.59,
-      "note": ""
+      "note": "",
+      "manager_probability": 0.95,
+      "target_weight_pct": 6.0,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "TSLA",
@@ -387,7 +475,11 @@
       "net_pct": -9.21,
       "spy_pct": 4.11,
       "alpha_pct": -13.32,
-      "note": ""
+      "note": "",
+      "manager_probability": 0.95,
+      "target_weight_pct": 6.0,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "AAPL",
@@ -401,7 +493,11 @@
       "net_pct": -2.63,
       "spy_pct": 1.02,
       "alpha_pct": -3.64,
-      "note": ""
+      "note": "",
+      "manager_probability": 0.95,
+      "target_weight_pct": 6.0,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "AMD",
@@ -415,7 +511,11 @@
       "net_pct": 20.78,
       "spy_pct": 1.02,
       "alpha_pct": 19.77,
-      "note": ""
+      "note": "",
+      "manager_probability": 0.95,
+      "target_weight_pct": 6.0,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "META",
@@ -423,13 +523,17 @@
       "decision": "BUY",
       "confidence": 0.95,
       "entry": 717.9982,
-      "exit": 773.2235,
+      "exit": 773.2236,
       "window_days": 21,
       "gross_pct": 7.69,
       "net_pct": 7.59,
       "spy_pct": 1.02,
       "alpha_pct": 6.57,
-      "note": ""
+      "note": "",
+      "manager_probability": 0.95,
+      "target_weight_pct": 6.0,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "MSFT",
@@ -443,7 +547,11 @@
       "net_pct": 6.38,
       "spy_pct": 1.02,
       "alpha_pct": 5.37,
-      "note": ""
+      "note": "",
+      "manager_probability": 0.95,
+      "target_weight_pct": 6.0,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "NVDA",
@@ -457,21 +565,29 @@
       "net_pct": 9.61,
       "spy_pct": 1.02,
       "alpha_pct": 8.59,
-      "note": ""
+      "note": "",
+      "manager_probability": 0.95,
+      "target_weight_pct": 6.0,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "TSLA",
       "date": "2025-07-14",
-      "decision": "HOLD",
-      "confidence": 0.5,
+      "decision": "SELL",
+      "confidence": 0.95,
       "entry": 316.9,
       "exit": 309.26,
       "window_days": 21,
       "gross_pct": -2.41,
       "net_pct": 0.0,
       "spy_pct": 1.02,
-      "alpha_pct": null,
-      "note": "HOLD scores 0"
+      "alpha_pct": 3.43,
+      "note": "long-only: SELL is cash, graded on relative weakness vs SPY",
+      "manager_probability": 0.95,
+      "target_weight_pct": 0.0,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "AAPL",
@@ -485,7 +601,11 @@
       "net_pct": 0.0,
       "spy_pct": 1.79,
       "alpha_pct": null,
-      "note": "HOLD scores 0"
+      "note": "HOLD scores 0",
+      "manager_probability": null,
+      "target_weight_pct": null,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "AMD",
@@ -499,21 +619,29 @@
       "net_pct": -7.69,
       "spy_pct": 1.79,
       "alpha_pct": -9.48,
-      "note": ""
+      "note": "",
+      "manager_probability": 0.95,
+      "target_weight_pct": 6.0,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "META",
       "date": "2025-08-04",
       "decision": "BUY",
       "confidence": 0.95,
-      "entry": 773.2235,
-      "exit": 750.2469,
+      "entry": 773.2236,
+      "exit": 750.2471,
       "window_days": 21,
       "gross_pct": -2.97,
       "net_pct": -3.07,
       "spy_pct": 1.79,
       "alpha_pct": -4.86,
-      "note": ""
+      "note": "",
+      "manager_probability": 0.95,
+      "target_weight_pct": 6.0,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "MSFT",
@@ -527,7 +655,11 @@
       "net_pct": -5.8,
       "spy_pct": 1.79,
       "alpha_pct": -7.59,
-      "note": ""
+      "note": "",
+      "manager_probability": 0.95,
+      "target_weight_pct": 6.0,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "NVDA",
@@ -541,7 +673,11 @@
       "net_pct": -0.21,
       "spy_pct": 1.79,
       "alpha_pct": -2.0,
-      "note": ""
+      "note": "",
+      "manager_probability": 0.95,
+      "target_weight_pct": 6.0,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "TSLA",
@@ -554,8 +690,12 @@
       "gross_pct": 12.07,
       "net_pct": 0.0,
       "spy_pct": 1.79,
-      "alpha_pct": null,
-      "note": "long-only mode: SELL scores 0"
+      "alpha_pct": -10.28,
+      "note": "long-only: SELL is cash, graded on relative weakness vs SPY",
+      "manager_probability": 0.95,
+      "target_weight_pct": 0.0,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "AAPL",
@@ -563,55 +703,71 @@
       "decision": "BUY",
       "confidence": 0.95,
       "entry": 226.324,
-      "exit": 235.8288,
+      "exit": 235.8289,
       "window_days": 21,
       "gross_pct": 4.2,
       "net_pct": 4.1,
       "spy_pct": 2.87,
       "alpha_pct": 1.23,
-      "note": ""
+      "note": "",
+      "manager_probability": 0.95,
+      "target_weight_pct": 6.0,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "AMD",
       "date": "2025-08-25",
-      "decision": "BUY",
-      "confidence": 0.95,
+      "decision": "HOLD",
+      "confidence": 0.5,
       "entry": 163.36,
       "exit": 161.16,
       "window_days": 21,
       "gross_pct": -1.35,
-      "net_pct": -1.45,
+      "net_pct": 0.0,
       "spy_pct": 2.87,
-      "alpha_pct": -4.32,
-      "note": ""
+      "alpha_pct": null,
+      "note": "HOLD scores 0",
+      "manager_probability": null,
+      "target_weight_pct": null,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "META",
       "date": "2025-08-25",
       "decision": "BUY",
       "confidence": 0.95,
-      "entry": 750.2469,
+      "entry": 750.2471,
       "exit": 761.6008,
       "window_days": 21,
       "gross_pct": 1.51,
       "net_pct": 1.41,
       "spy_pct": 2.87,
       "alpha_pct": -1.46,
-      "note": ""
+      "note": "",
+      "manager_probability": 0.95,
+      "target_weight_pct": 6.0,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "MSFT",
       "date": "2025-08-25",
-      "decision": "BUY",
-      "confidence": 0.95,
+      "decision": "HOLD",
+      "confidence": 0.5,
       "entry": 500.145,
       "exit": 511.1544,
       "window_days": 21,
       "gross_pct": 2.2,
-      "net_pct": 2.1,
+      "net_pct": 0.0,
       "spy_pct": 2.87,
-      "alpha_pct": -0.77,
-      "note": ""
+      "alpha_pct": null,
+      "note": "HOLD scores 0",
+      "manager_probability": null,
+      "target_weight_pct": null,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "NVDA",
@@ -625,49 +781,65 @@
       "net_pct": -1.24,
       "spy_pct": 2.87,
       "alpha_pct": -4.11,
-      "note": ""
+      "note": "",
+      "manager_probability": 0.95,
+      "target_weight_pct": 6.0,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "TSLA",
       "date": "2025-08-25",
-      "decision": "HOLD",
+      "decision": "BUY",
       "confidence": 0.95,
       "entry": 346.6,
       "exit": 410.04,
       "window_days": 21,
       "gross_pct": 18.3,
-      "net_pct": 0.0,
+      "net_pct": 18.2,
       "spy_pct": 2.87,
-      "alpha_pct": null,
-      "note": "HOLD scores 0"
+      "alpha_pct": 15.33,
+      "note": "",
+      "manager_probability": 0.95,
+      "target_weight_pct": 6.0,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "AAPL",
       "date": "2025-09-15",
       "decision": "BUY",
       "confidence": 0.95,
-      "entry": 235.8288,
+      "entry": 235.8289,
       "exit": 255.7453,
       "window_days": 21,
       "gross_pct": 8.45,
       "net_pct": 8.35,
       "spy_pct": 1.9,
       "alpha_pct": 6.44,
-      "note": ""
+      "note": "",
+      "manager_probability": 0.95,
+      "target_weight_pct": 6.0,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "AMD",
       "date": "2025-09-15",
-      "decision": "HOLD",
-      "confidence": 0.5,
+      "decision": "SELL",
+      "confidence": 0.95,
       "entry": 161.16,
       "exit": 203.71,
       "window_days": 21,
       "gross_pct": 26.4,
       "net_pct": 0.0,
       "spy_pct": 1.9,
-      "alpha_pct": null,
-      "note": "HOLD scores 0"
+      "alpha_pct": -24.5,
+      "note": "long-only: SELL is cash, graded on relative weakness vs SPY",
+      "manager_probability": 0.95,
+      "target_weight_pct": 0.0,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "META",
@@ -681,7 +853,11 @@
       "net_pct": -6.45,
       "spy_pct": 1.9,
       "alpha_pct": -8.35,
-      "note": ""
+      "note": "",
+      "manager_probability": 0.95,
+      "target_weight_pct": 6.0,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "MSFT",
@@ -695,7 +871,11 @@
       "net_pct": 2.46,
       "spy_pct": 1.9,
       "alpha_pct": 0.56,
-      "note": ""
+      "note": "",
+      "manager_probability": 0.95,
+      "target_weight_pct": 6.0,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "NVDA",
@@ -709,21 +889,29 @@
       "net_pct": 4.28,
       "spy_pct": 1.9,
       "alpha_pct": 2.38,
-      "note": ""
+      "note": "",
+      "manager_probability": 0.95,
+      "target_weight_pct": 6.0,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "TSLA",
       "date": "2025-09-15",
-      "decision": "HOLD",
-      "confidence": 0.5,
+      "decision": "BUY",
+      "confidence": 0.95,
       "entry": 410.04,
       "exit": 453.25,
       "window_days": 21,
       "gross_pct": 10.54,
-      "net_pct": 0.0,
+      "net_pct": 10.44,
       "spy_pct": 1.9,
-      "alpha_pct": null,
-      "note": "HOLD scores 0"
+      "alpha_pct": 8.54,
+      "note": "",
+      "manager_probability": 0.95,
+      "target_weight_pct": 6.0,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "AAPL",
@@ -737,26 +925,34 @@
       "net_pct": 4.62,
       "spy_pct": 2.03,
       "alpha_pct": 2.59,
-      "note": ""
+      "note": "",
+      "manager_probability": 0.95,
+      "target_weight_pct": 6.0,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "AMD",
       "date": "2025-10-06",
-      "decision": "HOLD",
+      "decision": "BUY",
       "confidence": 0.95,
       "entry": 203.71,
       "exit": 259.67,
       "window_days": 21,
       "gross_pct": 27.47,
-      "net_pct": 0.0,
+      "net_pct": 27.37,
       "spy_pct": 2.03,
-      "alpha_pct": null,
-      "note": "HOLD scores 0"
+      "alpha_pct": 25.34,
+      "note": "",
+      "manager_probability": 0.95,
+      "target_weight_pct": 6.0,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "META",
       "date": "2025-10-06",
-      "decision": "HOLD",
+      "decision": "SELL",
       "confidence": 0.95,
       "entry": 713.2407,
       "exit": 748.2818,
@@ -764,22 +960,30 @@
       "gross_pct": 4.91,
       "net_pct": 0.0,
       "spy_pct": 2.03,
-      "alpha_pct": null,
-      "note": "HOLD scores 0"
+      "alpha_pct": -2.88,
+      "note": "long-only: SELL is cash, graded on relative weakness vs SPY",
+      "manager_probability": 0.95,
+      "target_weight_pct": 0.0,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "MSFT",
       "date": "2025-10-06",
-      "decision": "HOLD",
+      "decision": "BUY",
       "confidence": 0.95,
       "entry": 524.2566,
       "exit": 527.1826,
       "window_days": 21,
       "gross_pct": 0.56,
-      "net_pct": 0.0,
+      "net_pct": 0.46,
       "spy_pct": 2.03,
-      "alpha_pct": null,
-      "note": "HOLD scores 0"
+      "alpha_pct": -1.57,
+      "note": "",
+      "manager_probability": 0.95,
+      "target_weight_pct": 6.0,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "NVDA",
@@ -793,7 +997,11 @@
       "net_pct": 3.11,
       "spy_pct": 2.03,
       "alpha_pct": 1.08,
-      "note": ""
+      "note": "",
+      "manager_probability": 0.95,
+      "target_weight_pct": 6.0,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "TSLA",
@@ -807,7 +1015,11 @@
       "net_pct": -0.28,
       "spy_pct": 2.03,
       "alpha_pct": -2.31,
-      "note": ""
+      "note": "",
+      "manager_probability": 0.95,
+      "target_weight_pct": 6.0,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "AAPL",
@@ -815,55 +1027,71 @@
       "decision": "BUY",
       "confidence": 0.95,
       "entry": 267.8206,
-      "exit": 266.734,
+      "exit": 266.7339,
       "window_days": 21,
       "gross_pct": -0.41,
       "net_pct": -0.51,
       "spy_pct": -2.86,
       "alpha_pct": 2.35,
-      "note": ""
+      "note": "",
+      "manager_probability": 0.95,
+      "target_weight_pct": 6.0,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "AMD",
       "date": "2025-10-27",
-      "decision": "HOLD",
-      "confidence": 0.5,
+      "decision": "BUY",
+      "confidence": 0.95,
       "entry": 259.67,
       "exit": 240.52,
       "window_days": 21,
       "gross_pct": -7.37,
-      "net_pct": 0.0,
+      "net_pct": -7.47,
       "spy_pct": -2.86,
-      "alpha_pct": null,
-      "note": "HOLD scores 0"
+      "alpha_pct": -4.62,
+      "note": "",
+      "manager_probability": 0.95,
+      "target_weight_pct": 6.0,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "META",
       "date": "2025-10-27",
-      "decision": "HOLD",
-      "confidence": 0.5,
+      "decision": "BUY",
+      "confidence": 0.95,
       "entry": 748.2818,
       "exit": 599.9748,
       "window_days": 21,
       "gross_pct": -19.82,
-      "net_pct": 0.0,
+      "net_pct": -19.92,
       "spy_pct": -2.86,
-      "alpha_pct": null,
-      "note": "HOLD scores 0"
+      "alpha_pct": -17.06,
+      "note": "",
+      "manager_probability": 0.95,
+      "target_weight_pct": 6.0,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "MSFT",
       "date": "2025-10-27",
-      "decision": "HOLD",
+      "decision": "BUY",
       "confidence": 0.95,
       "entry": 527.1826,
       "exit": 503.3486,
       "window_days": 21,
       "gross_pct": -4.52,
-      "net_pct": 0.0,
+      "net_pct": -4.62,
       "spy_pct": -2.86,
-      "alpha_pct": null,
-      "note": "HOLD scores 0"
+      "alpha_pct": -1.77,
+      "note": "",
+      "manager_probability": 0.95,
+      "target_weight_pct": 6.0,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "NVDA",
@@ -877,7 +1105,11 @@
       "net_pct": -2.65,
       "spy_pct": -2.86,
       "alpha_pct": 0.2,
-      "note": ""
+      "note": "",
+      "manager_probability": 0.95,
+      "target_weight_pct": 6.0,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "TSLA",
@@ -891,49 +1123,65 @@
       "net_pct": -9.71,
       "spy_pct": -2.86,
       "alpha_pct": -6.86,
-      "note": ""
+      "note": "",
+      "manager_probability": 0.95,
+      "target_weight_pct": 6.0,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "AAPL",
       "date": "2025-11-17",
-      "decision": "BUY",
-      "confidence": 0.95,
-      "entry": 266.734,
+      "decision": "HOLD",
+      "confidence": 0.5,
+      "entry": 266.7339,
       "exit": 277.1357,
       "window_days": 21,
       "gross_pct": 3.9,
-      "net_pct": 3.8,
+      "net_pct": 0.0,
       "spy_pct": 2.7,
-      "alpha_pct": 1.1,
-      "note": ""
+      "alpha_pct": null,
+      "note": "HOLD scores 0",
+      "manager_probability": null,
+      "target_weight_pct": null,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "AMD",
       "date": "2025-11-17",
-      "decision": "BUY",
-      "confidence": 0.95,
+      "decision": "HOLD",
+      "confidence": 0.5,
       "entry": 240.52,
       "exit": 221.11,
       "window_days": 21,
       "gross_pct": -8.07,
-      "net_pct": -8.17,
+      "net_pct": 0.0,
       "spy_pct": 2.7,
-      "alpha_pct": -10.87,
-      "note": ""
+      "alpha_pct": null,
+      "note": "HOLD scores 0",
+      "manager_probability": null,
+      "target_weight_pct": null,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "META",
       "date": "2025-11-17",
-      "decision": "HOLD",
-      "confidence": 0.5,
+      "decision": "SELL",
+      "confidence": 0.95,
       "entry": 599.9748,
       "exit": 664.5458,
       "window_days": 21,
       "gross_pct": 10.76,
       "net_pct": 0.0,
       "spy_pct": 2.7,
-      "alpha_pct": null,
-      "note": "HOLD scores 0"
+      "alpha_pct": -8.06,
+      "note": "long-only: SELL is cash, graded on relative weakness vs SPY",
+      "manager_probability": 0.95,
+      "target_weight_pct": 0.0,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "MSFT",
@@ -947,35 +1195,47 @@
       "net_pct": 0.0,
       "spy_pct": 2.7,
       "alpha_pct": null,
-      "note": "HOLD scores 0"
+      "note": "HOLD scores 0",
+      "manager_probability": null,
+      "target_weight_pct": null,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "NVDA",
       "date": "2025-11-17",
-      "decision": "BUY",
-      "confidence": 0.95,
+      "decision": "HOLD",
+      "confidence": 0.5,
       "entry": 186.154,
       "exit": 185.1168,
       "window_days": 21,
       "gross_pct": -0.56,
-      "net_pct": -0.66,
+      "net_pct": 0.0,
       "spy_pct": 2.7,
-      "alpha_pct": -3.36,
-      "note": ""
+      "alpha_pct": null,
+      "note": "HOLD scores 0",
+      "manager_probability": null,
+      "target_weight_pct": null,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "TSLA",
       "date": "2025-11-17",
-      "decision": "BUY",
-      "confidence": 0.95,
+      "decision": "HOLD",
+      "confidence": 0.5,
       "entry": 408.92,
       "exit": 439.58,
       "window_days": 21,
       "gross_pct": 7.5,
-      "net_pct": 7.4,
+      "net_pct": 0.0,
       "spy_pct": 2.7,
-      "alpha_pct": 4.7,
-      "note": ""
+      "alpha_pct": null,
+      "note": "HOLD scores 0",
+      "manager_probability": null,
+      "target_weight_pct": null,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "AAPL",
@@ -989,49 +1249,65 @@
       "net_pct": -1.59,
       "spy_pct": 0.91,
       "alpha_pct": -2.5,
-      "note": ""
+      "note": "",
+      "manager_probability": 0.95,
+      "target_weight_pct": 6.0,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "AMD",
       "date": "2025-12-08",
-      "decision": "BUY",
-      "confidence": 0.95,
+      "decision": "HOLD",
+      "confidence": 0.5,
       "entry": 221.11,
       "exit": 215.61,
       "window_days": 21,
       "gross_pct": -2.49,
-      "net_pct": -2.59,
+      "net_pct": 0.0,
       "spy_pct": 0.91,
-      "alpha_pct": -3.5,
-      "note": ""
+      "alpha_pct": null,
+      "note": "HOLD scores 0",
+      "manager_probability": null,
+      "target_weight_pct": null,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "META",
       "date": "2025-12-08",
-      "decision": "HOLD",
-      "confidence": 0.5,
+      "decision": "BUY",
+      "confidence": 0.95,
       "entry": 664.5458,
       "exit": 656.9987,
       "window_days": 21,
       "gross_pct": -1.14,
-      "net_pct": 0.0,
+      "net_pct": -1.24,
       "spy_pct": 0.91,
-      "alpha_pct": null,
-      "note": "HOLD scores 0"
+      "alpha_pct": -2.15,
+      "note": "",
+      "manager_probability": 0.95,
+      "target_weight_pct": 6.0,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "MSFT",
       "date": "2025-12-08",
-      "decision": "HOLD",
-      "confidence": 0.5,
+      "decision": "BUY",
+      "confidence": 0.95,
       "entry": 487.9245,
       "exit": 484.0292,
       "window_days": 21,
       "gross_pct": -0.8,
-      "net_pct": 0.0,
+      "net_pct": -0.9,
       "spy_pct": 0.91,
-      "alpha_pct": null,
-      "note": "HOLD scores 0"
+      "alpha_pct": -1.81,
+      "note": "",
+      "manager_probability": 0.95,
+      "target_weight_pct": 6.0,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "NVDA",
@@ -1045,7 +1321,11 @@
       "net_pct": 1.34,
       "spy_pct": 0.91,
       "alpha_pct": 0.42,
-      "note": ""
+      "note": "",
+      "manager_probability": 0.95,
+      "target_weight_pct": 6.0,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "TSLA",
@@ -1059,21 +1339,29 @@
       "net_pct": 4.46,
       "spy_pct": 0.91,
       "alpha_pct": 3.55,
-      "note": ""
+      "note": "",
+      "manager_probability": 0.95,
+      "target_weight_pct": 6.0,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "AAPL",
       "date": "2025-12-29",
-      "decision": "BUY",
-      "confidence": 0.95,
+      "decision": "HOLD",
+      "confidence": 0.5,
       "entry": 273.0169,
       "exit": 246.0303,
       "window_days": 22,
       "gross_pct": -9.88,
-      "net_pct": -9.98,
+      "net_pct": 0.0,
       "spy_pct": -1.49,
-      "alpha_pct": -8.49,
-      "note": ""
+      "alpha_pct": null,
+      "note": "HOLD scores 0",
+      "manager_probability": null,
+      "target_weight_pct": null,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "AMD",
@@ -1087,35 +1375,47 @@
       "net_pct": 7.46,
       "spy_pct": -1.49,
       "alpha_pct": 8.96,
-      "note": ""
+      "note": "",
+      "manager_probability": 0.95,
+      "target_weight_pct": 6.0,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "META",
       "date": "2025-12-29",
-      "decision": "HOLD",
-      "confidence": 0.5,
+      "decision": "BUY",
+      "confidence": 0.95,
       "entry": 656.9987,
-      "exit": 602.5688,
+      "exit": 602.5687,
       "window_days": 22,
       "gross_pct": -8.28,
-      "net_pct": 0.0,
+      "net_pct": -8.38,
       "spy_pct": -1.49,
-      "alpha_pct": null,
-      "note": "HOLD scores 0"
+      "alpha_pct": -6.89,
+      "note": "",
+      "manager_probability": 0.95,
+      "target_weight_pct": 6.0,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "MSFT",
       "date": "2025-12-29",
-      "decision": "HOLD",
-      "confidence": 0.5,
+      "decision": "BUY",
+      "confidence": 0.95,
       "entry": 484.0292,
       "exit": 451.6546,
       "window_days": 22,
       "gross_pct": -6.69,
-      "net_pct": 0.0,
+      "net_pct": -6.79,
       "spy_pct": -1.49,
-      "alpha_pct": null,
-      "note": "HOLD scores 0"
+      "alpha_pct": -5.3,
+      "note": "",
+      "manager_probability": 0.95,
+      "target_weight_pct": 6.0,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "NVDA",
@@ -1129,7 +1429,11 @@
       "net_pct": -5.49,
       "spy_pct": -1.49,
       "alpha_pct": -4.0,
-      "note": ""
+      "note": "",
+      "manager_probability": 0.95,
+      "target_weight_pct": 6.0,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "TSLA",
@@ -1143,12 +1447,16 @@
       "net_pct": -8.89,
       "spy_pct": -1.49,
       "alpha_pct": -7.39,
-      "note": ""
+      "note": "",
+      "manager_probability": 0.95,
+      "target_weight_pct": 6.0,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "AAPL",
       "date": "2026-01-19",
-      "decision": "HOLD",
+      "decision": "SELL",
       "confidence": 0.95,
       "entry": 254.8363,
       "exit": 274.1308,
@@ -1156,22 +1464,30 @@
       "gross_pct": 7.57,
       "net_pct": 0.0,
       "spy_pct": 0.33,
-      "alpha_pct": null,
-      "note": "HOLD scores 0"
+      "alpha_pct": -7.24,
+      "note": "long-only: SELL is cash, graded on relative weakness vs SPY",
+      "manager_probability": 0.95,
+      "target_weight_pct": 0.0,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "AMD",
       "date": "2026-01-19",
-      "decision": "HOLD",
-      "confidence": 0.5,
+      "decision": "BUY",
+      "confidence": 0.95,
       "entry": 231.83,
       "exit": 216.0,
       "window_days": 21,
       "gross_pct": -6.83,
-      "net_pct": 0.0,
+      "net_pct": -6.93,
       "spy_pct": 0.33,
-      "alpha_pct": null,
-      "note": "HOLD scores 0"
+      "alpha_pct": -7.26,
+      "note": "",
+      "manager_probability": 0.95,
+      "target_weight_pct": 6.0,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "META",
@@ -1185,21 +1501,29 @@
       "net_pct": 0.0,
       "spy_pct": 0.33,
       "alpha_pct": null,
-      "note": "HOLD scores 0"
+      "note": "HOLD scores 0",
+      "manager_probability": null,
+      "target_weight_pct": null,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "MSFT",
       "date": "2026-01-19",
-      "decision": "HOLD",
-      "confidence": 0.5,
+      "decision": "SELL",
+      "confidence": 0.95,
       "entry": 456.9609,
       "exit": 410.9926,
       "window_days": 21,
       "gross_pct": -10.06,
       "net_pct": 0.0,
       "spy_pct": 0.33,
-      "alpha_pct": null,
-      "note": "HOLD scores 0"
+      "alpha_pct": 10.39,
+      "note": "long-only: SELL is cash, graded on relative weakness vs SPY",
+      "manager_probability": 0.95,
+      "target_weight_pct": 0.0,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "NVDA",
@@ -1213,7 +1537,11 @@
       "net_pct": 1.95,
       "spy_pct": 0.33,
       "alpha_pct": 1.61,
-      "note": ""
+      "note": "",
+      "manager_probability": 0.95,
+      "target_weight_pct": 6.0,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "TSLA",
@@ -1227,21 +1555,29 @@
       "net_pct": 0.0,
       "spy_pct": 0.33,
       "alpha_pct": null,
-      "note": "HOLD scores 0"
+      "note": "HOLD scores 0",
+      "manager_probability": null,
+      "target_weight_pct": null,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "AAPL",
       "date": "2026-02-09",
-      "decision": "HOLD",
-      "confidence": 0.5,
+      "decision": "BUY",
+      "confidence": 0.95,
       "entry": 274.1308,
       "exit": 264.2484,
       "window_days": 21,
       "gross_pct": -3.6,
-      "net_pct": 0.0,
+      "net_pct": -3.7,
       "spy_pct": -1.09,
-      "alpha_pct": null,
-      "note": "HOLD scores 0"
+      "alpha_pct": -2.61,
+      "note": "",
+      "manager_probability": 0.95,
+      "target_weight_pct": 6.0,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "AMD",
@@ -1255,7 +1591,11 @@
       "net_pct": 0.0,
       "spy_pct": -1.09,
       "alpha_pct": null,
-      "note": "HOLD scores 0"
+      "note": "HOLD scores 0",
+      "manager_probability": null,
+      "target_weight_pct": null,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "META",
@@ -1269,7 +1609,11 @@
       "net_pct": -3.59,
       "spy_pct": -1.09,
       "alpha_pct": -2.5,
-      "note": ""
+      "note": "",
+      "manager_probability": 0.95,
+      "target_weight_pct": 6.0,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "MSFT",
@@ -1282,8 +1626,12 @@
       "gross_pct": -3.42,
       "net_pct": 0.0,
       "spy_pct": -1.09,
-      "alpha_pct": null,
-      "note": "long-only mode: SELL scores 0"
+      "alpha_pct": 2.33,
+      "note": "long-only: SELL is cash, graded on relative weakness vs SPY",
+      "manager_probability": 0.95,
+      "target_weight_pct": 0.0,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "NVDA",
@@ -1297,12 +1645,16 @@
       "net_pct": -4.08,
       "spy_pct": -1.09,
       "alpha_pct": -2.99,
-      "note": ""
+      "note": "",
+      "manager_probability": 0.95,
+      "target_weight_pct": 6.0,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "TSLA",
       "date": "2026-02-09",
-      "decision": "HOLD",
+      "decision": "SELL",
       "confidence": 0.95,
       "entry": 417.32,
       "exit": 403.32,
@@ -1310,8 +1662,12 @@
       "gross_pct": -3.35,
       "net_pct": 0.0,
       "spy_pct": -1.09,
-      "alpha_pct": null,
-      "note": "HOLD scores 0"
+      "alpha_pct": 2.26,
+      "note": "long-only: SELL is cash, graded on relative weakness vs SPY",
+      "manager_probability": 0.95,
+      "target_weight_pct": 0.0,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "AAPL",
@@ -1325,7 +1681,11 @@
       "net_pct": -5.1,
       "spy_pct": -4.26,
       "alpha_pct": -0.84,
-      "note": ""
+      "note": "",
+      "manager_probability": 0.95,
+      "target_weight_pct": 6.0,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "AMD",
@@ -1338,8 +1698,12 @@
       "gross_pct": 2.04,
       "net_pct": 0.0,
       "spy_pct": -4.26,
-      "alpha_pct": null,
-      "note": "long-only mode: SELL scores 0"
+      "alpha_pct": -6.3,
+      "note": "long-only: SELL is cash, graded on relative weakness vs SPY",
+      "manager_probability": 0.95,
+      "target_weight_pct": 0.0,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "META",
@@ -1353,7 +1717,11 @@
       "net_pct": 0.0,
       "spy_pct": -4.26,
       "alpha_pct": null,
-      "note": "HOLD scores 0"
+      "note": "HOLD scores 0",
+      "manager_probability": null,
+      "target_weight_pct": null,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "MSFT",
@@ -1366,8 +1734,12 @@
       "gross_pct": -3.9,
       "net_pct": 0.0,
       "spy_pct": -4.26,
-      "alpha_pct": null,
-      "note": "long-only mode: SELL scores 0"
+      "alpha_pct": -0.35,
+      "note": "long-only: SELL is cash, graded on relative weakness vs SPY",
+      "manager_probability": 0.95,
+      "target_weight_pct": 0.0,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "NVDA",
@@ -1380,8 +1752,12 @@
       "gross_pct": -3.74,
       "net_pct": 0.0,
       "spy_pct": -4.26,
-      "alpha_pct": null,
-      "note": "long-only mode: SELL scores 0"
+      "alpha_pct": -0.51,
+      "note": "long-only: SELL is cash, graded on relative weakness vs SPY",
+      "manager_probability": 0.95,
+      "target_weight_pct": 0.0,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "TSLA",
@@ -1394,8 +1770,12 @@
       "gross_pct": -5.57,
       "net_pct": 0.0,
       "spy_pct": -4.26,
-      "alpha_pct": null,
-      "note": "long-only mode: SELL scores 0"
+      "alpha_pct": 1.32,
+      "note": "long-only: SELL is cash, graded on relative weakness vs SPY",
+      "manager_probability": 0.95,
+      "target_weight_pct": 0.0,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "AAPL",
@@ -1408,27 +1788,35 @@
       "gross_pct": 3.07,
       "net_pct": 0.0,
       "spy_pct": 4.69,
-      "alpha_pct": null,
-      "note": "long-only mode: SELL scores 0"
+      "alpha_pct": 1.62,
+      "note": "long-only: SELL is cash, graded on relative weakness vs SPY",
+      "manager_probability": 0.95,
+      "target_weight_pct": 0.0,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "AMD",
       "date": "2026-03-23",
-      "decision": "HOLD",
-      "confidence": 0.5,
+      "decision": "BUY",
+      "confidence": 0.95,
       "entry": 202.68,
       "exit": 246.83,
       "window_days": 21,
       "gross_pct": 21.78,
-      "net_pct": 0.0,
+      "net_pct": 21.68,
       "spy_pct": 4.69,
-      "alpha_pct": null,
-      "note": "HOLD scores 0"
+      "alpha_pct": 17.0,
+      "note": "",
+      "manager_probability": 0.95,
+      "target_weight_pct": 6.0,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "META",
       "date": "2026-03-23",
-      "decision": "HOLD",
+      "decision": "SELL",
       "confidence": 0.95,
       "entry": 603.0248,
       "exit": 633.4426,
@@ -1436,8 +1824,12 @@
       "gross_pct": 5.04,
       "net_pct": 0.0,
       "spy_pct": 4.69,
-      "alpha_pct": null,
-      "note": "HOLD scores 0"
+      "alpha_pct": -0.36,
+      "note": "long-only: SELL is cash, graded on relative weakness vs SPY",
+      "manager_probability": 0.95,
+      "target_weight_pct": 0.0,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "MSFT",
@@ -1450,8 +1842,12 @@
       "gross_pct": 0.36,
       "net_pct": 0.0,
       "spy_pct": 4.69,
-      "alpha_pct": null,
-      "note": "long-only mode: SELL scores 0"
+      "alpha_pct": 4.33,
+      "note": "long-only: SELL is cash, graded on relative weakness vs SPY",
+      "manager_probability": 0.95,
+      "target_weight_pct": 0.0,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "NVDA",
@@ -1464,8 +1860,12 @@
       "gross_pct": 7.78,
       "net_pct": 0.0,
       "spy_pct": 4.69,
-      "alpha_pct": null,
-      "note": "long-only mode: SELL scores 0"
+      "alpha_pct": -3.1,
+      "note": "long-only: SELL is cash, graded on relative weakness vs SPY",
+      "manager_probability": 0.95,
+      "target_weight_pct": 0.0,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "TSLA",
@@ -1478,8 +1878,12 @@
       "gross_pct": -7.46,
       "net_pct": 0.0,
       "spy_pct": 4.69,
-      "alpha_pct": null,
-      "note": "long-only mode: SELL scores 0"
+      "alpha_pct": 12.15,
+      "note": "long-only: SELL is cash, graded on relative weakness vs SPY",
+      "manager_probability": 0.95,
+      "target_weight_pct": 0.0,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "AAPL",
@@ -1493,63 +1897,83 @@
       "net_pct": 6.7,
       "spy_pct": 4.65,
       "alpha_pct": 2.05,
-      "note": ""
+      "note": "",
+      "manager_probability": 0.95,
+      "target_weight_pct": 6.0,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "AMD",
       "date": "2026-04-13",
-      "decision": "HOLD",
+      "decision": "BUY",
       "confidence": 0.95,
       "entry": 246.83,
       "exit": 341.54,
       "window_days": 21,
       "gross_pct": 38.37,
-      "net_pct": 0.0,
+      "net_pct": 38.27,
       "spy_pct": 4.65,
-      "alpha_pct": null,
-      "note": "HOLD scores 0"
+      "alpha_pct": 33.62,
+      "note": "",
+      "manager_probability": 0.95,
+      "target_weight_pct": 6.0,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "META",
       "date": "2026-04-13",
-      "decision": "SELL",
+      "decision": "BUY",
       "confidence": 0.95,
       "entry": 633.4426,
       "exit": 609.3639,
       "window_days": 21,
       "gross_pct": -3.8,
-      "net_pct": 0.0,
+      "net_pct": -3.9,
       "spy_pct": 4.65,
-      "alpha_pct": null,
-      "note": "long-only mode: SELL scores 0"
+      "alpha_pct": -8.55,
+      "note": "",
+      "manager_probability": 0.95,
+      "target_weight_pct": 6.0,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "MSFT",
       "date": "2026-04-13",
-      "decision": "SELL",
+      "decision": "BUY",
       "confidence": 0.95,
       "entry": 382.8186,
       "exit": 411.9506,
       "window_days": 21,
       "gross_pct": 7.61,
-      "net_pct": 0.0,
+      "net_pct": 7.51,
       "spy_pct": 4.65,
-      "alpha_pct": null,
-      "note": "long-only mode: SELL scores 0"
+      "alpha_pct": 2.86,
+      "note": "",
+      "manager_probability": 0.95,
+      "target_weight_pct": 6.0,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "NVDA",
       "date": "2026-04-13",
-      "decision": "HOLD",
+      "decision": "BUY",
       "confidence": 0.95,
       "entry": 188.8783,
       "exit": 198.0273,
       "window_days": 21,
       "gross_pct": 4.84,
-      "net_pct": 0.0,
+      "net_pct": 4.74,
       "spy_pct": 4.65,
-      "alpha_pct": null,
-      "note": "HOLD scores 0"
+      "alpha_pct": 0.09,
+      "note": "",
+      "manager_probability": 0.95,
+      "target_weight_pct": 6.0,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "TSLA",
@@ -1562,36 +1986,48 @@
       "gross_pct": 11.38,
       "net_pct": 0.0,
       "spy_pct": 4.65,
-      "alpha_pct": null,
-      "note": "long-only mode: SELL scores 0"
+      "alpha_pct": -6.72,
+      "note": "long-only: SELL is cash, graded on relative weakness vs SPY",
+      "manager_probability": 0.95,
+      "target_weight_pct": 0.0,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "AAPL",
       "date": "2026-05-04",
-      "decision": "HOLD",
+      "decision": "BUY",
       "confidence": 0.95,
       "entry": 276.3369,
       "exit": 308.0643,
       "window_days": 22,
       "gross_pct": 11.48,
-      "net_pct": 0.0,
+      "net_pct": 11.38,
       "spy_pct": 4.54,
-      "alpha_pct": null,
-      "note": "HOLD scores 0"
+      "alpha_pct": 6.84,
+      "note": "",
+      "manager_probability": 0.95,
+      "target_weight_pct": 6.0,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "AMD",
       "date": "2026-05-04",
-      "decision": "HOLD",
-      "confidence": 0.5,
+      "decision": "BUY",
+      "confidence": 0.95,
       "entry": 341.54,
       "exit": 503.89,
       "window_days": 22,
       "gross_pct": 47.53,
-      "net_pct": 0.0,
+      "net_pct": 47.43,
       "spy_pct": 4.54,
-      "alpha_pct": null,
-      "note": "HOLD scores 0"
+      "alpha_pct": 42.9,
+      "note": "",
+      "manager_probability": 0.95,
+      "target_weight_pct": 6.0,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "META",
@@ -1605,7 +2041,11 @@
       "net_pct": 0.0,
       "spy_pct": 4.54,
       "alpha_pct": null,
-      "note": "HOLD scores 0"
+      "note": "HOLD scores 0",
+      "manager_probability": null,
+      "target_weight_pct": null,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "MSFT",
@@ -1619,7 +2059,11 @@
       "net_pct": 0.7,
       "spy_pct": 4.54,
       "alpha_pct": -3.84,
-      "note": ""
+      "note": "",
+      "manager_probability": 0.95,
+      "target_weight_pct": 6.0,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "NVDA",
@@ -1633,35 +2077,47 @@
       "net_pct": 8.15,
       "spy_pct": 4.54,
       "alpha_pct": 3.62,
-      "note": ""
+      "note": "",
+      "manager_probability": 0.95,
+      "target_weight_pct": 6.0,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "TSLA",
       "date": "2026-05-04",
-      "decision": "SELL",
+      "decision": "BUY",
       "confidence": 0.95,
       "entry": 392.51,
       "exit": 433.59,
       "window_days": 22,
       "gross_pct": 10.47,
-      "net_pct": 0.0,
+      "net_pct": 10.37,
       "spy_pct": 4.54,
-      "alpha_pct": null,
-      "note": "long-only mode: SELL scores 0"
+      "alpha_pct": 5.83,
+      "note": "",
+      "manager_probability": 0.95,
+      "target_weight_pct": 6.0,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "AAPL",
       "date": "2026-05-25",
-      "decision": "HOLD",
-      "confidence": 0.5,
+      "decision": "BUY",
+      "confidence": 0.95,
       "entry": 308.5539,
       "exit": 296.1646,
       "window_days": 21,
       "gross_pct": -4.02,
-      "net_pct": 0.0,
+      "net_pct": -4.12,
       "spy_pct": 1.23,
-      "alpha_pct": null,
-      "note": "HOLD scores 0"
+      "alpha_pct": -5.35,
+      "note": "",
+      "manager_probability": 0.95,
+      "target_weight_pct": 6.0,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "AMD",
@@ -1675,21 +2131,29 @@
       "net_pct": 16.96,
       "spy_pct": 1.23,
       "alpha_pct": 15.73,
-      "note": ""
+      "note": "",
+      "manager_probability": 0.95,
+      "target_weight_pct": 6.0,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "META",
       "date": "2026-05-25",
       "decision": "HOLD",
       "confidence": 0.5,
-      "entry": 609.2142,
+      "entry": 609.2141,
       "exit": 593.012,
       "window_days": 21,
       "gross_pct": -2.66,
       "net_pct": 0.0,
       "spy_pct": 1.23,
       "alpha_pct": null,
-      "note": "HOLD scores 0"
+      "note": "HOLD scores 0",
+      "manager_probability": null,
+      "target_weight_pct": null,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "MSFT",
@@ -1703,7 +2167,11 @@
       "net_pct": -4.59,
       "spy_pct": 1.23,
       "alpha_pct": -5.83,
-      "note": ""
+      "note": "",
+      "manager_probability": 0.95,
+      "target_weight_pct": 6.0,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "NVDA",
@@ -1717,7 +2185,11 @@
       "net_pct": -1.32,
       "spy_pct": 1.23,
       "alpha_pct": -2.55,
-      "note": ""
+      "note": "",
+      "manager_probability": 0.95,
+      "target_weight_pct": 6.0,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "TSLA",
@@ -1731,21 +2203,29 @@
       "net_pct": -3.59,
       "spy_pct": 1.23,
       "alpha_pct": -4.82,
-      "note": ""
+      "note": "",
+      "manager_probability": 0.95,
+      "target_weight_pct": 6.0,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "AAPL",
       "date": "2026-06-15",
-      "decision": "BUY",
-      "confidence": 0.95,
+      "decision": "HOLD",
+      "confidence": 0.5,
       "entry": 296.1646,
       "exit": 312.3906,
       "window_days": 21,
       "gross_pct": 5.48,
-      "net_pct": 5.38,
+      "net_pct": 0.0,
       "spy_pct": -0.21,
-      "alpha_pct": 5.59,
-      "note": ""
+      "alpha_pct": null,
+      "note": "HOLD scores 0",
+      "manager_probability": null,
+      "target_weight_pct": null,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "AMD",
@@ -1759,7 +2239,11 @@
       "net_pct": 0.78,
       "spy_pct": -0.21,
       "alpha_pct": 0.99,
-      "note": ""
+      "note": "",
+      "manager_probability": 0.95,
+      "target_weight_pct": 6.0,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "META",
@@ -1772,36 +2256,48 @@
       "gross_pct": 1.15,
       "net_pct": 0.0,
       "spy_pct": -0.21,
-      "alpha_pct": null,
-      "note": "long-only mode: SELL scores 0"
+      "alpha_pct": -1.36,
+      "note": "long-only: SELL is cash, graded on relative weakness vs SPY",
+      "manager_probability": 0.95,
+      "target_weight_pct": 0.0,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "MSFT",
       "date": "2026-06-15",
-      "decision": "BUY",
-      "confidence": 0.95,
+      "decision": "HOLD",
+      "confidence": 0.5,
       "entry": 399.0089,
       "exit": 386.0133,
       "window_days": 21,
       "gross_pct": -3.26,
-      "net_pct": -3.36,
+      "net_pct": 0.0,
       "spy_pct": -0.21,
-      "alpha_pct": -3.14,
-      "note": ""
+      "alpha_pct": null,
+      "note": "HOLD scores 0",
+      "manager_probability": null,
+      "target_weight_pct": null,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "NVDA",
       "date": "2026-06-15",
-      "decision": "BUY",
+      "decision": "SELL",
       "confidence": 0.95,
       "entry": 212.2125,
       "exit": 195.3314,
       "window_days": 21,
       "gross_pct": -7.95,
-      "net_pct": -8.05,
+      "net_pct": 0.0,
       "spy_pct": -0.21,
-      "alpha_pct": -7.84,
-      "note": ""
+      "alpha_pct": 7.74,
+      "note": "long-only: SELL is cash, graded on relative weakness vs SPY",
+      "manager_probability": 0.95,
+      "target_weight_pct": 0.0,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "TSLA",
@@ -1815,7 +2311,11 @@
       "net_pct": 0.0,
       "spy_pct": -0.21,
       "alpha_pct": null,
-      "note": "HOLD scores 0"
+      "note": "HOLD scores 0",
+      "manager_probability": null,
+      "target_weight_pct": null,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "AAPL",
@@ -1829,7 +2329,11 @@
       "net_pct": 7.66,
       "spy_pct": -1.62,
       "alpha_pct": 9.28,
-      "note": ""
+      "note": "",
+      "manager_probability": 0.95,
+      "target_weight_pct": 6.0,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "AMD",
@@ -1843,21 +2347,29 @@
       "net_pct": -10.44,
       "spy_pct": -1.62,
       "alpha_pct": -8.82,
-      "note": ""
+      "note": "",
+      "manager_probability": 0.95,
+      "target_weight_pct": 6.0,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "META",
       "date": "2026-07-06",
-      "decision": "HOLD",
-      "confidence": 0.5,
+      "decision": "BUY",
+      "confidence": 0.95,
       "entry": 599.8166,
       "exit": 593.4017,
       "window_days": 21,
       "gross_pct": -1.07,
-      "net_pct": 0.0,
+      "net_pct": -1.17,
       "spy_pct": -1.62,
-      "alpha_pct": null,
-      "note": "HOLD scores 0"
+      "alpha_pct": 0.45,
+      "note": "",
+      "manager_probability": 0.95,
+      "target_weight_pct": 6.0,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "MSFT",
@@ -1871,12 +2383,16 @@
       "net_pct": 0.51,
       "spy_pct": -1.62,
       "alpha_pct": 2.13,
-      "note": ""
+      "note": "",
+      "manager_probability": 0.95,
+      "target_weight_pct": 6.0,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "NVDA",
       "date": "2026-07-06",
-      "decision": "HOLD",
+      "decision": "SELL",
       "confidence": 0.95,
       "entry": 195.3314,
       "exit": 196.2904,
@@ -1884,22 +2400,30 @@
       "gross_pct": 0.49,
       "net_pct": 0.0,
       "spy_pct": -1.62,
-      "alpha_pct": null,
-      "note": "HOLD scores 0"
+      "alpha_pct": -2.11,
+      "note": "long-only: SELL is cash, graded on relative weakness vs SPY",
+      "manager_probability": 0.95,
+      "target_weight_pct": 0.0,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "TSLA",
       "date": "2026-07-06",
-      "decision": "BUY",
-      "confidence": 0.95,
+      "decision": "HOLD",
+      "confidence": 0.5,
       "entry": 419.77,
       "exit": 309.22,
       "window_days": 21,
       "gross_pct": -26.34,
-      "net_pct": -26.44,
+      "net_pct": 0.0,
       "spy_pct": -1.62,
-      "alpha_pct": -24.81,
-      "note": ""
+      "alpha_pct": null,
+      "note": "HOLD scores 0",
+      "manager_probability": null,
+      "target_weight_pct": null,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "AAPL",
@@ -1913,21 +2437,29 @@
       "net_pct": -9.32,
       "spy_pct": 4.54,
       "alpha_pct": -13.86,
-      "note": ""
+      "note": "",
+      "manager_probability": 0.95,
+      "target_weight_pct": 6.0,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "AMD",
       "date": "2026-07-27",
-      "decision": "BUY",
-      "confidence": 0.95,
+      "decision": "HOLD",
+      "confidence": 0.5,
       "entry": 494.95,
       "exit": 506.0,
       "window_days": 21,
       "gross_pct": 2.23,
-      "net_pct": 2.13,
+      "net_pct": 0.0,
       "spy_pct": 4.54,
-      "alpha_pct": -2.41,
-      "note": ""
+      "alpha_pct": null,
+      "note": "HOLD scores 0",
+      "manager_probability": null,
+      "target_weight_pct": null,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "META",
@@ -1941,21 +2473,29 @@
       "net_pct": 0.0,
       "spy_pct": 4.54,
       "alpha_pct": null,
-      "note": "HOLD scores 0"
+      "note": "HOLD scores 0",
+      "manager_probability": null,
+      "target_weight_pct": null,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "MSFT",
       "date": "2026-07-27",
-      "decision": "HOLD",
-      "confidence": 0.5,
+      "decision": "BUY",
+      "confidence": 0.95,
       "entry": 388.3689,
       "exit": 479.4474,
       "window_days": 21,
       "gross_pct": 23.45,
-      "net_pct": 0.0,
+      "net_pct": 23.35,
       "spy_pct": 4.54,
-      "alpha_pct": null,
-      "note": "HOLD scores 0"
+      "alpha_pct": 18.81,
+      "note": "",
+      "manager_probability": 0.95,
+      "target_weight_pct": 6.0,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "NVDA",
@@ -1969,21 +2509,29 @@
       "net_pct": 0.0,
       "spy_pct": 4.54,
       "alpha_pct": null,
-      "note": "HOLD scores 0"
+      "note": "HOLD scores 0",
+      "manager_probability": null,
+      "target_weight_pct": null,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "TSLA",
       "date": "2026-07-27",
-      "decision": "BUY",
+      "decision": "SELL",
       "confidence": 0.95,
       "entry": 309.22,
       "exit": 339.3,
       "window_days": 21,
       "gross_pct": 9.73,
-      "net_pct": 9.63,
+      "net_pct": 0.0,
       "spy_pct": 4.54,
-      "alpha_pct": 5.08,
-      "note": ""
+      "alpha_pct": -5.18,
+      "note": "long-only: SELL is cash, graded on relative weakness vs SPY",
+      "manager_probability": 0.95,
+      "target_weight_pct": 0.0,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "AAPL",
@@ -1997,7 +2545,11 @@
       "net_pct": 3.38,
       "spy_pct": -0.87,
       "alpha_pct": 4.25,
-      "note": ""
+      "note": "",
+      "manager_probability": 0.95,
+      "target_weight_pct": 6.0,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "AMD",
@@ -2011,7 +2563,11 @@
       "net_pct": -0.15,
       "spy_pct": -0.87,
       "alpha_pct": 0.72,
-      "note": ""
+      "note": "",
+      "manager_probability": 0.95,
+      "target_weight_pct": 6.0,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "META",
@@ -2024,8 +2580,12 @@
       "gross_pct": 7.82,
       "net_pct": 0.0,
       "spy_pct": -0.87,
-      "alpha_pct": null,
-      "note": "long-only mode: SELL scores 0"
+      "alpha_pct": -8.69,
+      "note": "long-only: SELL is cash, graded on relative weakness vs SPY",
+      "manager_probability": 0.95,
+      "target_weight_pct": 0.0,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "MSFT",
@@ -2039,35 +2599,47 @@
       "net_pct": 2.92,
       "spy_pct": -0.87,
       "alpha_pct": 3.79,
-      "note": ""
+      "note": "",
+      "manager_probability": 0.95,
+      "target_weight_pct": 6.0,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "NVDA",
       "date": "2026-08-17",
-      "decision": "HOLD",
+      "decision": "BUY",
       "confidence": 0.95,
       "entry": 224.7585,
       "exit": 225.4777,
       "window_days": 22,
       "gross_pct": 0.32,
-      "net_pct": 0.0,
+      "net_pct": 0.22,
       "spy_pct": -0.87,
-      "alpha_pct": null,
-      "note": "HOLD scores 0"
+      "alpha_pct": 1.09,
+      "note": "",
+      "manager_probability": 0.95,
+      "target_weight_pct": 6.0,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "TSLA",
       "date": "2026-08-17",
-      "decision": "HOLD",
-      "confidence": 0.5,
+      "decision": "BUY",
+      "confidence": 0.95,
       "entry": 339.3,
       "exit": 368.16,
       "window_days": 22,
       "gross_pct": 8.51,
-      "net_pct": 0.0,
+      "net_pct": 8.41,
       "spy_pct": -0.87,
-      "alpha_pct": null,
-      "note": "HOLD scores 0"
+      "alpha_pct": 9.27,
+      "note": "",
+      "manager_probability": 0.95,
+      "target_weight_pct": 6.0,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "AAPL",
@@ -2081,35 +2653,47 @@
       "net_pct": 5.66,
       "spy_pct": -0.35,
       "alpha_pct": 6.01,
-      "note": ""
+      "note": "",
+      "manager_probability": 0.95,
+      "target_weight_pct": 6.0,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "AMD",
       "date": "2026-09-07",
-      "decision": "HOLD",
-      "confidence": 0.5,
+      "decision": "BUY",
+      "confidence": 0.95,
       "entry": 477.57,
       "exit": 607.87,
       "window_days": 21,
       "gross_pct": 27.28,
-      "net_pct": 0.0,
+      "net_pct": 27.18,
       "spy_pct": -0.35,
-      "alpha_pct": null,
-      "note": "HOLD scores 0"
+      "alpha_pct": 27.53,
+      "note": "",
+      "manager_probability": 0.95,
+      "target_weight_pct": 6.0,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "META",
       "date": "2026-09-07",
-      "decision": "HOLD",
+      "decision": "BUY",
       "confidence": 0.95,
       "entry": 616.2836,
       "exit": 715.62,
       "window_days": 21,
       "gross_pct": 16.12,
-      "net_pct": 0.0,
+      "net_pct": 16.02,
       "spy_pct": -0.35,
-      "alpha_pct": null,
-      "note": "HOLD scores 0"
+      "alpha_pct": 16.37,
+      "note": "",
+      "manager_probability": 0.95,
+      "target_weight_pct": 6.0,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "MSFT",
@@ -2123,7 +2707,11 @@
       "net_pct": 1.81,
       "spy_pct": -0.35,
       "alpha_pct": 2.15,
-      "note": ""
+      "note": "",
+      "manager_probability": 0.95,
+      "target_weight_pct": 6.0,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "NVDA",
@@ -2137,21 +2725,29 @@
       "net_pct": -0.64,
       "spy_pct": -0.35,
       "alpha_pct": -0.29,
-      "note": ""
+      "note": "",
+      "manager_probability": 0.95,
+      "target_weight_pct": 6.0,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     },
     {
       "ticker": "TSLA",
       "date": "2026-09-07",
-      "decision": "SELL",
+      "decision": "BUY",
       "confidence": 0.95,
       "entry": 354.08,
       "exit": 357.45,
       "window_days": 21,
       "gross_pct": 0.95,
-      "net_pct": 0.0,
+      "net_pct": 0.85,
       "spy_pct": -0.35,
-      "alpha_pct": null,
-      "note": "long-only mode: SELL scores 0"
+      "alpha_pct": 1.2,
+      "note": "",
+      "manager_probability": 0.95,
+      "target_weight_pct": 6.0,
+      "cost_pct": 0.1,
+      "risk_regime": ""
     }
   ],
   "ungraded": []
