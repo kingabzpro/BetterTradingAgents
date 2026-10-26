@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
-  "generated_at": "2026-10-20T20:25:39+00:00",
+  "generated_at": "2026-10-26T12:28:10+00:00",
   "code": {
-    "revision": "3066d52",
+    "revision": "64f0997",
     "dirty": true
   },
   "decision_policy_version": "2026-10-e",
@@ -10,6 +10,7 @@
     "mode": "mock",
     "name": "sweep-no-forecast",
     "model": "rule-based mock",
+    "temperature": 0.0,
     "tickers": [
       "NVDA",
       "AMD",
@@ -25,6 +26,7 @@
     "depth": "fast",
     "outlook": "short_term",
     "cost_pct": 0.1,
+    "risk_regime_enabled": false,
     "short": false,
     "fundamentals": "excluded",
     "holdout": "2026-02-15",

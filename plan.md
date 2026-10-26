@@ -78,7 +78,27 @@ June grid (NVDA/AMD/MSFT x 3 dates, pro): 3/9 decision flips between trim on/off
 
 News-rich grid (NVDA/AMD, 2026-08/09): prompt tokens -626 (-1.5%) with trim, total tokens within +1.1% (completion/reasoning length variance dominates), 1/6 flips. Durations: batch variance, no consistent direction.
 
+Release vs baseline (same news-rich grid, 6 runs per arm, artifacts report-ab-baseline vs report-ab-news-on): **0/6 decision flips**, prompt tokens flat (42,060 vs 41,998, -0.1%: the news trim and the manager's new weight paragraph cancel out), total tokens +8.3% and latency +0.8s/call in the release arm but both sit inside the batch-to-batch swing measured between identical configs elsewhere (+25% completion / 4.3-7.9s per call), so no release-driven speed or cost regression is detectable at n=1 batch per arm. The kill criteria (quality or speed drop) show no evidence of being tripped.
+
 Bottom line: batch 2 is smaller than the plan hoped (trimming is ~1.5% of prompt tokens, cache saves provider calls not LLM cost, tiering waits on a second model); batch 3 is the substantive part (weights, turnover, overlay all proven by hermetic checks). Artifacts: backtests/report-ab-*.{json,md}.
+
+## Merge readiness (2026-10-26)
+
+**Divergence today**: main == origin/main == 7c14f1a, which is exactly the merge base. main has zero commits exp lacks, so merging now is conflict-free (main is a strict ancestor of exp). Every day both branches live, that stops being true.
+
+**CI parity verified locally** (exactly what .github/workflows/ci.yml runs on a PR): `uv run ruff check app scripts` clean; `uv run test offline` = 34/34 groups green; the full suite including the browser smoke = 35/35 green at 07dd22b (main's suite has 32 groups).
+
+**The case**:
+- Dependency modernization: crewai -> openai-agents; the pydantic<2.13 pin workaround disappears with it; venv measured 959 -> 308 MB on the swap; uv.lock shrinks by ~3,000 lines; the pending fix/drop-lancedb PR (a crewai-dependency workaround) becomes obsolete and should be closed once this merges.
+- Proven parity, not hoped: live A/B against the main-era code showed 3/3 decision parity, even speed, ~32% cheaper per run; release vs pre-release baseline showed 0/6 decision flips and flat prompt tokens.
+- Verification depth: 35 check groups (vs 32), including new suites for the overlay, data cache, prompt trim, plus browser smoke.
+- Real fixes main lacks: LLM_CONCURRENCY gate (the Modal 429 failure class), wash-trade pre-check (proven by the live ALAB incident), turnover cap, weight contract, risk overlay (off by default), TTL cache, honest backtest grading.
+- Invariants intact: paper=True hardcoded, loopback host/origin guards, secret scan of the full diff clean (0 hits).
+- Hygiene: reproducibility manifests, A/B artifacts, plan.md and memory trail; rollback is a main reset to 7c14f1a.
+
+**Accepted caveats**: README results table still shows pre-batch-1 numbers and the wiki is untouched (both gated on owner go per edit; merging does not publish new numbers). Overlay is off by default. Model-tiering proof waits on a second model. A/B sample sizes are small; the case rests on verification, not on alpha claims.
+
+**Mechanics when approved**: push exp, open PR exp -> main (origin/dev is fully contained in main, so the dev hop adds nothing today), rebase-and-merge keeps the 7-commit story, CI gates it. Nothing pushes or merges without the owner's word.
 
 ## Status
 
@@ -90,3 +110,127 @@ Bottom line: batch 2 is smaller than the plan hoped (trimming is ~1.5% of prompt
 - [ ] README update (owner go)
 - [ ] Wiki update (owner go)
 - [ ] Merge exp -> dev, PR dev -> main, release
+
+---
+
+# Phase 4: next increment (items 14-19)
+
+Drafted 2026-10-26 after the FinRL-X re-comparison. Three batches, same rules as before: one batch per session, `uv run test all` green per item, live A/B only where it can actually answer the question. The single provable decision-quality item is 14; 17-18 are realism and protection; 15 makes every later change testable. Sequenced so each batch is independently shippable.
+
+## Batch 4: stability and testability
+
+**Item 14: manager self-consistency voting (the one that can improve decisions).**
+The A/B exposed that 3 of 9 decisions flip between identical runs at temperature 0.2. Run the manager 3 times per ticker in parallel (LLM_CONCURRENCY already gates bursts), take the majority, and record `manager_votes` + `manager_agreement` (3/3, 2/1 split) on StockAnalysis, in the UI ("2/1 split" badge), and in reports. New setting MANAGER_VOTES (default 1 = today; 3 to enable). Ties resolve by summed confidence, then HOLD. Files: app/config.py, app/workflow.py, app/models.py, static/js/render.js, reports. Verification: hermetic check (scripted votes: majority, tie, agreement field) + live A/B on the news-rich grid: flips between identical configs at votes=3 vs the 3/9 baseline, cost delta (expect ~+2 manager calls per ticker, cents).
+
+**Item 15: regression panel harness.**
+Scripts `scripts/ab_panel.py --name x` runs one arm on a fixed grid (tickers/dates/depth/config in one place) and appends to `backtests/ab-ledger.json`; `--compare a b` prints the decision-flip, token, and cost table plus a same-config control arm when available. Every future change gets the same test the trim and release got, in one command. Verification: hermetic (stubbed LLM) plus one real ledger entry.
+
+**Item 16: temperature study (experiment, may become a default).**
+Run the fixed panel at LLM_TEMPERATURE=0 vs 0.2, two arm pairs plus controls. If flips collapse at 0, that is a free consistency win; if not, document and move on. No code unless the result says adopt a new default.
+
+## Batch 5: realism and risk (deterministic, no LLM cost)
+
+**Item 17: nonlinear fill costs in the backtest (FinRL-X PR #86 gap).**
+Replace the flat 0.10% per positioned decision with base + participation + volatility slippage: `bp = base_bp + slope_bp * min(1, notional / avg_dollar_volume)` with a volatility multiplier, computed point-in-time from the snapshot's own volumes/closes (already cached). Report the effective cost per decision. Expect published numbers to move down on illiquid names; that is the point. Settings with sane defaults; PROMPT-free, no live cost. Verification: hand-computed hermetic cases + before/after report table.
+
+**Item 18: deterministic regime gate (FinRL-X market_regime.py gap).**
+New app/risk_regime.py: slow gate (SPX 26-week trend, 13-week drawdown, VIX robust z-score with a persistence requirement) + fast risk-off overlay (3-day price/vol shock). Output: a risk multiplier (1.0 / 0.75 / 0.5) and a cash-floor boost that the existing risk gate applies to BUY sizing; regime controls the risk budget, never the picks. Point-in-time by construction (computed from the same cached series), so backtests grade it honestly. Files: app/risk_regime.py, app/risk.py, app/workflow.py, app/config.py, settings. Verification: synthetic-series hermetic cases (risk-on, neutral, risk-off, fast-off expiry, persistence) + a mock backtest showing the multiplier binding.
+
+## Batch 6: close the measurement loop
+
+**Item 19: calibration-driven sizing.**
+Feed the reliability curve back into the weight contract: scale the manager's proposed weight by `observed_hit_rate / predicted_probability` from the live calibration table (per probability band, gated at the minimum sample, clamped 0.5-1.0, flag in risk_flags when it binds). Small because the weight plumbing exists; converts batch 1's diagnostics into behavior. Verification: hermetic (seeded calibration rows) + flag/report surface.
+
+## Ops items (owner actions, tracked here)
+
+- [ ] Flip OVERLAY_ENABLED on and let the paper account run: only calendar time produces the drawdown comparison.
+- [ ] Merge decision (readiness record above; zero-conflict today).
+- [ ] README + wiki regeneration (owner go per edit; regenerate all numbers from fresh reports first).
+- [ ] Tiering A/B (blocked on a second model on the endpoint).
+
+## Phase 4 status
+
+- [x] Batch 4 (items 14-16): outcome below; manager voting REMOVED after the A/B killed it
+- [x] Batch 5 (items 17-18): fill costs + regime gate - outcome below
+- [x] Batch 6 (item 19): calibration-driven sizing - outcome below
+- [x] Drop/adopt analysis executed (bottom of this section)
+
+### Batch 5 outcome (2026-10-26)
+
+**Item 17, participation-aware fills.** Round trip = base 0.10% + up to 0.20% scaled by the position's share of the snapshot's own 21-day mean dollar volume (full term at 2% participation), multiplied 0.5-2x by the name's own volatility; thin history falls back to the base. Point-in-time from data already cached. Every report now carries a per-decision Cost column. Hermetic hand-checked cases in check_backtest.
+
+**Item 18, deterministic regime gate.** New app/risk_regime.py: slow gate (SPY 26-week mean, 13-week drawdown past 10%, VIX robust z >= 3, each a stress point; 2+ points = risk_off, requiring the same score a week ago) plus a fast overlay (3-session SPY -4% or VIX +25% forces risk_off). Multiplier: risk_on 1.0x, neutral 0.75x, risk_off 0.0x blocks new BUYs (exits never blocked). Replays compute point-in-time budgets from a dedicated +400-day window and never fall back to live data (a bug found and fixed during this work: the original window sat under the gate's bar floor, silently opening it). Mock A/B: on 2025-11-17 (fast risk-off) both BUYs were blocked; 2025-12-08 (risk_on) untouched; the June grid was entirely risk_on, zero flips, correct. Off by default; toggle on the Settings page.
+
+### Batch 6 outcome (2026-10-26)
+
+**Item 19, calibration-driven sizing.** app/calibration.sizing_multiplier_for: the reliability band containing the manager's predicted probability yields observed/predicted, clamped to [0.5, 1.0] (calibration can only shrink), gated at the minimum sample, live-only (replays stay out of the live record), and flagged in risk_flags when it binds. Hermetic cases in check_calibration. Off by default.
+
+### Drop/adopt analysis (2026-10-26, the owner's request)
+
+| Thing added | Verdict | Action taken |
+|---|---|---|
+| Manager voting (item 14) | Drop: 4/9 flips vs a 3/9 control band at +105% cost | Code, check, setting, env var and UI badge removed; the finding and artifacts stay in plan.md and backtests/ab-ledger.json |
+| Prompt trim (item 8) | Keep, low value (~1.5% prompt tokens) | Stays behind PROMPT_TRIM |
+| Temperature | Adopt 0.0 | Bigger panel: identical runs flipped 6/20 at 0.2 vs 2/20 at 0.0 (pooled 31% -> 14% over 29 pairs per arm), -2.3% tokens, -4.6% cost. Default flipped in app/config.py and .env.example; an explicit LLM_TEMPERATURE still wins |
+| Risk overlay, regime gate, calibration sizing | Keep, off by default | Owner toggles; overlay first (most proven), regime gate second, calibration sizing once a band has 30+ mature calls |
+| Regression panel + all checks | Keep | 37 groups green on the final state |
+
+The honesty note this section exists to record: three experiments (voting, trim, temperature) show the pipeline's marginal calls flip across runs by 14-30%; temperature 0 is the only lever that measurably halved it, and no lever changed which calls are marginal (AMD early June, NVDA mid July flip in every configuration). Stability is bounded by the model, not the harness.
+
+## Cons remediation (2026-10-26, the owner's "work on cons" pass)
+
+Each merge con from the pros/cons read, with what changed:
+
+| Con | Remediation |
+|---|---|
+| Published numbers will change; docs mismatch | Depth numbers regenerated from the new code: holdout (60 decisions per depth) now Fast +43.95% / alpha +3.45% / dd 0.85%, Pro +32.43% / +2.86% / 4.98%, Max +17.53% / +2.97% / 6.35% - the old cash-except-BUY basis and flat costs produced the published -9.19% / +45.04% / +94.87% with 24-47% drawdowns, so the depth ordering itself changes under honest accounting. README/wiki replacement text drafted for owner approval; reports now record the LLM temperature that produced them |
+| Behavioral defaults shift | .env.example documents every changed default (temperature 0.0, overlay/regime/calibration off); report settings table now shows the temperature for provenance |
+| Large single merge, hard to review | Commit-by-commit review index below |
+| New surface to maintain | Release surface table below: every new setting, its default, its evidence, and the recommended state |
+| Merging adds capability, not proven performance | Stop-overlay replay closes the biggest gap: 91 graded BUYs on the 5-ticker grid, stops would have fired 7 times (5 absolute, 2 trailing) at a mean cost of -0.62% per BUY vs holding. The stops are drawdown insurance, not alpha, and the evidence says so |
+| Process deviation (AGENTS.md says exp -> dev -> main) | After merging to main, fast-forward dev to main so the documented flow holds for the next feature branch |
+| Install friction (lockfile changed) | Release note: run `uv sync` after pulling; stale crewai packages are removed automatically |
+
+### Commit-by-commit review index (11 commits, main 7c14f1a -> exp 64f0997+)
+
+1. `5b937fd` framework swap: pyproject + uv.lock + workflow/agents rewrite (the big one)
+2. `a08fbaf` README points at the SDK (2 lines)
+3. `7c14be3` LLM_CONCURRENCY gate
+4. `5a50c0c` batch 1: grading, calibration, scorecard, QQQ
+5. `5a53db1` batches 2+3: trim, cache, weights, turnover, overlay
+6. `bc4e703` release-vs-baseline A/B artifacts
+7. `07dd22b` wash-trade guard + UI warnings
+8. `92b396b` merge-readiness record
+9. `ea8e682` phase 4 plan
+10. `c0c3bd9` regression panel (voting added then removed later)
+11. `64f0997` phase 4 batches 5-6 + drop/adopt (current candidate, plus this cons pass)
+
+### Release surface (every new knob)
+
+| Setting | Default | Evidence | Recommended |
+|---|---|---|---|
+| LLM_CONCURRENCY | 12 | Fixed the Modal 429 class | Keep |
+| MANAGER_VOTES | removed | 4/9 flips at +105% cost | Gone; finding in git history |
+| PROMPT_TRIM (+caps) | on | ~1.5% prompt tokens | Keep |
+| NEWS/HISTORY cache TTLs | 900s / 300s | 2 provider calls to 1 | Keep |
+| OVERLAY_ENABLED | off | Replay: 7/91 stops, -0.62%/BUY vs holding | Flip only as drawdown insurance |
+| MAX_TURNOVER_PCT | 0.5 | Caps session churn; sells exempt | Keep |
+| RISK_REGIME_ENABLED | off | Blocks entries in stress; June grid unaffected | Enable after overlay |
+| CALIBRATION_SIZING | off | Needs 30+ mature calls per band | Enable later |
+| LLM_TEMPERATURE | 0.0 | 6/20 vs 2/20 flips, -4.6% cost | Adopted |
+
+## Batch 4 outcome (2026-10-26)
+
+Delivered: manager voting (MANAGER_VOTES, off by default, agreement badge in the UI, check_voting), the regression panel (scripts/ab_panel.py + backtests/ab-ledger.json + check_ab_panel), and the temperature study. Suite 37 groups green. All arms live on the June panel grid (9 decisions each), controls included.
+
+| Arm (same-config flips) | Flips | Tokens/arm | Cost/arm |
+|---|---|---|---|
+| votes=1 (control band) | 3/9 | 90,973 | $0.0589 |
+| votes=3 (voting ON) | 4/9 | 179,732 (+98%) | $0.1205 (+105%) |
+| temperature=0 | 2/9 | 83,512 (-8.2%) | $0.0499 (-15%) |
+
+**Verdict on item 14: killed as a recommendation.** Voting at 3 samples did not reduce run-to-run flips (4/9 vs the 3/9 control band) and doubled cost. The likely cause: the samples within one run are correlated (same prompt and serving state) while the marginal calls sit near 50/50, so even a 2/3 majority is itself unstable across runs. The feature stays as a tested, off-by-default toggle with the UI badge; MANAGER_VOTES=1 remains the default. *(Later the same day the drop/adopt analysis removed the code entirely - see that table below.)*
+
+**Temperature:** temp 0 shows fewer flips (2/9) and is consistently cheaper (both temp0 arms below both votes1 arms on tokens, -15% cost) - a real-looking but small-sample result (n=9). Per the plan's bar ("no code unless flips collapse"), no default change; either set LLM_TEMPERATURE=0 in the app, or run a bigger panel (20+ decisions per arm) to settle it.
+
+**Panel:** the four arms above were its first real use; the ledger now holds votes1-a/b, votes3-a/b, temp0-a/b, and `ab_panel.py compare` prints the flip/token/cost table plus the noise band for any future change.

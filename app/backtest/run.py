@@ -41,6 +41,7 @@ from app.backtest.grade import (
 )
 from app.backtest.manifest import build_manifest, write_manifest
 from app.backtest.report import build_flags, write_report
+from app.backtest.stops import stop_replay_summary
 from app.config import settings
 from app.depth import depth_profile
 from app.tools.market_data import get_closes_between
@@ -297,6 +298,14 @@ async def run_backtest(
     )
     overall["calibration"] = probability_calibration(outcomes)
     overall["analyst_scorecard"] = analyst_scorecard(analyst_calls)
+    # What the live stop rules would have done across this sample (item: the
+    # overlay accumulates evidence only in calendar time otherwise).
+    overall["stop_replay"] = stop_replay_summary(
+        outcomes,
+        closes_by_ticker,
+        settings.overlay_stop_loss_pct,
+        settings.overlay_trailing_stop_pct,
+    )
     overall["llm_usage"] = {
         **llm_usage,
         "cost_usd": round(llm_cost_usd, 4),
@@ -325,6 +334,7 @@ async def run_backtest(
         "mode": mode,
         "name": name,
         "model": settings.llm_model if mode == "llm" else "rule-based mock",
+        "temperature": settings.llm_temperature,
         "tickers": tickers,
         "start": start,
         "end": end,

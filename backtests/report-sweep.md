@@ -1,6 +1,6 @@
 # Backtest sweep - mock mode
 
-Generated 2026-10-20T20:25:39Z
+Generated 2026-10-26T12:28:11Z
 
 | Setting | Value |
 |---|---|
@@ -18,43 +18,43 @@ every arm (point-in-time honesty rules in app/backtest/run.py).
 
 | Arm | Decisions | BUY/SELL/HOLD | Tune mean alpha (n) | Test mean alpha (n) | Test cumulative | Test Sharpe | Test max DD |
 |---|---|---|---|---|---|---|---|
-| [baseline](report-sweep-baseline.md) | 138 | 71 / 18 / 49 | -0.37% (n=46) | -0.71% (n=25) | -9.19% | -0.01 | 44.62% |
-| [depth-pro](report-sweep-depth-pro.md) | 138 | 93 / 0 / 45 | +0.02% (n=55) | +0.37% (n=38) | +45.04% | 0.51 | 46.94% |
-| [depth-max](report-sweep-depth-max.md) | 138 | 72 / 0 / 66 | +0.01% (n=45) | +1.80% (n=27) | +94.87% | 0.93 | 24.50% |
-| [outlook-day](report-sweep-outlook-day.md) | 138 | 57 / 15 / 66 | -0.05% (n=37) | +0.08% (n=20) | -3.58% | 0.06 | 35.39% |
-| [outlook-long](report-sweep-outlook-long.md) | 138 | 85 / 20 / 33 | +0.29% (n=55) | +1.31% (n=30) | +58.82% | 0.54 | 44.62% |
-| [no-forecast](report-sweep-no-forecast.md) | 138 | 61 / 14 / 63 | -0.11% (n=41) | -0.75% (n=20) | -13.39% | -0.09 | 40.86% |
+| [baseline](report-sweep-baseline.md) | 138 | 89 / 25 / 24 | -0.14% (n=64) | +3.45% (n=50) | +43.95% | 3.54 | 0.85% |
+| [depth-pro](report-sweep-depth-pro.md) | 138 | 109 / 0 / 29 | +0.03% (n=67) | +2.86% (n=42) | +32.43% | 2.52 | 4.98% |
+| [depth-max](report-sweep-depth-max.md) | 138 | 76 / 0 / 62 | +0.29% (n=51) | +2.97% (n=25) | +17.53% | 1.58 | 6.35% |
+| [outlook-day](report-sweep-outlook-day.md) | 138 | 88 / 23 / 27 | -0.31% (n=63) | +2.60% (n=48) | +33.49% | 2.42 | 5.06% |
+| [outlook-long](report-sweep-outlook-long.md) | 138 | 81 / 21 / 36 | +0.51% (n=54) | +2.91% (n=48) | +37.78% | 2.88 | 4.78% |
+| [no-forecast](report-sweep-no-forecast.md) | 138 | 89 / 25 / 24 | -0.14% (n=64) | +3.45% (n=50) | +43.95% | 3.54 | 0.85% |
 
 ## Paired differences vs baseline (per-decision net, matched by ticker and date)
 
 ### depth-pro - depth=pro: news analyst + bull/bear debate
-- tune: mean +0.39%, 95% CI [-0.38%, +1.34%] (crosses 0, n=78)
-- test: mean +0.90%, 95% CI [-0.31%, +2.32%] (crosses 0, n=60)
+- tune: mean -0.01%, 95% CI [-0.60%, +0.58%] (crosses 0, n=78)
+- test: mean -0.84%, 95% CI [-2.25%, +0.36%] (crosses 0, n=60)
 
 ### depth-max - depth=max: adds judge + sentiment (market/fundamental stay excluded)
-- tune: mean +0.21%, 95% CI [-0.45%, +1.10%] (crosses 0, n=78)
-- test: mean +1.28%, 95% CI [+0.05%, +2.75%] (excludes 0, n=60)
+- tune: mean -0.12%, 95% CI [-0.32%, +0.05%] (crosses 0, n=78)
+- test: mean -2.08%, 95% CI [-3.91%, -0.63%] (excludes 0, n=60)
 
 ### outlook-day - outlook=day_trade (faster signal windows)
-- tune: mean +0.10%, 95% CI [-0.43%, +0.64%] (crosses 0, n=78)
-- test: mean +0.09%, 95% CI [-0.30%, +0.53%] (crosses 0, n=60)
+- tune: mean +0.00%, 95% CI [+0.00%, +0.00%] (crosses 0, n=78)
+- test: mean -0.74%, 95% CI [-2.04%, +0.13%] (crosses 0, n=60)
 
 ### outlook-long - outlook=long_term (slower signal windows)
-- tune: mean +0.46%, 95% CI [-0.49%, +1.54%] (crosses 0, n=78)
-- test: mean +1.10%, 95% CI [-0.24%, +3.17%] (crosses 0, n=60)
+- tune: mean -0.18%, 95% CI [-0.64%, +0.21%] (crosses 0, n=78)
+- test: mean -0.43%, 95% CI [-1.47%, +0.22%] (crosses 0, n=60)
 
 ### no-forecast - forecast analyst excluded (technical signals only)
-- tune: mean +0.06%, 95% CI [-0.25%, +0.41%] (crosses 0, n=78)
-- test: mean -0.10%, 95% CI [-0.59%, +0.32%] (crosses 0, n=60)
+- tune: mean +0.00%, 95% CI [+0.00%, +0.00%] (crosses 0, n=78)
+- test: mean +0.00%, 95% CI [+0.00%, +0.00%] (crosses 0, n=60)
 
 ## Verdicts (holdout test period)
 
-- baseline: insufficient sample (n=25 < 30): do not promote
-- depth-pro: CI [-2.36%, +3.14%] crosses 0: not distinguishable from no edge
-- depth-max: insufficient sample (n=27 < 30): do not promote
-- outlook-day: insufficient sample (n=20 < 30): do not promote
-- outlook-long: CI [-2.41%, +5.32%] crosses 0: not distinguishable from no edge
-- no-forecast: insufficient sample (n=20 < 30): do not promote
+- baseline: CI [+0.73%, +6.61%] excludes 0 with n=50
+- depth-pro: CI [-0.18%, +6.39%] crosses 0: not distinguishable from no edge
+- depth-max: insufficient sample (n=25 < 30): do not promote
+- outlook-day: CI [-0.38%, +5.79%] crosses 0: not distinguishable from no edge
+- outlook-long: CI [-0.15%, +6.50%] crosses 0: not distinguishable from no edge
+- no-forecast: CI [+0.73%, +6.61%] excludes 0 with n=50
 
 Reading rule: pick an arm on the tune period, promote it only if the test
 period clears n >= 30 positioned decisions and its paired

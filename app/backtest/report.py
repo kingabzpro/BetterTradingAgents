@@ -175,6 +175,7 @@ def _markdown(payload: dict) -> str:
         "| Setting | Value |",
         "|---|---|",
         f"| Mode | {config['mode']} ({config.get('model', 'rule-based mock')}) |",
+        f"| LLM temperature | {config.get('temperature', 'not recorded')} |",
         f"| Tickers | {', '.join(config['tickers'])} |",
         f"| Grid | {config['start']} to {config['end']} every {config['step_days']}d |",
         f"| Horizon | {config['horizon_days']} days |",
@@ -261,6 +262,24 @@ def _markdown(payload: dict) -> str:
                 f"| {analyst} | {stats['directional_calls']} | "
                 f"{_pct(stats['hit_rate_pct'], signed=False)} | {_pct(stats['mean_alpha_pct'])} |"
             )
+
+    stop_replay = overall.get("stop_replay")
+    if stop_replay:
+        lines += [
+            "",
+            "## Stop overlay replay",
+            "",
+            f"What the live stop rules (absolute -{stop_replay['stop_loss_pct']:.1f}%, "
+            f"trailing -{stop_replay['trailing_stop_pct']:.1f}% from peak) would have done "
+            f"across the {stop_replay['buy_decisions']} graded BUY decisions in this sample: "
+            f"**{stop_replay['stopped']} exited early** "
+            f"({stop_replay['absolute_stops']} absolute, {stop_replay['trailing_stops']} trailing). "
+            f"Mean net delta vs holding to the horizon: "
+            f"{_pct(stop_replay['mean_delta_pct'])} (sum {_pct(stop_replay['sum_delta_pct'])}).",
+            "",
+            "Daily closes only (triggers read at the close, conservative across gaps), "
+            "no cooldown or re-entry modeling, same round-trip cost on both paths.",
+        ]
 
     baselines = overall.get("baselines") or {}
     if baselines:

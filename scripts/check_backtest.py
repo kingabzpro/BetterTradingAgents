@@ -40,6 +40,7 @@ from app.backtest.grade import (  # noqa: E402
     max_drawdown_pct,
     momentum_decision,
     momentum_signal,
+    participation_cost_pct,
     period_stats,
     portfolio_returns,
     probability_calibration,
@@ -47,6 +48,7 @@ from app.backtest.grade import (  # noqa: E402
     sharpe,
 )
 from app.backtest.run import date_grid  # noqa: E402
+from app.backtest.stops import replay_stops, stop_replay_summary  # noqa: E402
 from app.backtest.report import build_flags  # noqa: E402
 from app.config import settings  # noqa: E402
 from app.tools import sec_edgar as sec  # noqa: E402
@@ -177,6 +179,62 @@ assert sc["technical"]["directional_calls"] == 2 and sc["technical"]["hit_rate_p
 assert sc["news"]["directional_calls"] == 1 and sc["news"]["hit_rate_pct"] == 0.0, sc
 assert "neutral" not in str(sc["news"]) and "bull" not in sc
 print("analyst scorecard OK:", sc)
+
+# ---- item 17: participation-aware fill costs --------------------------------
+# Flat closes (zero vol -> 0.5x multiplier) with a 1% participation rate:
+# extra = 0.20 * (0.01 / 0.02) = 0.10, halved -> 0.05 on top of the 0.10 base.
+flat = [100.0] * 30
+assert participation_cost_pct(flat, [10_000.0] * 30, 10_000.0) == 0.15
+# Huge dollar volume: participation ~0, cost collapses to the flat base.
+assert participation_cost_pct(flat, [50_000_000.0] * 30, 10_000.0) == 0.10
+# Jumpy name: alternating +-10%% daily is ~320%% annualized, so the
+# multiplier clamps at 2x. A balanced 20-bar window keeps the mean close at
+# exactly 100, so dollar volume is exactly 1e6 and the math stays hand-checkable.
+jumpy = [110.0 if i % 2 else 90.0 for i in range(20)]
+assert participation_cost_pct(jumpy, [10_000.0] * 20, 10_000.0) == 0.30
+# Thin history or unusable inputs fall back to the flat base, never invent.
+assert participation_cost_pct([100.0, 101.0], [1_000.0, 1_000.0], 10_000.0) == 0.10
+assert participation_cost_pct(flat, [0.0] * 30, 10_000.0) == 0.10
+# Graded outcomes carry the cost they paid.
+priced = grade(Decision("A", "2024-01-01", "BUY", 0.8), CLOSES, SPY, 21, cost_pct=0.30)
+assert priced.cost_pct == 0.30 and priced.net_pct == round(10.0 - 0.30, 2)
+print("participation cost model OK")
+
+# ---- stop-overlay replay (per-decision simulation of the live rules) --------
+# A: absolute stop fires on the dip (100 -> 87 is -13%); exit at the close.
+path_a = {"2024-01-01": 100.0, "2024-01-10": 87.0, "2024-01-22": 105.0}
+r = replay_stops(path_a, "2024-01-01", 21, 0.12, 0.15, 0.10)
+assert r.fired and r.trigger == "absolute_stop", r
+assert r.exit_pct == round(-13.0 - 0.10, 2) and r.horizon_pct == round(5.0 - 0.10, 2), r
+assert r.delta_pct == round(r.exit_pct - r.horizon_pct, 2), r
+# B: trailing stop fires after a peak (120 * 0.85 = 102 > 101).
+path_b = {"2024-01-01": 100.0, "2024-01-08": 120.0, "2024-01-12": 101.0, "2024-01-22": 115.0}
+r = replay_stops(path_b, "2024-01-01", 21, 0.12, 0.15, 0.10)
+assert r.fired and r.trigger == "trailing_stop" and r.exit_pct == round(1.0 - 0.10, 2), r
+# C: inside both bands -> nothing fires, delta exactly zero.
+path_c = {"2024-01-01": 100.0, "2024-01-10": 95.0, "2024-01-22": 108.0}
+r = replay_stops(path_c, "2024-01-01", 21, 0.12, 0.15, 0.10)
+assert not r.fired and r.delta_pct == 0.0 and r.exit_pct == r.horizon_pct, r
+# D: gap-through exits at the close it saw, never at the stop level.
+path_d = {"2024-01-01": 100.0, "2024-01-10": 80.0, "2024-01-22": 90.0}
+r = replay_stops(path_d, "2024-01-01", 21, 0.12, 0.15, 0.10)
+assert r.fired and r.exit_pct == round(-20.0 - 0.10, 2), r
+# E: window still open -> no replay.
+assert replay_stops({"2024-01-01": 100.0}, "2024-01-01", 21, 0.12, 0.15, 0.10) is None
+
+summary = stop_replay_summary(
+    [
+        grade(Decision("A", "2024-01-01", "BUY", 0.8), path_a, SPY, 21),
+        grade(Decision("C", "2024-01-01", "HOLD", 0.5), path_c, SPY, 21),
+    ],
+    {"A": path_a, "C": path_c},
+    0.12,
+    0.15,
+)
+assert summary and summary["buy_decisions"] == 1 and summary["stopped"] == 1, summary
+assert summary["absolute_stops"] == 1 and summary["trailing_stops"] == 0, summary
+assert summary["sum_delta_pct"] == summary["mean_delta_pct"], summary
+print("stop overlay replay OK:", summary["stopped"], "of", summary["buy_decisions"], "stopped")
 
 # ---- anti-look-ahead news filter -------------------------------------------------
 assert published_on_or_before({"published": "2024-01-05T10:00:00+00:00"}, "2024-01-10")
