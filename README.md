@@ -171,6 +171,17 @@ judge cut drawdown by about a third). Returns do not separate the tiers at
 honest sample sizes; full tables, intervals, and repro commands live in
 the [Backtesting wiki](https://github.com/kingabzpro/BetterTradingAgents/wiki/Backtesting).
 
+> [!NOTE]
+> When does Max return worse results? In our paired mock replay, Max cost
+> **-2.08% per matched decision** vs Fast (95% CI -3.91 to -0.63, excludes
+> zero); in live replay its mean alpha was lowest of the three tiers but
+> statistically indistinguishable. This tracks independent research: a
+> 20-year study across 100+ stocks found LLM investing strategies
+> [statistically underperform the market](https://arxiv.org/abs/2505.07078),
+> and a contamination-free benchmark found
+> [most agents don't beat buy-and-hold](https://arxiv.org/abs/2510.02209) —
+> more agents buy context and risk control, not alpha.
+
 Reports and reproducibility manifests go to `backtests/`.
 
 ## Development
