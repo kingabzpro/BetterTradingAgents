@@ -485,6 +485,10 @@ def _regime_cache_key(indices: dict) -> str:
     ).hexdigest()
 
 
+async def _noop_emit(kind: str, payload: dict) -> None:  # noqa: ARG001
+    """Sink for samples whose events are folded into one stage event."""
+
+
 def _agent_completed_payload(
     ticker: str,
     agent: str,
@@ -1352,18 +1356,75 @@ async def analyze_ticker(
         "past_decisions": past_decisions_ctx,
         "cross_ticker_lessons": cross_lessons_ctx,
     }
-    mgr_data = await timed(
-        "manager",
-        _run_agent(
-            manager,
-            ticker,
-            emit,
-            token_totals=token_totals,
-            role_usage=role_usage,
-            live=live_context,
-            payload=full_context,
-        ),
-    )
+    # Item 14: manager self-consistency voting. With MANAGER_VOTES > 1 (and a
+    # real LLM configured; mock mode is deterministic, so one sample is the
+    # same answer) the final call runs N times in parallel and the majority
+    # wins. Samples run emit-less and the stage emits one started/completed
+    # pair around the vote, so the UI keeps one manager row carrying the
+    # winning payload; per-call usage still rolls up for cost either way.
+    manager_votes: list[str] = []
+    manager_agreement: float | None = None
+    votes_n = settings.manager_votes if settings.llm_configured else 1
+    if votes_n > 1:
+        await emit("agent_started", {"ticker": ticker, "agent": manager.NAME})
+        stage_started = time.perf_counter()
+        tokens_before = int(token_totals.get("total_tokens", 0))
+
+        async def _vote_sample() -> dict | None:
+            try:
+                return await _run_agent(
+                    manager,
+                    ticker,
+                    _noop_emit,
+                    token_totals=token_totals,
+                    role_usage=role_usage,
+                    live=live_context,
+                    payload=full_context,
+                )
+            except Exception as exc:  # noqa: BLE001 - one bad sample must not sink the vote
+                logger.warning("[manager] vote sample failed: %s", exc)
+                return None
+
+        samples = await timed(
+            "manager", asyncio.gather(*(_vote_sample() for _ in range(votes_n)))
+        )
+        mgr_data, manager_votes, manager_agreement = manager.majority_vote(
+            [sample for sample in samples if sample], ticker
+        )
+        stage_tokens = int(token_totals.get("total_tokens", 0)) - tokens_before
+        if mgr_data is None:
+            await emit(
+                "agent_failed",
+                {
+                    "ticker": ticker,
+                    "agent": manager.NAME,
+                    "error": f"all {votes_n} vote samples failed",
+                },
+            )
+        else:
+            await emit(
+                "agent_completed",
+                _agent_completed_payload(
+                    ticker,
+                    manager.NAME,
+                    mgr_data,
+                    time.perf_counter() - stage_started,
+                    stage_tokens,
+                ),
+            )
+    else:
+        mgr_data = await timed(
+            "manager",
+            _run_agent(
+                manager,
+                ticker,
+                emit,
+                token_totals=token_totals,
+                role_usage=role_usage,
+                live=live_context,
+                payload=full_context,
+            ),
+        )
 
     # ROADMAP P2.14: flag stages that blew their budget so "which stage was
     # slow" is one log glance. No ticker in the line - incognito logs stay
@@ -1505,6 +1566,8 @@ async def analyze_ticker(
         manager_confidence=manager_confidence,
         manager_probability=manager_probability,
         manager_target_weight_pct=manager_weight,
+        manager_votes=manager_votes,
+        manager_agreement=manager_agreement,
         target_weight_pct=target_weight_pct,
         summary=summary,
         bull_case=bull_case,

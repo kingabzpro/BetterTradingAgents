@@ -153,6 +153,17 @@ function downgradeFlag(analysis) {
   return (analysis.risk_flags || []).find((flag) => String(flag).startsWith("downgraded")) || "";
 }
 
+// Item 14: with manager voting on (MANAGER_VOTES > 1) the run records every
+// sample's decision; show how unanimous the winning call was. Single-sample
+// runs carry one vote and render nothing.
+function voteNote(analysis) {
+  const votes = analysis.manager_votes || [];
+  if (votes.length < 2) return "";
+  const winner = analysis.manager_decision || analysis.decision;
+  const agreeing = votes.filter((vote) => vote === winner).length;
+  return `<small>${agreeing}/${votes.length} manager votes ${escapeHtml(String(winner))}</small>`;
+}
+
 // Correlated-exposure warning (roadmap P1.3): warning-only, so it renders as
 // context next to the risk flags; "ok" and un-checked runs show nothing.
 function concentrationBlock(analysis) {
@@ -456,7 +467,7 @@ export function renderResultCard(analysis) {
     <div class="decision-brief">
       ${changed}
       ${gated ? `<div class="gate-banner"><span class="gate-chip">risk-adjusted</span><span class="gate-line">${escapeHtml(gateLine(analysis))}</span>${downgradeFlag(analysis) ? `<small>⚠ ${escapeHtml(downgradeFlag(analysis))}</small>` : ""}</div>` : ""}
-      <div class="decision-facts"><div><span>Current price</span><strong>${analysis.price != null ? `$${Number(analysis.price).toFixed(2)}` : "Unavailable"}</strong></div><div><span>${forecastHorizonLabel(analysis)}</span><strong>${analysis.forecast_price_5d != null ? `$${Number(analysis.forecast_price_5d).toFixed(2)} (${Number(analysis.forecast_change_5d_pct) >= 0 ? "+" : ""}${Number(analysis.forecast_change_5d_pct).toFixed(2)}%)` : "Unavailable"}</strong><small>${forecastMethodLabel(analysis)}${forecastBandNote(analysis)}</small></div><div><span>Data age</span><strong>${age.stale ? '<span class="flag-warn">' : ""}${ageLabel(age.hours)}${cachedRun ? " · cached" : ""}${age.stale ? " · stale</span>" : ""}</strong><small>${escapeHtml(asOf)}</small></div><div><span>Evidence strength</span><strong>${convictionLabel(analysis.confidence)} · ${confidencePct}%</strong><small id="track-record-${ticker}" class="track-record"></small></div><div><span>Horizon</span><strong>${OUTLOOK_LABELS[state.outlook] || state.outlook}</strong><small>${profile.label} depth</small></div><div><span>Analyst coverage</span><strong>${analysis.error ? "n/a" : `${cov.available}/${cov.expected} analysts`}</strong>${!analysis.error && cov.split.available ? `<small>${splitLabel(cov.split)}</small>` : ""}${fallbacks.length ? `<small class="flag-warn">${fallbacks.map(escapeHtml).join(" · ")}</small>` : ""}</div><div><span>Suggested size</span><strong>${analysis.suggested_size_usd ? fmtUsd(analysis.suggested_size_usd) : "No position"}</strong>${analysis.target_weight_pct != null ? `<small>${Number(analysis.target_weight_pct).toFixed(1)}% of equity${analysis.manager_target_weight_pct != null && Math.abs(Number(analysis.manager_target_weight_pct) - Number(analysis.target_weight_pct)) > 0.01 ? ` · manager proposed ${Number(analysis.manager_target_weight_pct).toFixed(1)}%` : ""}</small>` : ""}</div></div>
+      <div class="decision-facts"><div><span>Current price</span><strong>${analysis.price != null ? `$${Number(analysis.price).toFixed(2)}` : "Unavailable"}</strong></div><div><span>${forecastHorizonLabel(analysis)}</span><strong>${analysis.forecast_price_5d != null ? `$${Number(analysis.forecast_price_5d).toFixed(2)} (${Number(analysis.forecast_change_5d_pct) >= 0 ? "+" : ""}${Number(analysis.forecast_change_5d_pct).toFixed(2)}%)` : "Unavailable"}</strong><small>${forecastMethodLabel(analysis)}${forecastBandNote(analysis)}</small></div><div><span>Data age</span><strong>${age.stale ? '<span class="flag-warn">' : ""}${ageLabel(age.hours)}${cachedRun ? " · cached" : ""}${age.stale ? " · stale</span>" : ""}</strong><small>${escapeHtml(asOf)}</small></div><div><span>Evidence strength</span><strong>${convictionLabel(analysis.confidence)} · ${confidencePct}%</strong><small id="track-record-${ticker}" class="track-record"></small>${voteNote(analysis)}</div><div><span>Horizon</span><strong>${OUTLOOK_LABELS[state.outlook] || state.outlook}</strong><small>${profile.label} depth</small></div><div><span>Analyst coverage</span><strong>${analysis.error ? "n/a" : `${cov.available}/${cov.expected} analysts`}</strong>${!analysis.error && cov.split.available ? `<small>${splitLabel(cov.split)}</small>` : ""}${fallbacks.length ? `<small class="flag-warn">${fallbacks.map(escapeHtml).join(" · ")}</small>` : ""}</div><div><span>Suggested size</span><strong>${analysis.suggested_size_usd ? fmtUsd(analysis.suggested_size_usd) : "No position"}</strong>${analysis.target_weight_pct != null ? `<small>${Number(analysis.target_weight_pct).toFixed(1)}% of equity${analysis.manager_target_weight_pct != null && Math.abs(Number(analysis.manager_target_weight_pct) - Number(analysis.target_weight_pct)) > 0.01 ? ` · manager proposed ${Number(analysis.manager_target_weight_pct).toFixed(1)}%` : ""}</small>` : ""}</div></div>
       <div class="call-read">
         <div class="manager-conclusion"><span class="eyebrow">Why this call</span><p class="thesis">${escapeHtml(analysis.summary || analysis.error || "No manager summary was returned.")}</p></div>
         ${conditions}

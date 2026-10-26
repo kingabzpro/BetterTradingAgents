@@ -141,6 +141,12 @@ class Settings:
     max_tickers: int = int(_env("MAX_TICKERS", "5"))
     # 1 = bull/bear only; >= 2 adds the debate judge cross-examination (capped at 3).
     debate_rounds: int = min(3, max(1, int(_env("DEBATE_ROUNDS", "2"))))
+    # Manager self-consistency voting (phase 4, item 14): run the final call
+    # this many times in parallel and take the majority. 1 = the single call
+    # every prior run used. The A/B measured 3/9 decisions flipping between
+    # identical runs at temperature 0.2, so extra samples buy stability; the
+    # vote count and agreement ride on the result for the UI and the record.
+    manager_votes: int = min(5, max(1, int(_env("MANAGER_VOTES", "1"))))
     # Wall-clock deadline for one analysis run (P2.8): a provider that hangs
     # must fail the run instead of leaving it "running" forever.
     run_timeout_minutes: int = max(5, int(_env("RUN_TIMEOUT_MINUTES", "30")))

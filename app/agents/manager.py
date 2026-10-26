@@ -1,6 +1,7 @@
 """Portfolio Manager: final BUY / HOLD / SELL decision."""
 
 import json
+from collections import Counter
 
 from app.agents import clamp_conf, clip, TaskSpec, agent_instructions
 from app.config import settings
@@ -68,6 +69,49 @@ def parse_decision(data: dict) -> str | None:
     tolerated). "DO NOT BUY" and other prose are parse failures, not BUY."""
     decision = str(data.get("decision", "")).strip().upper()
     return decision if decision in ("BUY", "HOLD", "SELL") else None
+
+
+def majority_vote(
+    payloads: list[dict], ticker: str
+) -> tuple[dict | None, list[str], float | None]:
+    """Self-consistency vote across manager samples (phase 4, item 14).
+
+    Returns (winning payload, per-vote decisions in order, winner share).
+    Ties resolve by summed confidence within the tied decisions, then HOLD -
+    standing aside is the cheap error. The winner payload is the highest
+    confidence sample of the winning decision, so summary and probability
+    come from a call that actually made that call. Single samples pass
+    through untouched; with no usable payload the run falls back to the
+    existing manager-failed path.
+    """
+    parsed = [(p, to_manager_result(p, ticker)) for p in payloads if p]
+    if not parsed:
+        return None, [], None
+    valid = [(p, r) for p, r in parsed if parse_decision(p) is not None]
+    if not valid:
+        # No parseable vote: fall back to the first sample's parsed result so
+        # voting never hard-fails a run the single-sample path would HOLD.
+        payload, result = parsed[0]
+        return payload, [result.decision], 1.0
+    if len(valid) == 1:
+        return valid[0][0], [valid[0][1].decision], 1.0
+    decisions = [result.decision for _, result in valid]
+    counts = Counter(decisions)
+    top = max(counts.values())
+    tied = sorted(decision for decision, n in counts.items() if n == top)
+    if len(tied) == 1:
+        winner = tied[0]
+    else:
+        confidence_sum = {
+            decision: sum(r.confidence for _, r in valid if r.decision == decision)
+            for decision in tied
+        }
+        best = max(confidence_sum.values())
+        finalists = [decision for decision in tied if confidence_sum[decision] == best]
+        winner = "HOLD" if "HOLD" in finalists else finalists[0]
+    candidates = [(p, r) for p, r in valid if r.decision == winner]
+    winner_payload = max(candidates, key=lambda pair: pair[1].confidence)[0]
+    return winner_payload, decisions, round(counts[winner] / len(valid), 2)
 
 
 def to_manager_result(data: dict, ticker: str) -> ManagerResult:

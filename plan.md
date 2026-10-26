@@ -150,6 +150,22 @@ Feed the reliability curve back into the weight contract: scale the manager's pr
 
 ## Phase 4 status
 
-- [ ] Batch 4 (items 14-16): voting, regression panel, temperature study
+- [x] Batch 4 (items 14-16): voting, regression panel, temperature study - outcome below
 - [ ] Batch 5 (items 17-18): fill costs, regime gate
 - [ ] Batch 6 (item 19): calibration-driven sizing
+
+### Batch 4 outcome (2026-10-26)
+
+Delivered: manager voting (MANAGER_VOTES, off by default, agreement badge in the UI, check_voting), the regression panel (scripts/ab_panel.py + backtests/ab-ledger.json + check_ab_panel), and the temperature study. Suite 37 groups green. All arms live on the June panel grid (9 decisions each), controls included.
+
+| Arm (same-config flips) | Flips | Tokens/arm | Cost/arm |
+|---|---|---|---|
+| votes=1 (control band) | 3/9 | 90,973 | $0.0589 |
+| votes=3 (voting ON) | 4/9 | 179,732 (+98%) | $0.1205 (+105%) |
+| temperature=0 | 2/9 | 83,512 (-8.2%) | $0.0499 (-15%) |
+
+**Verdict on item 14: killed as a recommendation.** Voting at 3 samples did not reduce run-to-run flips (4/9 vs the 3/9 control band) and doubled cost. The likely cause: the samples within one run are correlated (same prompt and serving state) while the marginal calls sit near 50/50, so even a 2/3 majority is itself unstable across runs. The feature stays as a tested, off-by-default toggle with the UI badge; MANAGER_VOTES=1 remains the default.
+
+**Temperature:** temp 0 shows fewer flips (2/9) and is consistently cheaper (both temp0 arms below both votes1 arms on tokens, -15% cost) - a real-looking but small-sample result (n=9). Per the plan's bar ("no code unless flips collapse"), no default change; either set LLM_TEMPERATURE=0 in the app, or run a bigger panel (20+ decisions per arm) to settle it.
+
+**Panel:** the four arms above were its first real use; the ledger now holds votes1-a/b, votes3-a/b, temp0-a/b, and `ab_panel.py compare` prints the flip/token/cost table plus the noise band for any future change.

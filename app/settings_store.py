@@ -128,6 +128,7 @@ FIELD_GROUPS: list[dict[str, Any]] = [
         "fields": [
             _field("max_tickers", "MAX_TICKERS", "Max tickers", "int", lo=1, hi=20, hint="Tickers accepted in one analysis", example="5"),
             _field("debate_rounds", "DEBATE_ROUNDS", "Debate rounds", "int", lo=1, hi=3, hint="2 or more adds the debate judge", example="2"),
+            _field("manager_votes", "MANAGER_VOTES", "Manager votes", "int", lo=1, hi=5, hint="Run the final call this many times in parallel and take the majority; 1 = a single call. Extra samples reduce run-to-run flips", example="3"),
             _field("stream_reasoning", "STREAM_REASONING", "Stream agent tokens", "bool", hint="Live agent tokens in the run view"),
             _field("experimental_features", "EXPERIMENTAL_FEATURES", "Enable experimentation", "bool", hint="Shows the Experimentation tab with the retired-UI toggles"),
         ],

@@ -205,6 +205,10 @@ class StockAnalysis(BaseModel):
     manager_target_weight_pct: float | None = Field(
         default=None, ge=0.0, le=100.0
     )  # the manager's proposed weight before the risk gate (item 11)
+    manager_votes: list[str] = Field(default_factory=list)  # per-sample decisions (item 14)
+    manager_agreement: float | None = Field(
+        default=None, ge=0.0, le=1.0
+    )  # winner share of the vote; None = single sample (not voted)
     target_weight_pct: float | None = Field(
         default=None, ge=0.0, le=100.0
     )  # final gated weight of equity for the position; None = HOLD or not sized
