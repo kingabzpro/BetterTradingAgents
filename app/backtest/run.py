@@ -232,16 +232,27 @@ async def run_backtest(
     analyses = await asyncio.gather(*(analyze(t, d) for t, d in jobs))
 
     # 4. Grade, plus the cheap baselines the pipeline must beat (P1.2). Every
-    #    directional analyst call is collected alongside for the scorecard.
+    #    directional analyst call is collected alongside for the scorecard,
+    #    and LLM token/cost totals are summed for the usage section (LLM-mode
+    #    runs are paid: the report should say what they cost).
     outcomes, ungraded = [], []
     momentum_outcomes = []
     analyst_calls: list[tuple[str, str, float | None, float | None]] = []
+    llm_usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+    llm_cost_usd = 0.0
+    llm_priced_runs = 0
     for (ticker, day), analysis in zip(jobs, analyses):
         if analysis is None or analysis.error:
             continue
+        for key in ("prompt_tokens", "completion_tokens", "total_tokens"):
+            llm_usage[key] += int((analysis.token_usage or {}).get(key, 0) or 0)
+        estimate = analysis.cost_estimate or {}
+        if estimate.get("total_usd"):
+            llm_cost_usd += float(estimate["total_usd"])
+            llm_priced_runs += 1
         decision = Decision(
             ticker, day, analysis.decision, analysis.confidence,
-            analysis.manager_probability,
+            analysis.manager_probability, analysis.target_weight_pct,
         )
         outcome = grade(
             decision,
@@ -286,6 +297,11 @@ async def run_backtest(
     )
     overall["calibration"] = probability_calibration(outcomes)
     overall["analyst_scorecard"] = analyst_scorecard(analyst_calls)
+    overall["llm_usage"] = {
+        **llm_usage,
+        "cost_usd": round(llm_cost_usd, 4),
+        "priced_runs": llm_priced_runs,
+    }
     overall["baselines"] = {
         "all_hold": {
             "decisions": len(outcomes),

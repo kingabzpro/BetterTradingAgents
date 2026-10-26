@@ -315,11 +315,18 @@ async def init() -> None:
                     filled_qty REAL,
                     filled_avg_price REAL,
                     error TEXT,
+                    reason TEXT NOT NULL DEFAULT '',
                     created_at TEXT NOT NULL DEFAULT (datetime('now')),
                     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
                 )
                 """
             )
+            try:
+                connection.execute(
+                    "ALTER TABLE broker_orders ADD COLUMN reason TEXT NOT NULL DEFAULT ''"
+                )
+            except sqlite3.OperationalError:
+                pass  # column already exists on databases from before item 13
             connection.execute(
                 "CREATE INDEX IF NOT EXISTS idx_broker_orders_created "
                 "ON broker_orders(created_at)"
@@ -381,6 +388,7 @@ def _row_to_order(row: sqlite3.Row) -> BrokerOrder:
         filled_qty=row["filled_qty"],
         filled_avg_price=row["filled_avg_price"],
         error=row["error"],
+        reason=row["reason"] or "",
         created_at=row["created_at"] or "",
         updated_at=row["updated_at"] or "",
     )
@@ -419,17 +427,18 @@ def _insert_order(
     ticker: str,
     side: str,
     notional: float,
-    decision: str,
-    confidence: float,
+    decision: str | None,
+    confidence: float | None,
     decision_as_of: str,
+    reason: str = "",
 ) -> None:
     with _connect() as connection:
         connection.execute(
             """
             INSERT INTO broker_orders (
                 client_order_id, run_id, ticker, side, notional,
-                status, decision, confidence, decision_as_of
-            ) VALUES (?, ?, ?, ?, ?, 'pending_submit', ?, ?, ?)
+                status, decision, confidence, decision_as_of, reason
+            ) VALUES (?, ?, ?, ?, ?, 'pending_submit', ?, ?, ?, ?)
             """,
             (
                 client_order_id,
@@ -440,6 +449,7 @@ def _insert_order(
                 decision,
                 confidence,
                 decision_as_of,
+                reason,
             ),
         )
 
@@ -561,16 +571,7 @@ async def submit_order(run_id: str, ticker: str, side: str, notional: float) -> 
         )
 
     if side == "sell":
-        held = next(
-            (p for p in await positions() if p.symbol == ticker), None
-        )
-        if held is None:
-            raise BrokerRuleError(
-                f"no paper position in {ticker} to sell; shorting is out of scope"
-            )
-        market_value = held.market_value or 0.0
-        if market_value <= 0:
-            raise BrokerRuleError(f"the {ticker} position has no value to sell")
+        market_value = await _held_value_or_raise(ticker)
         # A price tick between the position read and the POST can make an
         # exact-value sell overshoot the holding (Alpaca 40310000), so every
         # sell is haircut slightly: it can never short, but may leave dust.
@@ -606,6 +607,92 @@ async def submit_order(run_id: str, ticker: str, side: str, notional: float) -> 
             analysis.as_of,
         )
     return await _submit_market_order(client_order_id, ticker, side, notional)
+
+
+async def _held_value_or_raise(ticker: str) -> float:
+    """The exit-able market value of a held position, or a rule error.
+
+    Shared by the decision-sell path and the risk-overlay exit path so both
+    read the broker the same way.
+    """
+    held = next((p for p in await positions() if p.symbol == ticker), None)
+    if held is None:
+        raise BrokerRuleError(
+            f"no paper position in {ticker} to sell; shorting is out of scope"
+        )
+    value = held.market_value or 0.0
+    if value <= 0:
+        raise BrokerRuleError(f"the {ticker} position has no value to sell")
+    return value
+
+
+async def submit_exit_order(ticker: str, notional: float, reason: str) -> BrokerOrder:
+    """Place one paper exit order for the risk overlay (release batch 3,
+    item 13).
+
+    Same guards as submit_order minus the run/analysis binding: the overlay
+    exits a position the broker reports, so there is no decision row to
+    validate. The row carries run_id='overlay' and the trigger in `reason`,
+    and every account-level rule (kill switch, order caps, haircut, daily
+    cap) still applies.
+    """
+    ticker = ticker.strip().upper()
+    if not TICKER_RE.match(ticker):
+        raise BrokerRuleError(f"invalid ticker symbol: '{ticker}'")
+    if not settings.alpaca_configured:
+        raise BrokerNotConfigured(
+            "Alpaca paper trading is not configured; add the API key ID and "
+            "secret key on the Settings page"
+        )
+    if not settings.alpaca_trading_enabled:
+        raise BrokerRuleError(
+            "paper order submissions are disabled (ALPACA_TRADING_ENABLED)",
+            status_code=403,
+        )
+    if notional <= 0:
+        raise BrokerRuleError("notional must be positive")
+    if notional > settings.alpaca_max_order_usd:
+        raise BrokerRuleError(
+            f"notional must not exceed {settings.alpaca_max_order_usd:,.0f} USD"
+        )
+    notional = round(notional, 2)
+
+    snapshot = await account()
+    if snapshot.status != "ACTIVE" or snapshot.trading_blocked:
+        raise BrokerRuleError(
+            "the paper account is not open for trading", status_code=403
+        )
+    market_value = await _held_value_or_raise(ticker)
+    notional = round(min(notional, market_value * 0.995), 2)
+    if notional < 0.01:
+        raise BrokerRuleError(
+            f"the {ticker} position is worth less than a cent at the live price"
+        )
+
+    async with _submit_lock:
+        if _has_active_order("overlay", ticker, "sell"):
+            raise BrokerRuleError(
+                f"an overlay exit for {ticker} is already open", status_code=409
+            )
+        if _non_rejected_orders_today() >= settings.alpaca_max_orders_per_day:
+            raise BrokerRuleError(
+                f"daily paper order cap reached ({settings.alpaca_max_orders_per_day})",
+                status_code=429,
+            )
+        client_order_id = f"bta-{uuid.uuid4()}"
+        await asyncio.to_thread(
+            _insert_order,
+            client_order_id,
+            "overlay",
+            ticker,
+            "sell",
+            notional,
+            "SELL",
+            None,
+            "",
+            reason,
+        )
+    return await _submit_market_order(client_order_id, ticker, "sell", notional)
 
 
 async def _submit_market_order(

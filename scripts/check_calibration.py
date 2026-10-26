@@ -172,6 +172,26 @@ async def checks() -> None:
     mock_hold = manager_agent.mock("T", {"bull": {"confidence": 0.5}, "bear": {"confidence": 0.55}})
     assert mock_hold["decision"] == "HOLD" and mock_hold["probability_beat_spy"] is None
 
+    # Item 11: target weight parsing is clamped, dropped for HOLD, and never
+    # confused with confidence; the mock manager emits a deterministic weight.
+    parsed_w = manager_agent.to_manager_result(
+        {"decision": "BUY", "target_weight_pct": "7.5"}, "T"
+    )
+    assert parsed_w.target_weight_pct == 7.5
+    assert manager_agent.to_manager_result(
+        {"decision": "HOLD", "target_weight_pct": 7.5}, "T"
+    ).target_weight_pct is None
+    assert manager_agent.to_manager_result(
+        {"decision": "BUY", "target_weight_pct": 250}, "T"
+    ).target_weight_pct == 100.0
+    assert manager_agent.to_manager_result(
+        {"decision": "BUY", "target_weight_pct": "a lot"}, "T"
+    ).target_weight_pct is None
+    assert manager_agent.to_manager_result({"decision": "BUY"}, "T").target_weight_pct is None
+    assert 2.0 <= mock_buy["target_weight_pct"] <= 10.0, mock_buy
+    assert mock_hold["target_weight_pct"] is None
+    print("manager target weight OK:", parsed_w.target_weight_pct)
+
     # Analyst scorecard: a mature decision joins its stored run results and
     # every directional analyst call is graded against realized SPY alpha.
     await run_history.init()

@@ -47,6 +47,14 @@ FIRECRAWL_SEARCH = "https://api.firecrawl.dev/v1/search"
 _price_cache: dict[str, tuple[float, float]] = {}  # ticker -> (price, fetched_at)
 _CACHE_TTL = 60.0
 
+# TTL cache for the slow provider chains (release batch 2, item 9): news,
+# social posts, and history windows are reused across analyses of the same
+# ticker in one process (a watchlist rerun used to re-pay every provider).
+# Successful non-empty responses are cached; failures and empty lists are
+# not, so a transient outage never sticks for the whole TTL. Keys include
+# every request argument, so point-in-time windows never mix.
+_response_cache: dict[str, tuple[float, object]] = {}
+
 # Finnhub /stock/metric keys -> normalized fundamentals keys (all percents as numbers).
 FINNHUB_METRICS = {
     "peTTM": "pe_ratio_ttm",
@@ -105,6 +113,19 @@ async def _with_timeout(coro, timeout: int, fallback):
         return fallback
 
 
+async def _ttl_cached(key: str, fetch, ttl_seconds: int):
+    """Reuse one provider-chain response for ttl_seconds (item 9)."""
+    if ttl_seconds <= 0:
+        return await fetch()
+    hit = _response_cache.get(key)
+    if hit is not None and monotonic() - hit[0] < ttl_seconds:
+        return hit[1]
+    value = await fetch()
+    if value:  # never cache empty/failed responses
+        _response_cache[key] = (monotonic(), value)
+    return value
+
+
 async def get_stock_data(
     ticker: str,
     forecast: Callable[[list[float]], Awaitable[dict | None]] | None = None,
@@ -121,8 +142,20 @@ async def get_stock_data(
     """
     yf_task = asyncio.create_task(_yf_all(ticker))
     fundamentals_task = asyncio.create_task(_finnhub_fundamentals(ticker))
-    news_task = asyncio.create_task(_finnhub_news(ticker))
-    social_task = asyncio.create_task(_olostep_social(ticker))
+    news_task = asyncio.create_task(
+        _ttl_cached(
+            f"news:{ticker}",
+            lambda: _finnhub_news(ticker),
+            settings.news_cache_ttl_seconds,
+        )
+    )
+    social_task = asyncio.create_task(
+        _ttl_cached(
+            f"social:{ticker}",
+            lambda: _olostep_social(ticker),
+            settings.news_cache_ttl_seconds,
+        )
+    )
     forecast_task: asyncio.Task | None = None
     web_task: asyncio.Task | None = None
 
@@ -136,7 +169,13 @@ async def get_stock_data(
     finnhub_fund = await fundamentals_task
     company_name = finnhub_fund.pop("company_name", "") or yf_data["name"] or ticker
     if not finnhub_news:
-        web_task = asyncio.create_task(_web_news(ticker, company_name))
+        web_task = asyncio.create_task(
+            _ttl_cached(
+                f"webnews:{ticker}",
+                lambda: _web_news(ticker, company_name),
+                settings.news_cache_ttl_seconds,
+            )
+        )
     social = await social_task
     web_news, web_source = await web_task if web_task else ([], "")
     hosted = await forecast_task if forecast_task else None
@@ -211,8 +250,14 @@ async def get_closes_between(ticker: str, start: str, end: str) -> dict[str, flo
     """Daily closes as {ISO date: close} between start and end (inclusive).
 
     Used by decision memory to grade past calls against realized prices.
+    Cached briefly (HISTORY_CACHE_TTL_SECONDS): the window key includes both
+    dates, so point-in-time callers can never see another window's payload.
     """
-    return await asyncio.to_thread(_yf_closes_between, ticker, start, end)
+    return await _ttl_cached(
+        f"closes:{ticker}:{start}:{end}",
+        lambda: asyncio.to_thread(_yf_closes_between, ticker, start, end),
+        settings.history_cache_ttl_seconds,
+    )
 
 
 def _yf_closes_between(ticker: str, start: str, end: str) -> dict[str, float]:
@@ -233,8 +278,13 @@ async def get_ohlcv_between(ticker: str, start: str, end: str) -> dict:
     """OHLCV history between dates, for point-in-time (backtest) snapshots.
 
     `price` is the last close in the window - the price known at `end`.
+    Cached briefly with the same window-keyed rule as get_closes_between.
     """
-    return await asyncio.to_thread(_yf_ohlcv_between, ticker, start, end)
+    return await _ttl_cached(
+        f"ohlcv:{ticker}:{start}:{end}",
+        lambda: asyncio.to_thread(_yf_ohlcv_between, ticker, start, end),
+        settings.history_cache_ttl_seconds,
+    )
 
 
 def _yf_ohlcv_between(ticker: str, start: str, end: str) -> dict:

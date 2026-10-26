@@ -61,12 +61,32 @@ Also new in every report: manager-probability reliability table (Brier; the rule
 
 All 32 check groups green after the change (`uv run test all`). Items 7-13 unchanged from the plan below.
 
+## Batch 2+3 outcome (2026-10-26, second session)
+
+Items 7-13 done. Items 7 (per-role/per-agent model overrides) and 10 (per-agent SSE progress: agent_started/token/completed) already existed in the codebase and are covered by check_llm_reliability and check_streaming; the Modal endpoint serves exactly one model, so a live tiering A/B is impossible until a second model exists (flip LLM_MODEL_ANALYSTS on the Settings page when there is one). What shipped this session:
+
+- **Item 8, prompt trim**: news payloads capped at 5 items / 240-char summaries / 800-char article content; social capped at 8. PROMPT_TRIM=0 restores the old payloads. Measured on real cached news: payload -18%, prompt tokens -626 over 6 pro runs (-1.5%), decisions 5/6 identical.
+- **Item 9, live TTL cache**: news/social responses reused for 15 min, history windows for 5 min (NEWS_CACHE_TTL_SECONDS / HISTORY_CACHE_TTL_SECONDS, 0 = off). Proof: two analyses of one ticker fetch news 1x instead of 2x (check_data_cache).
+- **Item 11, weight contract**: the manager proposes target_weight_pct (0-100, null for HOLD/SELL), the risk gate caps size by it (never raises it), the final gated weight rides on StockAnalysis and sizes autopilot orders (weight x equity), the UI shows it, and backtest reports carry a Weight column. A SELL targets 0%.
+- **Item 12, turnover guard**: one autopilot session may not propose more than MAX_TURNOVER_PCT (default 50%) of equity in turnover; over it, buys scale down proportionally (sub-$1 buys dropped with a reason), sells are exits and are never scaled but consume budget first.
+- **Item 13, risk overlay**: app/overlay.py exits positions past the absolute stop (-12% default) or trailing stop (-15% from peak) via broker.submit_exit_order (run_id "overlay", reason recorded), sets a 5-day re-entry cooldown that autopilot honors, and never wedges a caller. **OFF by default** (flip it on the Settings page); the numbers above are the defaults to edit there too.
+- **Reports**: every LLM backtest now reports token totals and priced cost (llm_usage in the JSON, a row in the markdown).
+
+### A/B evidence (live, real DeepSeek via Modal, ~$0.30 total)
+
+June grid (NVDA/AMD/MSFT x 3 dates, pro): 3/9 decision flips between trim on/off, but the same-config control also flipped 3/9 - single-run decision parity on this grid is noise-dominated (temperature 0.2), and that grid's cached news was empty, so the trim had nothing to act on there.
+
+News-rich grid (NVDA/AMD, 2026-08/09): prompt tokens -626 (-1.5%) with trim, total tokens within +1.1% (completion/reasoning length variance dominates), 1/6 flips. Durations: batch variance, no consistent direction.
+
+Bottom line: batch 2 is smaller than the plan hoped (trimming is ~1.5% of prompt tokens, cache saves provider calls not LLM cost, tiering waits on a second model); batch 3 is the substantive part (weights, turnover, overlay all proven by hermetic checks). Artifacts: backtests/report-ab-*.{json,md}.
+
 ## Status
 
 - [x] Batch 1 (items 1-6) - done 2026-10-26, all checks green, before/after table above
-- [ ] Batch 2 (items 7-10)
-- [ ] Batch 3 (items 11-13)
-- [ ] Live A/B verification sweep (still blocked on the Modal key; direct DeepSeek fallback ~$3-5)
+- [x] Batch 2 (items 7-10) - 7/10 pre-existing and verified; 8 and 9 shipped with live A/B evidence
+- [x] Batch 3 (items 11-13) - shipped; hermetic coverage in check_automation, check_risk, check_overlay, check_calibration
+- [x] Full suite: 35 check groups green (32 before + check_overlay, check_data_cache, check_prompt_trim)
+- [ ] Live A/B re-run once a second model exists (tiering quality/speed proof)
 - [ ] README update (owner go)
 - [ ] Wiki update (owner go)
 - [ ] Merge exp -> dev, PR dev -> main, release

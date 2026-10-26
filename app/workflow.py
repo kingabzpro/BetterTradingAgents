@@ -769,6 +769,28 @@ async def fetch_analyst_track_record(live: bool) -> str:
         return "UNAVAILABLE - analyst track record lookup failed"
 
 
+def _trim_news_items(items: list[dict]) -> list[dict]:
+    """Bound the news payload a researcher reads (release batch 2, item 8).
+
+    Caps the item count and truncates summary/content fields for the prompt
+    only; the UI provenance (source_references) still carries the fuller
+    list. PROMPT_TRIM=0 restores the untrimmed payload for A/B runs.
+    """
+    if not settings.prompt_trim:
+        return items
+    trimmed = []
+    for item in items[: settings.news_prompt_items]:
+        out = dict(item)
+        summary = out.get("summary")
+        if isinstance(summary, str) and len(summary) > settings.news_prompt_summary_chars:
+            out["summary"] = summary[: settings.news_prompt_summary_chars].rstrip() + "…"
+        content = out.get("content")
+        if isinstance(content, str) and len(content) > settings.news_prompt_content_chars:
+            out["content"] = content[: settings.news_prompt_content_chars].rstrip() + "…"
+        trimmed.append(out)
+    return trimmed
+
+
 def _portfolio_context(
     summary: PortfolioSummary | None, incognito: bool = False
 ) -> list[dict] | str:
@@ -1129,9 +1151,14 @@ async def analyze_ticker(
                 token_totals=token_totals,
                 role_usage=role_usage,
                 live=live_context,
-                payload={"items": market.news, "user_context": user_ctx},
+                payload={"items": _trim_news_items(market.news), "user_context": user_ctx},
             )
         if key == "sentiment":
+            social_items = (
+                market.social[: settings.social_prompt_items]
+                if settings.prompt_trim
+                else market.social
+            )
             return await _run_agent(
                 sentiment,
                 ticker,
@@ -1140,7 +1167,7 @@ async def analyze_ticker(
                 role_usage=role_usage,
                 live=live_context,
                 payload={
-                    "items": market.social,
+                    "items": social_items,
                     "crowd_proxy": market.crowd_proxy,
                     "user_context": user_ctx,
                 },
@@ -1379,6 +1406,8 @@ async def analyze_ticker(
     manager_decision = final.decision if mgr_data else None
     manager_confidence = final.confidence if mgr_data else None
     manager_probability = final.probability_beat_spy if mgr_data else None
+    manager_weight = final.target_weight_pct if mgr_data else None
+    target_weight_pct: float | None = None
 
     # Risk gate: deterministic sizing, forecast check, and exposure caps.
     size_usd, risk_flags = None, []
@@ -1407,6 +1436,27 @@ async def analyze_ticker(
             incognito=incognito,
             horizon_days=run_horizon,
         )
+        # Weight contract (item 11): the manager's proposed share of equity
+        # can only shrink the deterministic size, never raise it - the gate
+        # stays the upper bound. The final weight is the actual position the
+        # order path will size to (weight x equity at execution time).
+        equity = portfolio_summ.total_equity if portfolio_summ else None
+        if decision == "BUY" and size_usd and equity:
+            size_usd, weight_flag = risk.cap_size_by_weight(
+                size_usd, manager_weight, equity
+            )
+            if weight_flag:
+                risk_flags.append(weight_flag)
+            target_weight_pct = round(size_usd / equity * 100, 2)
+        elif decision == "BUY" and manager_weight is not None:
+            # No portfolio to convert dollars with (incognito / replay): the
+            # gate's position cap still bounds the proposed weight.
+            target_weight_pct = round(
+                min(manager_weight, settings.max_position_pct * 100), 2
+            )
+        elif decision == "SELL":
+            # A SELL exits the whole position: the target weight is zero.
+            target_weight_pct = 0.0
     else:
         risk_flags = ["portfolio manager failed - defaulted to HOLD"]
 
@@ -1454,6 +1504,8 @@ async def analyze_ticker(
         manager_decision=manager_decision,
         manager_confidence=manager_confidence,
         manager_probability=manager_probability,
+        manager_target_weight_pct=manager_weight,
+        target_weight_pct=target_weight_pct,
         summary=summary,
         bull_case=bull_case,
         bear_case=bear_case,

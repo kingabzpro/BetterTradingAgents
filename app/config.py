@@ -297,6 +297,42 @@ class Settings:
     # the role's LLM fall back to non-streaming on first use.
     stream_reasoning: bool = _env("STREAM_REASONING", "0").lower() in ("1", "true", "yes")
 
+    # Prompt trim (release batch 2, item 8): cap the news/social payloads the
+    # researchers read (NOT what the UI shows; provenance keeps the full
+    # list). PROMPT_TRIM=0 restores the untrimmed payloads for A/B runs.
+    prompt_trim: bool = _env("PROMPT_TRIM", "1").lower() in ("1", "true", "yes")
+    news_prompt_items: int = max(1, int(_env("NEWS_PROMPT_ITEMS", "5")))
+    news_prompt_summary_chars: int = max(80, int(_env("NEWS_PROMPT_SUMMARY_CHARS", "240")))
+    news_prompt_content_chars: int = max(200, int(_env("NEWS_PROMPT_CONTENT_CHARS", "800")))
+    social_prompt_items: int = max(1, int(_env("SOCIAL_PROMPT_ITEMS", "8")))
+
+    # Live data TTL cache (release batch 2, item 9): news and history fetches
+    # are reused for this many seconds across analyses of the same ticker in
+    # one process, so a watchlist rerun does not re-pay every provider.
+    # 0 disables the cache (every analysis fetches fresh).
+    news_cache_ttl_seconds: int = max(0, int(_env("NEWS_CACHE_TTL_SECONDS", "900")))
+    history_cache_ttl_seconds: int = max(0, int(_env("HISTORY_CACHE_TTL_SECONDS", "300")))
+
+    # Pre-trade turnover guard (release batch 3, item 12): one autopilot
+    # session's proposed orders (buys + sells) may not exceed this share of
+    # equity; when over, every order is scaled down proportionally (the
+    # FinRL-X pattern) instead of rejected. 1.0 = off.
+    max_turnover_pct: float = min(1.0, max(0.01, float(_env("MAX_TURNOVER_PCT", "0.5"))))
+
+    # Risk overlay (release batch 3, item 13): deterministic exits between
+    # agent runs - an absolute stop from entry, a trailing stop from the
+    # position's peak, and a cooldown that blocks re-entry after a stop. OFF
+    # by default so autopilot behavior never changes silently; flip it on the
+    # Settings page. The overlay only ever SELLS (paper exits), never buys.
+    overlay_enabled: bool = _env("OVERLAY_ENABLED", "0").lower() in ("1", "true", "yes")
+    overlay_stop_loss_pct: float = min(
+        1.0, max(0.01, float(_env("OVERLAY_STOP_LOSS_PCT", "0.12")))
+    )
+    overlay_trailing_stop_pct: float = min(
+        1.0, max(0.01, float(_env("OVERLAY_TRAILING_STOP_PCT", "0.15")))
+    )
+    overlay_cooldown_days: int = max(0, int(_env("OVERLAY_COOLDOWN_DAYS", "5")))
+
     @property
     def llm_configured(self) -> bool:
         return bool(self.llm_api_key)

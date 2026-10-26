@@ -144,6 +144,11 @@ FIELD_GROUPS: list[dict[str, Any]] = [
             _field("max_drawdown_pct", "MAX_DRAWDOWN_PCT", "Drawdown brake", "float", lo=0.01, hi=1, hint="BUYs halt when open positions' unrealized loss exceeds this share", example="0.15 (= 15%)"),
             _field("max_positions", "MAX_POSITIONS", "Max open positions", "int", lo=1, hi=50, hint="A BUY of a new ticker halts at this many open positions", example="10"),
             _field("max_correlated_pct", "MAX_CORRELATED_PCT", "Correlated-group cap", "float", lo=0, hi=1, hint="Warning-only cap for correlated holdings", example="0.25 (= 25%)"),
+            _field("max_turnover_pct", "MAX_TURNOVER_PCT", "Turnover cap per session", "float", lo=0.01, hi=1, hint="One autopilot session's proposed turnover vs equity; over it, buys scale down proportionally (sells are exits and never scale). 1.0 = off", example="0.5 (= 50%)"),
+            _field("overlay_enabled", "OVERLAY_ENABLED", "Risk overlay", "bool", hint="Deterministic stops between agent runs: exits positions past the stop levels below and blocks re-entry during the cooldown. Off = the agents alone decide", example="1"),
+            _field("overlay_stop_loss_pct", "OVERLAY_STOP_LOSS_PCT", "Absolute stop", "float", lo=0.01, hi=1, hint="Exit a position this far below its entry price", example="0.12 (= -12%)"),
+            _field("overlay_trailing_stop_pct", "OVERLAY_TRAILING_STOP_PCT", "Trailing stop", "float", lo=0.01, hi=1, hint="Exit a position this far below its own peak", example="0.15 (= -15%)"),
+            _field("overlay_cooldown_days", "OVERLAY_COOLDOWN_DAYS", "Stop cooldown (days)", "int", lo=0, hi=90, hint="After a stop exit, autopilot will not re-enter that ticker for this many days", example="5"),
         ],
     },
     {

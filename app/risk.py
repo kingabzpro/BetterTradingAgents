@@ -95,6 +95,27 @@ def size_position(confidence: float, vol_ann_pct: float | None, default_size: fl
     return round(default_size * mult, 2)
 
 
+def cap_size_by_weight(
+    size_usd: float | None,
+    manager_weight_pct: float | None,
+    equity: float | None,
+) -> tuple[float | None, str | None]:
+    """Item 11: the manager's proposed share of equity can only shrink the
+    deterministic size, never raise it - the risk gate stays the upper bound.
+    Returns (size_usd, flag) where flag is set only when the cap binds."""
+    if (
+        size_usd is None
+        or manager_weight_pct is None
+        or manager_weight_pct <= 0
+        or not equity
+    ):
+        return size_usd, None
+    desired = round(manager_weight_pct / 100 * equity, 2)
+    if desired < size_usd:
+        return desired, f"size capped at the manager's {manager_weight_pct:g}% target weight"
+    return size_usd, None
+
+
 def daily_returns(closes: list[float]) -> list[float]:
     """One-day returns; pairs with a nonpositive base price are skipped."""
     return [(b - a) / a for a, b in zip(closes, closes[1:]) if a > 0]

@@ -68,6 +68,10 @@ class ManagerResult(BaseModel):
     # a separate, explicitly probabilistic field - `confidence` above stays
     # evidence strength and is never relabeled. HOLD carries no probability.
     probability_beat_spy: float | None = Field(default=None, ge=0.0, le=1.0)
+    # Proposed share of portfolio equity for the position (release batch 3,
+    # item 11), 0-100; the risk gate clamps it before anything executes.
+    # HOLD carries no weight.
+    target_weight_pct: float | None = Field(default=None, ge=0.0, le=100.0)
 
 
 class CalibrationTrackRecord(BaseModel):
@@ -198,6 +202,12 @@ class StockAnalysis(BaseModel):
     manager_probability: float | None = Field(
         default=None, ge=0.0, le=1.0
     )  # probability of the frozen success event; None = not asked or HOLD
+    manager_target_weight_pct: float | None = Field(
+        default=None, ge=0.0, le=100.0
+    )  # the manager's proposed weight before the risk gate (item 11)
+    target_weight_pct: float | None = Field(
+        default=None, ge=0.0, le=100.0
+    )  # final gated weight of equity for the position; None = HOLD or not sized
     summary: str = ""
     bull_case: str = ""
     bear_case: str = ""
@@ -553,6 +563,7 @@ class BrokerOrder(BaseModel):
     filled_qty: float | None = None
     filled_avg_price: float | None = None
     error: str | None = None
+    reason: str = ""  # why the order exists (risk-overlay trigger for exits)
     created_at: str = ""
     updated_at: str = ""
 

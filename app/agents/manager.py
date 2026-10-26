@@ -3,6 +3,7 @@
 import json
 
 from app.agents import clamp_conf, clip, TaskSpec, agent_instructions
+from app.config import settings
 from app.models import ManagerResult
 
 NAME = "manager"
@@ -49,11 +50,14 @@ Output a concise decision explanation, not a transcript of deliberation: at most
 
 "probability_beat_spy" is your estimated probability, separate from "confidence" (which stays evidence strength): for BUY or SELL, the probability that this call's direction beats SPY over the next 21 days - for BUY that the stock outperforms SPY, for SELL that it underperforms. This fixed scoring horizon is separate from the user's investment horizon; do not confuse it with the 5-day forecast or probability of a positive absolute return. Use the honest full range: 0.5 means a coin flip against the market. Do not call this estimate empirically calibrated unless matching out-of-sample evidence is supplied; high confidence or agent agreement alone does not justify 0.9. Set it to null for HOLD.
 
+"target_weight_pct" is the share of portfolio equity this BUY position should take if executed (0-100); null for HOLD and SELL (a SELL exits the whole position, so there is no weight to set). Size by risk, not by how good the story sounds: stronger evidence, a tighter invalidation level, and lower volatility justify a larger share, and you may propose a deliberately small starter position. The deterministic risk gate may cap this further - propose what the evidence supports, never what you think will pass.
+
 Respond with ONLY a JSON object, no markdown fences, no text outside the JSON:
-{{"ticker": "{ticker}", "decision": "BUY" | "HOLD" | "SELL", "confidence": <number 0.0-1.0>, "probability_beat_spy": <number 0.0-1.0, or null when decision is HOLD>, "summary": "<at most 3 sentences explaining the decision>", "bull_case": "<at most 2 sentences>", "bear_case": "<at most 2 sentences>", "would_upgrade_if": "<one condition from the dossier that would justify a stronger call>", "would_downgrade_if": "<one condition from the dossier that would justify a weaker call>"}}""",
+{{"ticker": "{ticker}", "decision": "BUY" | "HOLD" | "SELL", "confidence": <number 0.0-1.0>, "probability_beat_spy": <number 0.0-1.0, or null when decision is HOLD>, "target_weight_pct": <number 0.0-100 for BUY, or null>, "summary": "<at most 3 sentences explaining the decision>", "bull_case": "<at most 2 sentences>", "bear_case": "<at most 2 sentences>", "would_upgrade_if": "<one condition from the dossier that would justify a stronger call>", "would_downgrade_if": "<one condition from the dossier that would justify a weaker call>"}}""",
         expected_output=(
             "A JSON object with keys: ticker, decision (BUY|HOLD|SELL), confidence "
-            "(0.0-1.0), probability_beat_spy (0.0-1.0 or null for HOLD), summary, "
+            "(0.0-1.0), probability_beat_spy (0.0-1.0 or null for HOLD), "
+            "target_weight_pct (0-100 for BUY, else null), summary, "
             "bull_case, bear_case, would_upgrade_if, would_downgrade_if."
         ),
     )
@@ -75,11 +79,22 @@ def to_manager_result(data: dict, ticker: str) -> ManagerResult:
         probability = None
     if probability is not None:
         probability = min(1.0, max(0.0, probability))
+    # Target weight (release batch 3, item 11): the manager's proposed share
+    # of equity for the position, 0-100. Prose or a bad scale is a parse miss,
+    # never a parse explosion; HOLD carries no weight.
+    raw_weight = data.get("target_weight_pct")
+    try:
+        weight = None if raw_weight in (None, "") else float(raw_weight)
+    except (TypeError, ValueError):
+        weight = None
+    if weight is not None:
+        weight = min(100.0, max(0.0, weight))
     return ManagerResult(
         ticker=ticker,
         decision=decision,
         confidence=clamp_conf(data.get("confidence")),
         probability_beat_spy=None if decision == "HOLD" else probability,
+        target_weight_pct=None if decision == "HOLD" else weight,
         summary=clip(data.get("summary", ""), 600),
         bull_case=clip(data.get("bull_case", ""), 400),
         bear_case=clip(data.get("bear_case", ""), 400),
@@ -121,11 +136,19 @@ def mock(ticker: str, payload: dict) -> dict:
         if decision == "HOLD"
         else round(min(0.95, max(0.05, 0.5 + abs(net))), 2)
     )
+    # Deterministic conviction-scaled target weight (item 11); the risk gate
+    # clamps anything above the position cap regardless of who proposed it.
+    weight = (
+        None
+        if decision == "HOLD"
+        else round(min(settings.max_position_pct * 100, 2.0 + 8.0 * abs(net)), 1)
+    )
     return {
         "ticker": ticker,
         "decision": decision,
         "confidence": round(min(0.95, 0.5 + abs(net)), 2),
         "probability_beat_spy": probability,
+        "target_weight_pct": weight,
         "summary": f"[mock] {basis} -> {decision}.",
         "bull_case": "[mock] See bull researcher summary.",
         "bear_case": "[mock] See bear researcher summary.",

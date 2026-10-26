@@ -36,6 +36,7 @@ class Decision:
     decision: str
     confidence: float
     manager_probability: float | None = None  # P1.1 frozen success-event estimate
+    target_weight_pct: float | None = None  # item 11 gated weight of equity
 
 
 @dataclass
@@ -53,6 +54,7 @@ class Outcome:
     alpha_pct: float | None  # call alpha: > 0 always means the call was right
     note: str = ""
     manager_probability: float | None = None
+    target_weight_pct: float | None = None
 
 
 def grade(
@@ -119,6 +121,7 @@ def grade(
         alpha_pct=None if alpha is None else round(alpha, 2),
         note=note,
         manager_probability=decision.manager_probability,
+        target_weight_pct=decision.target_weight_pct,
     )
 
 

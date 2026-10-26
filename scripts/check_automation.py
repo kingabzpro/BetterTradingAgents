@@ -466,6 +466,152 @@ async def checks() -> None:
     settings.automation_cash_floor_pct = 0.0
     print("portfolio budget OK (own buys minus filled sells; cap and floor skip)")
 
+    # ---- items 11-13: weight sizing, turnover cap, overlay cooldown ----------
+    # Isolate this section: earlier scenarios' orders (including the 70k budget
+    # fixture above) would otherwise consume the deployment budget and make
+    # every expected notional below depend on their accumulated total. The
+    # per-order cap lifts too: turnover math needs orders bigger than $10k to
+    # be meaningful, and the two caps are independent knobs.
+    with broker._connect() as connection:
+        connection.execute("DELETE FROM broker_orders")
+    settings.alpaca_max_order_usd = 50000.0
+
+    # ---- item 11: a recorded target weight sizes the order -------------------
+    weighted = {"NVDA": _analysis("NVDA", "BUY", 0.85, size=5000.0)}
+    weighted["NVDA"].target_weight_pct = 3.0  # 3% of $100k equity = $3,000
+    await run_history.save(
+        RunStatus(
+            run_id="weightrun", tickers=["NVDA"], status="completed",
+            started_at=0.0, duration_s=1.0, results=weighted,
+        ),
+        owner_id="automation_check",
+    )
+
+    async def _weight_run(tickers, client_id="", outlook="", depth=""):
+        return _FakeRun("weightrun", weighted)
+
+    async def _single_discovery(outlook, limit, exclude=()):
+        return {"tickers": ["NVDA"]}
+
+    store.create = _weight_run
+    discovery.discover_stocks = _single_discovery
+    fake = _FakeClient(account=_raw_account(), positions=[])
+    _use(fake)
+    session = await automation.run_session("schedule")
+    assert session.status == "completed", session.error
+    assert [c.symbol for c in fake.submit_calls] == ["NVDA"], fake.submit_calls
+    assert fake.submit_calls[0].notional == 3000.0, fake.submit_calls[0].notional
+    print("item 11 OK: target weight sizes the order ($3,000 = 3% of $100k)")
+
+    # ---- item 12: turnover cap scales the buy side proportionally ------------
+    trio = {t: _analysis(t, "BUY", 0.9, size=30000.0) for t in ("AMZN", "NFLX", "ORCL")}
+    await run_history.save(
+        RunStatus(
+            run_id="turnrun", tickers=list(trio), status="completed",
+            started_at=0.0, duration_s=1.0, results=trio,
+        ),
+        owner_id="automation_check",
+    )
+
+    async def _turn_run(tickers, client_id="", outlook="", depth=""):
+        return _FakeRun("turnrun", trio)
+
+    async def _trio_discovery(outlook, limit, exclude=()):
+        return {"tickers": ["AMZN", "NFLX", "ORCL"]}
+
+    store.create = _turn_run
+    discovery.discover_stocks = _trio_discovery
+    fake = _FakeClient(account=_raw_account(), positions=[])
+    _use(fake)
+    session = await automation.run_session("schedule")
+    assert session.status == "completed", session.error
+    # $90k proposed vs the 50% ($50k) cap: every buy scales by 5/9.
+    submitted = {c.symbol: c.notional for c in fake.submit_calls}
+    assert set(submitted) == {"AMZN", "NFLX", "ORCL"}, submitted
+    assert all(abs(n - 16666.67) < 0.01 for n in submitted.values()), submitted
+    print("item 12 OK: turnover cap scaled $90k of buys to $50k total")
+
+    # Exits are never scaled: a sell consumes budget first and goes out whole.
+    mixed = {
+        "MSFT": _analysis("MSFT", "SELL", 0.7),
+        "AMZN": _analysis("AMZN", "BUY", 0.9, size=30000.0),
+    }
+    await run_history.save(
+        RunStatus(
+            run_id="turnrun2", tickers=list(mixed), status="completed",
+            started_at=0.0, duration_s=1.0, results=mixed,
+        ),
+        owner_id="automation_check",
+    )
+
+    async def _turn_run2(tickers, client_id="", outlook="", depth=""):
+        return _FakeRun("turnrun2", mixed)
+
+    async def _pair_discovery(outlook, limit, exclude=()):
+        return {"tickers": ["AMZN"]}
+
+    store.create = _turn_run2
+    discovery.discover_stocks = _pair_discovery
+    fake = _FakeClient(
+        account=_raw_account(), positions=[_raw_position("MSFT", "40000.00")]
+    )
+    _use(fake)
+    session = await automation.run_session("schedule")
+    assert session.status == "completed", session.error
+    submitted = {c.symbol: c.notional for c in fake.submit_calls}
+    # The $40k exit (haircut to $39,800 at submit) leaves $10k of the budget.
+    assert abs(submitted["MSFT"] - 39800.0) < 0.01, submitted
+    assert abs(submitted["AMZN"] - 10000.0) < 0.01, submitted
+    print("item 12 OK: exits never scale; the buy takes what is left ($10,000)")
+
+    # ---- item 13: overlay cooldown blocks re-entry ---------------------------
+    from app import overlay as overlay_mod
+
+    await overlay_mod.init()
+    settings.overlay_enabled = True
+
+    async def _no_closes(ticker, start, end):
+        return {}
+
+    market_data.get_closes_between = _no_closes
+    future = (datetime.now(timezone.utc).date() + timedelta(days=5)).isoformat()
+    overlay_mod._set_cooldown("NVDA", future)
+    store.create = _weight_run
+    discovery.discover_stocks = _single_discovery
+    fake = _FakeClient(account=_raw_account(), positions=[])
+    _use(fake)
+    session = await automation.run_session("schedule")
+    assert session.status == "completed", session.error
+    nvda = [o for o in session.orders if o.ticker == "NVDA"]
+    assert len(nvda) == 1 and nvda[0].status == "skipped", session.orders
+    assert "cooldown" in (nvda[0].error or ""), nvda
+    assert fake.submit_calls == [], fake.submit_calls
+
+    # An expired cooldown releases the ticker (fresh run: the first scenario's
+    # order for weightrun/NVDA is still active and would trip the dedupe).
+    overlay_mod._set_cooldown("NVDA", "2020-01-01")
+    await run_history.save(
+        RunStatus(
+            run_id="weightrun2", tickers=["NVDA"], status="completed",
+            started_at=0.0, duration_s=1.0, results=weighted,
+        ),
+        owner_id="automation_check",
+    )
+
+    async def _weight_run2(tickers, client_id="", outlook="", depth=""):
+        return _FakeRun("weightrun2", weighted)
+
+    store.create = _weight_run2
+    fake = _FakeClient(account=_raw_account(), positions=[])
+    _use(fake)
+    session = await automation.run_session("schedule")
+    nvda = [o for o in session.orders if o.ticker == "NVDA"]
+    assert nvda and nvda[0].status == "accepted", session.orders
+    settings.overlay_enabled = False
+    market_data.get_closes_between = REAL_CLOSES
+    settings.alpaca_max_order_usd = 10000.0
+    print("item 13 OK: cooldown blocks re-entry, expiry releases it")
+
     # ---- P2.4: webhook - one plain-text POST per finished session ------------
     webhook_posts = []
 

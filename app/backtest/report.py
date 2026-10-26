@@ -131,6 +131,19 @@ def _ci_text(ci) -> str:
     return "-" if ci is None else f"[{_fmt(ci[0])}%, {_fmt(ci[1])}%]"
 
 
+def _usage_text(usage: dict | None) -> str:
+    """One-line LLM token/cost summary for the settings table (item 8 A/B)."""
+    if not usage or not usage.get("total_tokens"):
+        return "no LLM calls (mock mode)"
+    cost = usage.get("cost_usd") or 0.0
+    priced = usage.get("priced_runs") or 0
+    suffix = f"~${cost:.4f} across {priced} priced run(s)" if priced else "unpriced"
+    return (
+        f"{usage['prompt_tokens']:,} prompt + {usage['completion_tokens']:,} "
+        f"completion = {usage['total_tokens']:,} tokens · {suffix}"
+    )
+
+
 def _metrics_row(name: str, m: dict) -> str:
     counts = m["counts"]
     return (
@@ -175,6 +188,7 @@ def _markdown(payload: dict) -> str:
         "| Portfolio accounting | equal weight per decision date, compounded |",
         f"| Benchmarks (buy & hold) | SPY {_pct(overall.get('spy_cumulative_pct'))} · "
         f"QQQ {_pct(overall.get('qqq_cumulative_pct'))} |",
+        f"| LLM usage | {_usage_text(overall.get('llm_usage'))} |",
         f"| Decision policy | `{config.get('policy_version', '')}` · debate rounds {config.get('debate_rounds', '')} |",
         f"| Manifest | `manifest-{config.get('name', config['mode'])}.json` (revision, data hashes, seeds) |",
         "",
@@ -289,14 +303,16 @@ def _markdown(payload: dict) -> str:
         "",
         "## Decisions",
         "",
-        "| Ticker | Date | Decision | Conf. | Prob. | Entry | Exit | Net | SPY | Alpha |",
-        "|---|---|---|---|---|---|---|---|---|---|",
+        "| Ticker | Date | Decision | Conf. | Prob. | Weight | Entry | Exit | Net | SPY | Alpha |",
+        "|---|---|---|---|---|---|---|---|---|---|---|",
     ]
     for o in payload["outcomes"]:
         probability = o.get("manager_probability")
+        weight = o.get("target_weight_pct")
         lines.append(
             f"| {o['ticker']} | {o['date']} | {o['decision']} | {o['confidence']:.2f} "
             f"| {'-' if probability is None else f'{probability:.2f}'} "
+            f"| {'-' if weight is None else f'{weight:.1f}%'} "
             f"| {o['entry']:.2f} | {o['exit']:.2f} | {_pct(o['net_pct'])} | "
             f"{_pct(o['spy_pct'])} | {_pct(o['alpha_pct'])} |"
         )

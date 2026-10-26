@@ -419,6 +419,23 @@ async def _run_session_locked(trigger: str) -> AutomationSession:
             started_at,
         )
 
+    # Risk overlay (release batch 3, item 13): deterministic stops run before
+    # the agents, so a crashed position is exited even when every agent still
+    # likes the story. Runs ahead of the position snapshot so the session sees
+    # the post-exit account.
+    if settings.overlay_enabled:
+        try:
+            from app import overlay
+
+            exits = await overlay.run_check(execute=True)
+            if exits:
+                logger.info(
+                    "[automation] overlay exits: %s",
+                    ", ".join(f"{e.ticker} ({e.trigger})" for e in exits),
+                )
+        except Exception as exc:  # noqa: BLE001 - the overlay must never wedge the loop
+            logger.warning("[automation] overlay check failed: %s", exc)
+
     try:
         held = await broker.positions()
     except Exception as exc:  # noqa: BLE001
@@ -524,14 +541,28 @@ async def _run_session_locked(trigger: str) -> AutomationSession:
                     logger.info(
                         "[automation] bear-market brake on: SPY below its 200-day average"
                     )
+                proposals: list[tuple[str, str, float]] = []
                 for ticker, analysis in results.items():
                     if analysis.error:
                         continue
-                    order = await _act_on_decision(
-                        run.run_id, ticker, analysis, held_map, bear=bear
+                    proposed = await _propose_decision(
+                        ticker, analysis, held_map, bear=bear
                     )
-                    if order is not None:
-                        orders.append(order)
+                    if isinstance(proposed, AutomationOrderOutcome):
+                        orders.append(proposed)
+                    elif proposed is not None:
+                        proposals.append((ticker, proposed[0], proposed[1]))
+                # Turnover guard (item 12) runs on the whole batch, then the
+                # surviving proposals submit one by one through the guarded
+                # broker path.
+                proposals, dropped, turnover_note = await _apply_turnover_cap(proposals)
+                orders.extend(dropped)
+                if turnover_note:
+                    logger.info("[automation] run %s: %s", run.run_id, turnover_note)
+                for ticker, side, notional in proposals:
+                    orders.append(
+                        await _submit_proposal(run.run_id, ticker, side, notional)
+                    )
                 if not orders:
                     logger.info(
                         "[automation] run %s: no orders this session", run.run_id
@@ -560,15 +591,19 @@ async def _run_session_locked(trigger: str) -> AutomationSession:
     return finished
 
 
-async def _act_on_decision(
-    run_id: str,
+async def _propose_decision(
     ticker: str,
     analysis: StockAnalysis,
     held_map: dict,
     bear: bool | None = None,
-) -> AutomationOrderOutcome | None:
-    """Translate one risk-gated decision into an order attempt, or None when
-    the decision is nothing to act on (HOLD, weak BUY, SELL with sells off)."""
+) -> tuple[str, float] | AutomationOrderOutcome | None:
+    """Validate one risk-gated decision into a (side, notional) proposal.
+
+    Returns the proposal, an outcome to record directly (skipped/braked), or
+    None when the decision is nothing to act on (HOLD, weak BUY, SELL with
+    sells off). Nothing submits here: the whole session's proposals pass the
+    turnover guard first (item 12).
+    """
     from app import broker
 
     if analysis.decision == "BUY":
@@ -579,6 +614,17 @@ async def _act_on_decision(
                 settings.automation_min_confidence * 100,
             )
             return None
+        # Risk-overlay cooldown (item 13): a ticker stopped out recently is
+        # not re-entered just because the agents turned optimistic again.
+        if settings.overlay_enabled:
+            from app import overlay
+
+            cooldown_until = await asyncio.to_thread(overlay.cooldown_until, ticker)
+            if cooldown_until:
+                return AutomationOrderOutcome(
+                    ticker=ticker, side="buy", status="skipped",
+                    error=f"risk-overlay cooldown until {cooldown_until}",
+                )
         # held_map is the session-start snapshot; positions can change while
         # the analysis runs (a manual trade, an earlier exit this session), so
         # every BUY re-checks against the broker right before ordering (P2.8).
@@ -593,23 +639,32 @@ async def _act_on_decision(
         if ticker in held_map or ticker in held_now:
             logger.info("[automation] %s already held; never adding to a position", ticker)
             return None
-        notional = analysis.suggested_size_usd or settings.default_position_size
-        side = "buy"
-        if bear:  # wiki Roadmap P2.4: research and exits continue, BUYs brake
-            return AutomationOrderOutcome(
-                ticker=ticker, side="buy", notional=notional, status="braked",
-                error="bear-market brake: SPY sits below its 200-day average",
-            )
         # Portfolio budget (wiki Roadmap P2.4): deterministic, same shape as
         # every other limit - a share-of-equity deployment cap plus a cash
-        # floor. Defaults (1.0 / 0.0) leave only the global risk gate.
+        # floor. Defaults (1.0 / 0.0) leave only the global risk gate. The
+        # account also converts a recorded target weight to dollars (item 11).
         try:
             account = await broker.account()
         except Exception as exc:  # noqa: BLE001 - fail closed: skip, never over-deploy
             logger.warning("[automation] %s budget check failed: %s", ticker, exc)
             return AutomationOrderOutcome(
-                ticker=ticker, side="buy", notional=notional, status="skipped",
+                ticker=ticker, side="buy",
+                notional=analysis.suggested_size_usd or settings.default_position_size,
+                status="skipped",
                 error="could not read the paper account before ordering",
+            )
+        notional = analysis.suggested_size_usd or settings.default_position_size
+        if analysis.target_weight_pct is not None and account.equity:
+            # Weight contract (item 11): the gated weight x current equity is
+            # the order size; the dollar suggestion stays the legacy fallback.
+            notional = round(analysis.target_weight_pct / 100 * account.equity, 2)
+            if notional <= 0:
+                return None
+        side = "buy"
+        if bear:  # wiki Roadmap P2.4: research and exits continue, BUYs brake
+            return AutomationOrderOutcome(
+                ticker=ticker, side="buy", notional=notional, status="braked",
+                error="bear-market brake: SPY sits below its 200-day average",
             )
         if account.equity:
             deployed = await asyncio.to_thread(_automation_deployed)
@@ -633,6 +688,7 @@ async def _act_on_decision(
                         f"{settings.automation_cash_floor_pct:.0%} of equity"
                     ),
                 )
+        return (side, notional)
     elif analysis.decision == "SELL" and settings.automation_allow_sells:
         position = held_map.get(ticker)
         if position is None:
@@ -643,9 +699,74 @@ async def _act_on_decision(
                 ticker=ticker, side="sell", status="skipped",
                 error="held position has no market value to sell",
             )
-        side = "sell"
-    else:
-        return None
+        return ("sell", notional)
+    return None
+
+
+async def _apply_turnover_cap(
+    proposals: list[tuple[str, str, float]],
+) -> tuple[list[tuple[str, str, float]], list[AutomationOrderOutcome], str]:
+    """Item 12 (FinRL-X pattern): one session may not propose more turnover
+    than MAX_TURNOVER_PCT of equity.
+
+    Over the cap, the BUY side is scaled down proportionally (orders under $1
+    are dropped with a reason) instead of rejected. SELLs are exits, not
+    churn, and are never scaled: a half-exit to satisfy a churn budget trades
+    one risk for a worse one. They do consume the budget first, so a session
+    full of exits simply leaves less room for new buys.
+    """
+    if not proposals:
+        return proposals, [], ""
+    from app import broker
+
+    try:
+        account = await broker.account()
+    except Exception as exc:  # noqa: BLE001 - fail open; per-order guards still apply
+        logger.warning("[automation] turnover guard: account read failed: %s", exc)
+        return proposals, [], ""
+    equity = account.equity or 0.0
+    if equity <= 0:
+        return proposals, [], ""
+    cap = settings.max_turnover_pct * equity
+    total = sum(n for _, _, n in proposals)
+    if total <= cap + 1e-9:
+        return proposals, [], ""
+    sell_total = sum(n for _, side, n in proposals if side == "sell")
+    buy_total = sum(n for _, side, n in proposals if side == "buy")
+    buy_budget = max(0.0, cap - sell_total)
+    factor = 0.0 if buy_total <= 0 else min(1.0, buy_budget / buy_total)
+    kept: list[tuple[str, str, float]] = []
+    dropped: list[AutomationOrderOutcome] = []
+    for ticker, side, notional in proposals:
+        if side == "sell":
+            kept.append((ticker, side, notional))
+            continue
+        scaled = round(notional * factor, 2)
+        if scaled < 1:  # the broker rejects sub-$1 buys; record why, cleanly
+            dropped.append(
+                AutomationOrderOutcome(
+                    ticker=ticker, side="buy", notional=scaled, status="skipped",
+                    error=(
+                        f"turnover cap {settings.max_turnover_pct:.0%}: buy dropped "
+                        f"(${notional:,.0f} proposed, ${buy_budget:,.0f} budget left)"
+                    ),
+                )
+            )
+            continue
+        kept.append((ticker, side, scaled))
+    note = (
+        f"turnover cap {settings.max_turnover_pct:.0%}: ${total:,.0f} proposed vs "
+        f"${cap:,.0f} allowed; buys scaled x{factor:.2f}"
+        + (f"; {len(dropped)} dropped" if dropped else "")
+    )
+    return kept, dropped, note
+
+
+async def _submit_proposal(
+    run_id: str, ticker: str, side: str, notional: float
+) -> AutomationOrderOutcome:
+    """Submit one turnover-guarded proposal through the guarded broker path."""
+    from app import broker
 
     try:
         order = await broker.submit_order(run_id, ticker, side, notional)
@@ -665,6 +786,22 @@ async def _act_on_decision(
         status=order.status,
         client_order_id=order.client_order_id,
     )
+
+
+async def _act_on_decision(
+    run_id: str,
+    ticker: str,
+    analysis: StockAnalysis,
+    held_map: dict,
+    bear: bool | None = None,
+) -> AutomationOrderOutcome | None:
+    """Legacy single-decision path: propose, then submit through the same
+    guarded steps (kept for callers that act on one decision at a time)."""
+    proposed = await _propose_decision(ticker, analysis, held_map, bear=bear)
+    if proposed is None or isinstance(proposed, AutomationOrderOutcome):
+        return proposed
+    side, notional = proposed
+    return await _submit_proposal(run_id, ticker, side, notional)
 
 
 # ---- the loop ---------------------------------------------------------------

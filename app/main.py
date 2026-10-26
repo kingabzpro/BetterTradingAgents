@@ -134,6 +134,9 @@ async def startup() -> None:
     await memory.init()
     await watchlist.init()
     await broker.init()
+    from app import overlay
+
+    await overlay.init()  # item 13: stop/cooldown state table
     await store.init()
     await automation.init()
     # Keychain/DB overrides must land on the settings object before the

@@ -20,6 +20,21 @@ assert risk.size_position(1.0, None, D) == D                   # no vol info: un
 assert risk.size_position(0.0, 10.0, D) == round(D * 0.25, 2)  # floor guards zero conviction
 print("size_position OK")
 
+# ---- item 11: the manager's weight caps size, never raises it ---------------
+s, f = risk.cap_size_by_weight(5000.0, 3.0, 100_000.0)  # 3% of 100k = 3000 < 5000
+assert s == 3000.0 and "3% target weight" in f, (s, f)
+s, f = risk.cap_size_by_weight(2000.0, 5.0, 100_000.0)  # 5% = 5000 > 2000: no effect
+assert s == 2000.0 and f is None, (s, f)
+s, f = risk.cap_size_by_weight(2000.0, None, 100_000.0)
+assert s == 2000.0 and f is None, (s, f)
+s, f = risk.cap_size_by_weight(None, 5.0, 100_000.0)
+assert s is None and f is None, (s, f)
+s, f = risk.cap_size_by_weight(2000.0, 5.0, None)  # no equity: untouched
+assert s == 2000.0 and f is None, (s, f)
+s, f = risk.cap_size_by_weight(2000.0, 0.0, 100_000.0)  # zero weight: not a cap
+assert s == 2000.0 and f is None, (s, f)
+print("cap_size_by_weight OK")
+
 
 def flat_portfolio(equity=100_000.0, cash=100_000.0):
     return PortfolioSummary(
