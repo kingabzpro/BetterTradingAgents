@@ -128,7 +128,6 @@ FIELD_GROUPS: list[dict[str, Any]] = [
         "fields": [
             _field("max_tickers", "MAX_TICKERS", "Max tickers", "int", lo=1, hi=20, hint="Tickers accepted in one analysis", example="5"),
             _field("debate_rounds", "DEBATE_ROUNDS", "Debate rounds", "int", lo=1, hi=3, hint="2 or more adds the debate judge", example="2"),
-            _field("manager_votes", "MANAGER_VOTES", "Manager votes", "int", lo=1, hi=5, hint="Run the final call this many times in parallel and take the majority; 1 = a single call. Extra samples reduce run-to-run flips", example="3"),
             _field("stream_reasoning", "STREAM_REASONING", "Stream agent tokens", "bool", hint="Live agent tokens in the run view"),
             _field("experimental_features", "EXPERIMENTAL_FEATURES", "Enable experimentation", "bool", hint="Shows the Experimentation tab with the retired-UI toggles"),
         ],
@@ -150,6 +149,7 @@ FIELD_GROUPS: list[dict[str, Any]] = [
             _field("overlay_stop_loss_pct", "OVERLAY_STOP_LOSS_PCT", "Absolute stop", "float", lo=0.01, hi=1, hint="Exit a position this far below its entry price", example="0.12 (= -12%)"),
             _field("overlay_trailing_stop_pct", "OVERLAY_TRAILING_STOP_PCT", "Trailing stop", "float", lo=0.01, hi=1, hint="Exit a position this far below its own peak", example="0.15 (= -15%)"),
             _field("overlay_cooldown_days", "OVERLAY_COOLDOWN_DAYS", "Stop cooldown (days)", "int", lo=0, hi=90, hint="After a stop exit, autopilot will not re-enter that ticker for this many days", example="5"),
+            _field("risk_regime_enabled", "RISK_REGIME_ENABLED", "Risk-regime gate", "bool", hint="Scale NEW BUY risk by a deterministic SPY/VIX regime (risk_on 1.0x, neutral 0.75x, risk_off blocks entries with persistence, plus a fast 3-session shock). Off = sizing never changes with regime", example="1"),
         ],
     },
     {
@@ -160,6 +160,7 @@ FIELD_GROUPS: list[dict[str, Any]] = [
             _field("memory_horizon_days", "MEMORY_HORIZON_DAYS", "Outcome horizon (days)", "int", lo=1, hi=365, hint="Fallback grading window in days for runs that predate per-outlook horizons", example="21"),
             _field("memory_reflect_with_llm", "MEMORY_REFLECT_WITH_LLM", "LLM reflections", "bool", hint="Off writes deterministic lessons"),
             _field("calibration_min_observations", "CALIBRATION_MIN_OBSERVATIONS", "Min graded calls", "int", lo=1, hi=1000, hint="Track records need this many graded calls", example="30"),
+            _field("calibration_sizing_enabled", "CALIBRATION_SIZING", "Calibration sizing", "bool", hint="Scale proposed BUY risk by the manager's reliability curve (observed vs predicted per band, clamped 0.5-1.0, never inflating). Live runs only", example="1"),
         ],
     },
     {

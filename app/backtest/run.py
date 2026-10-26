@@ -36,6 +36,7 @@ from app.backtest.grade import (
     buy_hold_pct,
     grade,
     momentum_decision,
+    participation_cost_pct,
     period_stats,
     probability_calibration,
 )
@@ -208,6 +209,40 @@ async def run_backtest(
     )
     closes_by_ticker = dict(zip(tickers, series))
 
+    # Item 18: point-in-time regime budgets per grid date. The gate needs its
+    # own longer window (26-week mean + drawdown + persistence is ~145 bars,
+    # more than the grading lookback holds), fetched and cached separately so
+    # early grid dates are not stuck under the bar floor. Missing VIX history
+    # leaves the gate open for the replay, matching the live fail-open path.
+    regime_by_day: dict[str, object] = {}
+    if settings.risk_regime_enabled:
+        from app import risk_regime
+
+        regime_start = (
+            date.fromisoformat(start) - timedelta(days=LOOKBACK_DAYS + 400)
+        ).isoformat()
+
+        async def regime_series(ticker: str) -> dict[str, float] | None:
+            try:
+                return await _series(ticker, regime_start, grade_end, cache, offline)
+            except Exception as exc:  # noqa: BLE001 - gate degrades to open
+                logger.warning("[backtest] %s regime history unavailable: %s", ticker, exc)
+                return None
+
+        regime_spy, regime_vix = await asyncio.gather(
+            regime_series("SPY"), regime_series("^VIX")
+        )
+        if regime_spy and regime_vix:
+            spy_days = sorted(regime_spy)
+            vix_days = sorted(regime_vix)
+            for day in grid:
+                regime_by_day[day] = risk_regime.risk_budget(
+                    [regime_spy[d] for d in spy_days if d <= day],
+                    [regime_vix[d] for d in vix_days if d <= day],
+                )
+        else:
+            logger.warning("[backtest] risk regime enabled but inputs missing; gate open")
+
     # 3. Run the pipeline at each date; replay mode passes the snapshot and
     #    disables all live context (portfolio, memory) - no look-ahead.
     run_sem = asyncio.Semaphore(4)
@@ -225,6 +260,7 @@ async def run_backtest(
                     market_data=snapshots[(ticker, day)],
                     live_context=False,
                     exclude_analysts=exclusions,
+                    regime_budget=regime_by_day.get(day),
                 )
             except Exception as exc:  # noqa: BLE001
                 logger.warning("[backtest] %s @ %s: analysis failed: %s", ticker, day, exc)
@@ -254,12 +290,22 @@ async def run_backtest(
         decision = Decision(
             ticker, day, analysis.decision, analysis.confidence,
             analysis.manager_probability, analysis.target_weight_pct,
+            analysis.risk_regime_state,
+        )
+        # Item 17: fills are priced from the snapshot's own trailing volume and
+        # volatility, so thin or jumpy names pay more than the flat base.
+        snapshot_md = snapshots.get((ticker, day))
+        cost_pct = participation_cost_pct(
+            snapshot_md.closes if snapshot_md else [],
+            snapshot_md.volumes if snapshot_md else [],
+            settings.default_position_size,
         )
         outcome = grade(
             decision,
             closes_by_ticker.get(ticker, {}),
             spy_series,
             horizon_days,
+            cost_pct=cost_pct,
             short=short,
         )
         if outcome is None:
@@ -277,7 +323,14 @@ async def run_backtest(
             ticker, day, momentum_decision(snapshot.closes, outlook), 0.5
         )
         momentum_outcome = grade(
-            baseline, closes_by_ticker.get(ticker, {}), spy_series, horizon_days, short=short
+            baseline,
+            closes_by_ticker.get(ticker, {}),
+            spy_series,
+            horizon_days,
+            cost_pct=participation_cost_pct(
+                snapshot.closes, snapshot.volumes, settings.default_position_size
+            ),
+            short=short,
         )
         if momentum_outcome is not None:
             momentum_outcomes.append(momentum_outcome)
@@ -343,6 +396,7 @@ async def run_backtest(
         "depth": depth,
         "outlook": outlook,
         "cost_pct": 0.10,
+        "risk_regime_enabled": settings.risk_regime_enabled,
         "short": short,
         "fundamentals": fundamentals,
         "holdout": holdout,

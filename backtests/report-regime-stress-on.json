@@ -1,0 +1,285 @@
+{
+  "generated_at": "2026-10-26T10:30:04.247888+00:00",
+  "config": {
+    "mode": "mock",
+    "name": "regime-stress-on",
+    "model": "rule-based mock",
+    "tickers": [
+      "NVDA",
+      "AMD",
+      "MSFT"
+    ],
+    "start": "2025-11-17",
+    "end": "2025-12-08",
+    "step_days": 21,
+    "horizon_days": 21,
+    "depth": "pro",
+    "outlook": "short_term",
+    "cost_pct": 0.1,
+    "risk_regime_enabled": true,
+    "short": false,
+    "fundamentals": "excluded",
+    "holdout": null,
+    "seed": 7,
+    "excluded_analysts": [
+      "market"
+    ],
+    "policy_version": "2026-10-e",
+    "debate_rounds": 2
+  },
+  "flags": {
+    "window": "historical",
+    "claims_policy": "Headline performance claims belong to forward paper-trading windows (recent live runs on unresolved outcomes). Historical replays are qualitative evidence only.",
+    "memorization_risk": "low (mock mode - no LLM)",
+    "memorization_note": "",
+    "fundamentals_vintage": "excluded",
+    "fundamentals_bias": "fundamentals excluded from replay: opt in to the point-in-time SEC EDGAR source with --sec-edgar-fundamentals",
+    "news_rule": "news items filtered to published <= decision date"
+  },
+  "overall": {
+    "decisions": 6,
+    "counts": {
+      "BUY": 3,
+      "SELL": 0,
+      "HOLD": 3
+    },
+    "hit_rate_pct": 33.3,
+    "avg_net_pct": -0.36,
+    "avg_alpha_pct": -1.63,
+    "cumulative_pct": -0.72,
+    "sharpe": -4.17,
+    "max_drawdown_pct": 0.72,
+    "periods_per_year": 17.4,
+    "spy_cumulative_pct": 3.64,
+    "qqq_cumulative_pct": 2.98,
+    "calibration": {
+      "n": 3,
+      "min_observations": 30,
+      "event": "the call's direction beats SPY over the horizon (alpha_pct > 0)",
+      "brier": 0.3291,
+      "bands": [
+        {
+          "label": "0.60 - 0.69",
+          "n": 3,
+          "available": false,
+          "mean_predicted": 0.67,
+          "observed_rate": 0.333
+        }
+      ]
+    },
+    "analyst_scorecard": {
+      "bear": {
+        "directional_calls": 6,
+        "hit_rate_pct": 83.3,
+        "mean_alpha_pct": 4.06
+      },
+      "bull": {
+        "directional_calls": 6,
+        "hit_rate_pct": 16.7,
+        "mean_alpha_pct": -4.06
+      },
+      "technical": {
+        "directional_calls": 2,
+        "hit_rate_pct": 50.0,
+        "mean_alpha_pct": -0.59
+      }
+    },
+    "llm_usage": {
+      "prompt_tokens": 0,
+      "completion_tokens": 0,
+      "total_tokens": 0,
+      "cost_usd": 0.0,
+      "priced_runs": 0
+    },
+    "baselines": {
+      "all_hold": {
+        "decisions": 6,
+        "cumulative_pct": 0.0,
+        "note": "every decision HOLD scores 0 net after costs"
+      },
+      "momentum": {
+        "decisions": 6,
+        "counts": {
+          "BUY": 5,
+          "SELL": 0,
+          "HOLD": 1
+        },
+        "hit_rate_pct": 20.0,
+        "avg_net_pct": -2.21,
+        "avg_alpha_pct": -4.63,
+        "cumulative_pct": -4.4,
+        "sharpe": -5.14,
+        "max_drawdown_pct": 4.4,
+        "periods_per_year": 17.4,
+        "positioned_n": 5,
+        "alpha_ci_pct": [
+          -7.92,
+          -1.59
+        ],
+        "verdict": "insufficient sample (n=5 < 30): do not promote"
+      }
+    },
+    "periods": null
+  },
+  "tickers": {
+    "NVDA": {
+      "decisions": 2,
+      "counts": {
+        "BUY": 1,
+        "SELL": 0,
+        "HOLD": 1
+      },
+      "hit_rate_pct": 100.0,
+      "avg_net_pct": 0.67,
+      "avg_alpha_pct": 0.42,
+      "cumulative_pct": 1.34,
+      "sharpe": 4.17,
+      "max_drawdown_pct": 0.0,
+      "periods_per_year": 17.4,
+      "buy_hold_pct": 0.87
+    },
+    "AMD": {
+      "decisions": 2,
+      "counts": {
+        "BUY": 1,
+        "SELL": 0,
+        "HOLD": 1
+      },
+      "hit_rate_pct": 0.0,
+      "avg_net_pct": -1.29,
+      "avg_alpha_pct": -3.5,
+      "cumulative_pct": -2.59,
+      "sharpe": -4.17,
+      "max_drawdown_pct": 2.59,
+      "periods_per_year": 17.4,
+      "buy_hold_pct": -10.36
+    },
+    "MSFT": {
+      "decisions": 2,
+      "counts": {
+        "BUY": 1,
+        "SELL": 0,
+        "HOLD": 1
+      },
+      "hit_rate_pct": 0.0,
+      "avg_net_pct": -0.45,
+      "avg_alpha_pct": -1.81,
+      "cumulative_pct": -0.9,
+      "sharpe": -4.17,
+      "max_drawdown_pct": 0.9,
+      "periods_per_year": 17.4,
+      "buy_hold_pct": -3.84
+    }
+  },
+  "outcomes": [
+    {
+      "ticker": "AMD",
+      "date": "2025-11-17",
+      "decision": "HOLD",
+      "confidence": 0.65,
+      "entry": 240.52,
+      "exit": 221.11,
+      "window_days": 21,
+      "gross_pct": -8.07,
+      "net_pct": 0.0,
+      "spy_pct": 2.7,
+      "alpha_pct": null,
+      "note": "HOLD scores 0",
+      "manager_probability": 0.65,
+      "target_weight_pct": null,
+      "cost_pct": 0.1,
+      "risk_regime": "fast_risk_off"
+    },
+    {
+      "ticker": "MSFT",
+      "date": "2025-11-17",
+      "decision": "HOLD",
+      "confidence": 0.65,
+      "entry": 503.3486,
+      "exit": 487.9245,
+      "window_days": 21,
+      "gross_pct": -3.06,
+      "net_pct": 0.0,
+      "spy_pct": 2.7,
+      "alpha_pct": null,
+      "note": "HOLD scores 0",
+      "manager_probability": 0.65,
+      "target_weight_pct": null,
+      "cost_pct": 0.1,
+      "risk_regime": "fast_risk_off"
+    },
+    {
+      "ticker": "NVDA",
+      "date": "2025-11-17",
+      "decision": "HOLD",
+      "confidence": 0.53,
+      "entry": 186.154,
+      "exit": 185.1168,
+      "window_days": 21,
+      "gross_pct": -0.56,
+      "net_pct": 0.0,
+      "spy_pct": 2.7,
+      "alpha_pct": null,
+      "note": "HOLD scores 0",
+      "manager_probability": null,
+      "target_weight_pct": null,
+      "cost_pct": 0.1,
+      "risk_regime": "fast_risk_off"
+    },
+    {
+      "ticker": "AMD",
+      "date": "2025-12-08",
+      "decision": "BUY",
+      "confidence": 0.65,
+      "entry": 221.11,
+      "exit": 215.61,
+      "window_days": 21,
+      "gross_pct": -2.49,
+      "net_pct": -2.59,
+      "spy_pct": 0.91,
+      "alpha_pct": -3.5,
+      "note": "",
+      "manager_probability": 0.65,
+      "target_weight_pct": 3.2,
+      "cost_pct": 0.1,
+      "risk_regime": "risk_on"
+    },
+    {
+      "ticker": "MSFT",
+      "date": "2025-12-08",
+      "decision": "BUY",
+      "confidence": 0.68,
+      "entry": 487.9245,
+      "exit": 484.0292,
+      "window_days": 21,
+      "gross_pct": -0.8,
+      "net_pct": -0.9,
+      "spy_pct": 0.91,
+      "alpha_pct": -1.81,
+      "note": "",
+      "manager_probability": 0.68,
+      "target_weight_pct": 3.4,
+      "cost_pct": 0.1,
+      "risk_regime": "risk_on"
+    },
+    {
+      "ticker": "NVDA",
+      "date": "2025-12-08",
+      "decision": "BUY",
+      "confidence": 0.68,
+      "entry": 185.1168,
+      "exit": 187.7806,
+      "window_days": 21,
+      "gross_pct": 1.44,
+      "net_pct": 1.34,
+      "spy_pct": 0.91,
+      "alpha_pct": 0.42,
+      "note": "",
+      "manager_probability": 0.68,
+      "target_weight_pct": 3.4,
+      "cost_pct": 0.1,
+      "risk_regime": "risk_on"
+    }
+  ],
+  "ungraded": []
+}

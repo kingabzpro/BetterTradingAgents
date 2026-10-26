@@ -1,0 +1,67 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-10-26T10:34:53+00:00",
+  "code": {
+    "revision": "c0c3bd9",
+    "dirty": true
+  },
+  "decision_policy_version": "2026-10-e",
+  "config": {
+    "mode": "llm",
+    "name": "temp02-a",
+    "model": "deepseek-ai/DeepSeek-V4.1-Flash",
+    "tickers": [
+      "NVDA",
+      "AMD",
+      "MSFT",
+      "AAPL",
+      "TSLA"
+    ],
+    "start": "2025-06-02",
+    "end": "2025-08-04",
+    "step_days": 21,
+    "horizon_days": 21,
+    "depth": "pro",
+    "outlook": "short_term",
+    "cost_pct": 0.1,
+    "risk_regime_enabled": false,
+    "short": false,
+    "fundamentals": "excluded",
+    "holdout": null,
+    "seed": 7,
+    "excluded_analysts": [
+      "market"
+    ],
+    "policy_version": "2026-10-e",
+    "debate_rounds": 2
+  },
+  "data": {
+    "snapshot_hashes": {
+      "AAPL@2025-06-02": "sha256:a22b51223ad8eccf",
+      "AAPL@2025-06-23": "sha256:7c540a8d22350666",
+      "AAPL@2025-07-14": "sha256:ddf5ba919371ea61",
+      "AAPL@2025-08-04": "sha256:21b5024682b57225",
+      "AMD@2025-06-02": "sha256:8db095232012b6b3",
+      "AMD@2025-06-23": "sha256:ba8641e7cf7c22f2",
+      "AMD@2025-07-14": "sha256:f3058cce43413a7a",
+      "AMD@2025-08-04": "sha256:28bfadc7347575e7",
+      "MSFT@2025-06-02": "sha256:6abc20a87485da43",
+      "MSFT@2025-06-23": "sha256:d3b1274b2d52e957",
+      "MSFT@2025-07-14": "sha256:f3b194d4fc14319f",
+      "MSFT@2025-08-04": "sha256:60a3175a399f588e",
+      "NVDA@2025-06-02": "sha256:2c5eb30a306622b7",
+      "NVDA@2025-06-23": "sha256:45ad68bc78b4afaf",
+      "NVDA@2025-07-14": "sha256:44964c08c3032db8",
+      "NVDA@2025-08-04": "sha256:e6244ed2b82f4cea",
+      "TSLA@2025-06-02": "sha256:eadf2c65500f3df2",
+      "TSLA@2025-06-23": "sha256:903632ef53c07c51",
+      "TSLA@2025-07-14": "sha256:5ed23af1d87c8077",
+      "TSLA@2025-08-04": "sha256:9ba9928bcf0f889f"
+    }
+  },
+  "random_seeds": {
+    "bootstrap": 7,
+    "bootstrap_reps": 2000,
+    "pipeline": "LLM sampling: not reproducible run-to-run"
+  }
+}

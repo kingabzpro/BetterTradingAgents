@@ -66,7 +66,10 @@ class Settings:
     llm_base_url: str = _env("LLM_BASE_URL", LLM_DEFAULT_BASE_URL)
     llm_api_key: str = _env("LLM_API_KEY")
     llm_model: str = _env("LLM_MODEL", LLM_DEFAULT_MODEL)
-    llm_temperature: float = float(_env("LLM_TEMPERATURE", "0.2"))
+    # 0.0 default since the phase-4 panel: identical runs flipped 6/20 decisions
+    # at 0.2 vs 2/20 at 0.0 (pooled 31% -> 14% over 29 pairs/arm) and 0.0 also
+    # costs ~4.6% less. Any explicit LLM_TEMPERATURE (env or .env) still wins.
+    llm_temperature: float = float(_env("LLM_TEMPERATURE", "0.0"))
     llm_timeout_seconds: float = float(_env("LLM_TIMEOUT_SECONDS", "90"))
     # P2.18 runaway bounds: max tokens forwarded to every provider (0 = let
     # the provider default stand) and smart retries per LLM call after
@@ -141,12 +144,6 @@ class Settings:
     max_tickers: int = int(_env("MAX_TICKERS", "5"))
     # 1 = bull/bear only; >= 2 adds the debate judge cross-examination (capped at 3).
     debate_rounds: int = min(3, max(1, int(_env("DEBATE_ROUNDS", "2"))))
-    # Manager self-consistency voting (phase 4, item 14): run the final call
-    # this many times in parallel and take the majority. 1 = the single call
-    # every prior run used. The A/B measured 3/9 decisions flipping between
-    # identical runs at temperature 0.2, so extra samples buy stability; the
-    # vote count and agreement ride on the result for the UI and the record.
-    manager_votes: int = min(5, max(1, int(_env("MANAGER_VOTES", "1"))))
     # Wall-clock deadline for one analysis run (P2.8): a provider that hangs
     # must fail the run instead of leaving it "running" forever.
     run_timeout_minutes: int = max(5, int(_env("RUN_TIMEOUT_MINUTES", "30")))
@@ -204,6 +201,15 @@ class Settings:
     # a rate that a handful of outcomes cannot support.
     calibration_min_observations: int = max(
         1, int(_env("CALIBRATION_MIN_OBSERVATIONS", "30"))
+    )
+    # Calibration-driven sizing (phase 4, item 19): scale proposed BUY risk by
+    # the manager's own reliability curve (observed/predicted per probability
+    # band, clamped 0.5-1.0, never inflating). Live runs only; replays stay
+    # out of the live record. Off by default.
+    calibration_sizing_enabled: bool = _env("CALIBRATION_SIZING", "0").lower() in (
+        "1",
+        "true",
+        "yes",
     )
 
     # Alpaca paper trading (wiki Roadmap P2.1). Paper only: app/broker.py
@@ -338,6 +344,17 @@ class Settings:
         1.0, max(0.01, float(_env("OVERLAY_TRAILING_STOP_PCT", "0.15")))
     )
     overlay_cooldown_days: int = max(0, int(_env("OVERLAY_COOLDOWN_DAYS", "5")))
+
+    # Risk-regime gate (phase 4, item 18; app/risk_regime.py): a deterministic
+    # SPY/VIX read that scales the risk budget for NEW BUYs (risk_on 1.0x,
+    # neutral 0.75x, risk_off 0.0x with persistence, plus a fast 3-session
+    # shock overlay). OFF by default like the overlay, so sizing behavior
+    # never changes silently; flip it on the Settings page.
+    risk_regime_enabled: bool = _env("RISK_REGIME_ENABLED", "0").lower() in (
+        "1",
+        "true",
+        "yes",
+    )
 
     @property
     def llm_configured(self) -> bool:

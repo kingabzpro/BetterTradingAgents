@@ -192,6 +192,31 @@ async def checks() -> None:
     assert mock_hold["target_weight_pct"] is None
     print("manager target weight OK:", parsed_w.target_weight_pct)
 
+    # Item 19: calibration-driven sizing. Four mature BUY rows in the
+    # 0.80-0.89 band, two winners: observed 50% vs predicted 85% -> 0.59.
+    # Below the minimum sample, or an empty band, the curve stays out of the
+    # way (1.0, no note); None never scales.
+    seed(
+        [
+            {
+                "decision": "BUY",
+                "confidence": 0.65,
+                "outlook": "long_term",
+                "manager_probability": 0.85,
+                "alpha_vs_spy_pct": alpha,
+                "realized_return_pct": alpha + 1.0,
+                "spy_return_pct": 1.0,
+            }
+            for alpha in (1.0, 1.0, -1.0, -1.0)
+        ]
+    )
+    multiplier, note = calibration.sizing_multiplier_for(0.85)
+    assert multiplier == 0.59 and "n=4" in (note or ""), (multiplier, note)
+    assert calibration.sizing_multiplier_for(0.85, min_observations=5) == (1.0, None)
+    assert calibration.sizing_multiplier_for(0.95) == (1.0, None)  # empty band
+    assert calibration.sizing_multiplier_for(None) == (1.0, None)
+    print("calibration sizing OK:", multiplier, "|", note)
+
     # Analyst scorecard: a mature decision joins its stored run results and
     # every directional analyst call is graded against realized SPY alpha.
     await run_history.init()

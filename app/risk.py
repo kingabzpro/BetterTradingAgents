@@ -235,8 +235,14 @@ def evaluate(
     forecast_change_pct: float | None = None,
     incognito: bool = False,
     horizon_days: int = FORECAST_HORIZON_DAYS,
+    regime_multiplier: float = 1.0,
 ) -> tuple[str, float, float | None, list[str]]:
     """Apply the risk gate to a manager decision.
+
+    `regime_multiplier` (phase 4, item 18) scales NEW BUY sizing: 1.0 is the
+    open gate, values below it shrink the size, and 0.0 blocks the entry
+    (downgraded to HOLD with the reason). SELLs are never blocked - reducing
+    exposure is always allowed, in any regime.
 
     Returns (decision, confidence, suggested_size_usd, risk_flags).
     """
@@ -262,7 +268,19 @@ def evaluate(
             logger.info("[risk] %s BUY downgraded: forecast z=%.2f", ticker, z)
             return "HOLD", confidence, None, flags
 
+        # Item 18: the regime gate modulates new risk before any sizing math.
+        if regime_multiplier <= 0:
+            flags.append("downgraded BUY to HOLD: the risk regime blocks new entries")
+            logger.info("[risk] %s BUY blocked by the risk regime", ticker)
+            return "HOLD", confidence, None, flags
+
         size_usd = size_position(confidence, vol_ann_pct, settings.default_position_size)
+
+        if regime_multiplier < 1.0:
+            size_usd = round(size_usd * regime_multiplier, 2)
+            flags.append(
+                f"position size scaled x{regime_multiplier:.2f} by the risk regime"
+            )
 
         if z is not None and z <= -FORECAST_HALVE_Z:
             size_usd = round(size_usd * 0.5, 2)

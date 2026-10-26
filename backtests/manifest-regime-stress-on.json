@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-10-26T10:30:04+00:00",
+  "code": {
+    "revision": "c0c3bd9",
+    "dirty": true
+  },
+  "decision_policy_version": "2026-10-e",
+  "config": {
+    "mode": "mock",
+    "name": "regime-stress-on",
+    "model": "rule-based mock",
+    "tickers": [
+      "NVDA",
+      "AMD",
+      "MSFT"
+    ],
+    "start": "2025-11-17",
+    "end": "2025-12-08",
+    "step_days": 21,
+    "horizon_days": 21,
+    "depth": "pro",
+    "outlook": "short_term",
+    "cost_pct": 0.1,
+    "risk_regime_enabled": true,
+    "short": false,
+    "fundamentals": "excluded",
+    "holdout": null,
+    "seed": 7,
+    "excluded_analysts": [
+      "market"
+    ],
+    "policy_version": "2026-10-e",
+    "debate_rounds": 2
+  },
+  "data": {
+    "snapshot_hashes": {
+      "AMD@2025-11-17": "sha256:ce31e171ddf7b157",
+      "AMD@2025-12-08": "sha256:e5b3a2bd2310c1d5",
+      "MSFT@2025-11-17": "sha256:5ba75094af9bd3b4",
+      "MSFT@2025-12-08": "sha256:feb43157a9ab1a99",
+      "NVDA@2025-11-17": "sha256:c5bc4685e3dad4d5",
+      "NVDA@2025-12-08": "sha256:437ff6d9a24f98ca"
+    }
+  },
+  "random_seeds": {
+    "bootstrap": 7,
+    "bootstrap_reps": 2000,
+    "pipeline": "deterministic (mock mode)"
+  }
+}

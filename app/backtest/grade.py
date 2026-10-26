@@ -28,6 +28,53 @@ ROUND_TRIP_COST_PCT = 0.10  # 2 x 5bp, per positioned decision
 MIN_POSITIONED_FOR_PROMOTION = 30  # P1.2: fewer graded bets cannot support a headline
 BOOTSTRAP_REPS = 2000
 
+# Item 17: participation-aware fills. The flat round trip stays the base;
+# the participation term scales with the position's share of the snapshot's
+# own trailing dollar volume, and a volatility multiplier widens it for
+# jumpy names. Both inputs are point-in-time (the snapshot ends at the
+# decision date), so a warm cache replays the same costs forever.
+PARTICIPATION_CAP = 0.02  # position / daily dollar volume at which the extra term maxes out
+SLIPPAGE_MAX_EXTRA_PCT = 0.20  # extra round-trip % at full participation, before the vol multiplier
+ADV_WINDOW_DAYS = 21
+
+
+def participation_cost_pct(
+    closes: list[float],
+    volumes: list[float],
+    reference_notional: float,
+    base_pct: float = ROUND_TRIP_COST_PCT,
+    max_extra_pct: float = SLIPPAGE_MAX_EXTRA_PCT,
+) -> float:
+    """Round-trip cost % for a reference-sized position in this name.
+
+    base + max_extra * min(1, participation / 2%), where participation is
+    reference_notional over the trailing 21-day mean dollar volume, scaled by
+    the name's own volatility (0.5x below 15% annualized, 2x at 60%+). Thin
+    history or unusable volumes fall back to the flat base rather than
+    inventing a cost.
+    """
+    window = min(len(closes), len(volumes), ADV_WINDOW_DAYS)
+    if window < 5 or reference_notional <= 0:
+        return base_pct
+    recent = [
+        (c, v)
+        for c, v in zip(closes[-window:], volumes[-window:])
+        if c and c > 0 and v and v > 0
+    ]
+    if len(recent) < 5:
+        return base_pct
+    dollar_volume = fmean(c * v for c, v in recent)
+    if dollar_volume <= 0:
+        return base_pct
+    participation = reference_notional / dollar_volume
+    extra = max_extra_pct * min(1.0, participation / PARTICIPATION_CAP)
+    tail = closes[-min(len(closes), 64):]
+    daily = [b / a - 1 for a, b in zip(tail[:-1], tail[1:]) if a > 0]
+    if len(daily) >= 5:
+        vol_ann_pct = pstdev(daily) * sqrt(252) * 100
+        extra *= min(2.0, max(0.5, vol_ann_pct / 30.0))
+    return round(base_pct + extra, 4)
+
 
 @dataclass
 class Decision:
@@ -37,6 +84,7 @@ class Decision:
     confidence: float
     manager_probability: float | None = None  # P1.1 frozen success-event estimate
     target_weight_pct: float | None = None  # item 11 gated weight of equity
+    risk_regime: str = ""  # item 18 regime state at the decision date
 
 
 @dataclass
@@ -55,6 +103,8 @@ class Outcome:
     note: str = ""
     manager_probability: float | None = None
     target_weight_pct: float | None = None
+    cost_pct: float = ROUND_TRIP_COST_PCT  # item 17: the cost this decision paid
+    risk_regime: str = ""  # item 18: regime state recorded at grading time
 
 
 def grade(
@@ -122,6 +172,8 @@ def grade(
         note=note,
         manager_probability=decision.manager_probability,
         target_weight_pct=decision.target_weight_pct,
+        cost_pct=round(cost_pct, 4),
+        risk_regime=decision.risk_regime,
     )
 
 

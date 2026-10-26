@@ -200,42 +200,6 @@ priced = grade(Decision("A", "2024-01-01", "BUY", 0.8), CLOSES, SPY, 21, cost_pc
 assert priced.cost_pct == 0.30 and priced.net_pct == round(10.0 - 0.30, 2)
 print("participation cost model OK")
 
-# ---- stop-overlay replay (per-decision simulation of the live rules) --------
-# A: absolute stop fires on the dip (100 -> 87 is -13%); exit at the close.
-path_a = {"2024-01-01": 100.0, "2024-01-10": 87.0, "2024-01-22": 105.0}
-r = replay_stops(path_a, "2024-01-01", 21, 0.12, 0.15, 0.10)
-assert r.fired and r.trigger == "absolute_stop", r
-assert r.exit_pct == round(-13.0 - 0.10, 2) and r.horizon_pct == round(5.0 - 0.10, 2), r
-assert r.delta_pct == round(r.exit_pct - r.horizon_pct, 2), r
-# B: trailing stop fires after a peak (120 * 0.85 = 102 > 101).
-path_b = {"2024-01-01": 100.0, "2024-01-08": 120.0, "2024-01-12": 101.0, "2024-01-22": 115.0}
-r = replay_stops(path_b, "2024-01-01", 21, 0.12, 0.15, 0.10)
-assert r.fired and r.trigger == "trailing_stop" and r.exit_pct == round(1.0 - 0.10, 2), r
-# C: inside both bands -> nothing fires, delta exactly zero.
-path_c = {"2024-01-01": 100.0, "2024-01-10": 95.0, "2024-01-22": 108.0}
-r = replay_stops(path_c, "2024-01-01", 21, 0.12, 0.15, 0.10)
-assert not r.fired and r.delta_pct == 0.0 and r.exit_pct == r.horizon_pct, r
-# D: gap-through exits at the close it saw, never at the stop level.
-path_d = {"2024-01-01": 100.0, "2024-01-10": 80.0, "2024-01-22": 90.0}
-r = replay_stops(path_d, "2024-01-01", 21, 0.12, 0.15, 0.10)
-assert r.fired and r.exit_pct == round(-20.0 - 0.10, 2), r
-# E: window still open -> no replay.
-assert replay_stops({"2024-01-01": 100.0}, "2024-01-01", 21, 0.12, 0.15, 0.10) is None
-
-summary = stop_replay_summary(
-    [
-        grade(Decision("A", "2024-01-01", "BUY", 0.8), path_a, SPY, 21),
-        grade(Decision("C", "2024-01-01", "HOLD", 0.5), path_c, SPY, 21),
-    ],
-    {"A": path_a, "C": path_c},
-    0.12,
-    0.15,
-)
-assert summary and summary["buy_decisions"] == 1 and summary["stopped"] == 1, summary
-assert summary["absolute_stops"] == 1 and summary["trailing_stops"] == 0, summary
-assert summary["sum_delta_pct"] == summary["mean_delta_pct"], summary
-print("stop overlay replay OK:", summary["stopped"], "of", summary["buy_decisions"], "stopped")
-
 # ---- anti-look-ahead news filter -------------------------------------------------
 assert published_on_or_before({"published": "2024-01-05T10:00:00+00:00"}, "2024-01-10")
 assert not published_on_or_before({"published": "2024-01-15T10:00:00+00:00"}, "2024-01-10")

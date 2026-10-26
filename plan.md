@@ -150,11 +150,34 @@ Feed the reliability curve back into the weight contract: scale the manager's pr
 
 ## Phase 4 status
 
-- [x] Batch 4 (items 14-16): voting, regression panel, temperature study - outcome below
-- [ ] Batch 5 (items 17-18): fill costs, regime gate
-- [ ] Batch 6 (item 19): calibration-driven sizing
+- [x] Batch 4 (items 14-16): outcome below; manager voting REMOVED after the A/B killed it
+- [x] Batch 5 (items 17-18): fill costs + regime gate - outcome below
+- [x] Batch 6 (item 19): calibration-driven sizing - outcome below
+- [x] Drop/adopt analysis executed (bottom of this section)
 
-### Batch 4 outcome (2026-10-26)
+### Batch 5 outcome (2026-10-26)
+
+**Item 17, participation-aware fills.** Round trip = base 0.10% + up to 0.20% scaled by the position's share of the snapshot's own 21-day mean dollar volume (full term at 2% participation), multiplied 0.5-2x by the name's own volatility; thin history falls back to the base. Point-in-time from data already cached. Every report now carries a per-decision Cost column. Hermetic hand-checked cases in check_backtest.
+
+**Item 18, deterministic regime gate.** New app/risk_regime.py: slow gate (SPY 26-week mean, 13-week drawdown past 10%, VIX robust z >= 3, each a stress point; 2+ points = risk_off, requiring the same score a week ago) plus a fast overlay (3-session SPY -4% or VIX +25% forces risk_off). Multiplier: risk_on 1.0x, neutral 0.75x, risk_off 0.0x blocks new BUYs (exits never blocked). Replays compute point-in-time budgets from a dedicated +400-day window and never fall back to live data (a bug found and fixed during this work: the original window sat under the gate's bar floor, silently opening it). Mock A/B: on 2025-11-17 (fast risk-off) both BUYs were blocked; 2025-12-08 (risk_on) untouched; the June grid was entirely risk_on, zero flips, correct. Off by default; toggle on the Settings page.
+
+### Batch 6 outcome (2026-10-26)
+
+**Item 19, calibration-driven sizing.** app/calibration.sizing_multiplier_for: the reliability band containing the manager's predicted probability yields observed/predicted, clamped to [0.5, 1.0] (calibration can only shrink), gated at the minimum sample, live-only (replays stay out of the live record), and flagged in risk_flags when it binds. Hermetic cases in check_calibration. Off by default.
+
+### Drop/adopt analysis (2026-10-26, the owner's request)
+
+| Thing added | Verdict | Action taken |
+|---|---|---|
+| Manager voting (item 14) | Drop: 4/9 flips vs a 3/9 control band at +105% cost | Code, check, setting, env var and UI badge removed; the finding and artifacts stay in plan.md and backtests/ab-ledger.json |
+| Prompt trim (item 8) | Keep, low value (~1.5% prompt tokens) | Stays behind PROMPT_TRIM |
+| Temperature | Adopt 0.0 | Bigger panel: identical runs flipped 6/20 at 0.2 vs 2/20 at 0.0 (pooled 31% -> 14% over 29 pairs per arm), -2.3% tokens, -4.6% cost. Default flipped in app/config.py and .env.example; an explicit LLM_TEMPERATURE still wins |
+| Risk overlay, regime gate, calibration sizing | Keep, off by default | Owner toggles; overlay first (most proven), regime gate second, calibration sizing once a band has 30+ mature calls |
+| Regression panel + all checks | Keep | 37 groups green on the final state |
+
+The honesty note this section exists to record: three experiments (voting, trim, temperature) show the pipeline's marginal calls flip across runs by 14-30%; temperature 0 is the only lever that measurably halved it, and no lever changed which calls are marginal (AMD early June, NVDA mid July flip in every configuration). Stability is bounded by the model, not the harness.
+
+## Batch 4 outcome (2026-10-26)
 
 Delivered: manager voting (MANAGER_VOTES, off by default, agreement badge in the UI, check_voting), the regression panel (scripts/ab_panel.py + backtests/ab-ledger.json + check_ab_panel), and the temperature study. Suite 37 groups green. All arms live on the June panel grid (9 decisions each), controls included.
 
@@ -164,7 +187,7 @@ Delivered: manager voting (MANAGER_VOTES, off by default, agreement badge in the
 | votes=3 (voting ON) | 4/9 | 179,732 (+98%) | $0.1205 (+105%) |
 | temperature=0 | 2/9 | 83,512 (-8.2%) | $0.0499 (-15%) |
 
-**Verdict on item 14: killed as a recommendation.** Voting at 3 samples did not reduce run-to-run flips (4/9 vs the 3/9 control band) and doubled cost. The likely cause: the samples within one run are correlated (same prompt and serving state) while the marginal calls sit near 50/50, so even a 2/3 majority is itself unstable across runs. The feature stays as a tested, off-by-default toggle with the UI badge; MANAGER_VOTES=1 remains the default.
+**Verdict on item 14: killed as a recommendation.** Voting at 3 samples did not reduce run-to-run flips (4/9 vs the 3/9 control band) and doubled cost. The likely cause: the samples within one run are correlated (same prompt and serving state) while the marginal calls sit near 50/50, so even a 2/3 majority is itself unstable across runs. The feature stays as a tested, off-by-default toggle with the UI badge; MANAGER_VOTES=1 remains the default. *(Later the same day the drop/adopt analysis removed the code entirely - see that table below.)*
 
 **Temperature:** temp 0 shows fewer flips (2/9) and is consistently cheaper (both temp0 arms below both votes1 arms on tokens, -15% cost) - a real-looking but small-sample result (n=9). Per the plan's bar ("no code unless flips collapse"), no default change; either set LLM_TEMPERATURE=0 in the app, or run a bigger panel (20+ decisions per arm) to settle it.
 

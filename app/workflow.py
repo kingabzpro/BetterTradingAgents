@@ -485,10 +485,6 @@ def _regime_cache_key(indices: dict) -> str:
     ).hexdigest()
 
 
-async def _noop_emit(kind: str, payload: dict) -> None:  # noqa: ARG001
-    """Sink for samples whose events are folded into one stage event."""
-
-
 def _agent_completed_payload(
     ticker: str,
     agent: str,
@@ -891,6 +887,7 @@ async def analyze_ticker(
     held_closes: dict[str, list[float]] | None = None,
     previous: PreviousCall | None = None,
     incognito: bool = False,
+    regime_budget=None,  # risk_regime.RiskBudget, precomputed by replays
 ) -> StockAnalysis:
     """Full 3-stage workflow for one ticker.
 
@@ -1356,75 +1353,23 @@ async def analyze_ticker(
         "past_decisions": past_decisions_ctx,
         "cross_ticker_lessons": cross_lessons_ctx,
     }
-    # Item 14: manager self-consistency voting. With MANAGER_VOTES > 1 (and a
-    # real LLM configured; mock mode is deterministic, so one sample is the
-    # same answer) the final call runs N times in parallel and the majority
-    # wins. Samples run emit-less and the stage emits one started/completed
-    # pair around the vote, so the UI keeps one manager row carrying the
-    # winning payload; per-call usage still rolls up for cost either way.
-    manager_votes: list[str] = []
-    manager_agreement: float | None = None
-    votes_n = settings.manager_votes if settings.llm_configured else 1
-    if votes_n > 1:
-        await emit("agent_started", {"ticker": ticker, "agent": manager.NAME})
-        stage_started = time.perf_counter()
-        tokens_before = int(token_totals.get("total_tokens", 0))
-
-        async def _vote_sample() -> dict | None:
-            try:
-                return await _run_agent(
-                    manager,
-                    ticker,
-                    _noop_emit,
-                    token_totals=token_totals,
-                    role_usage=role_usage,
-                    live=live_context,
-                    payload=full_context,
-                )
-            except Exception as exc:  # noqa: BLE001 - one bad sample must not sink the vote
-                logger.warning("[manager] vote sample failed: %s", exc)
-                return None
-
-        samples = await timed(
-            "manager", asyncio.gather(*(_vote_sample() for _ in range(votes_n)))
-        )
-        mgr_data, manager_votes, manager_agreement = manager.majority_vote(
-            [sample for sample in samples if sample], ticker
-        )
-        stage_tokens = int(token_totals.get("total_tokens", 0)) - tokens_before
-        if mgr_data is None:
-            await emit(
-                "agent_failed",
-                {
-                    "ticker": ticker,
-                    "agent": manager.NAME,
-                    "error": f"all {votes_n} vote samples failed",
-                },
-            )
-        else:
-            await emit(
-                "agent_completed",
-                _agent_completed_payload(
-                    ticker,
-                    manager.NAME,
-                    mgr_data,
-                    time.perf_counter() - stage_started,
-                    stage_tokens,
-                ),
-            )
-    else:
-        mgr_data = await timed(
-            "manager",
-            _run_agent(
-                manager,
-                ticker,
-                emit,
-                token_totals=token_totals,
-                role_usage=role_usage,
-                live=live_context,
-                payload=full_context,
-            ),
-        )
+    # Manager voting (item 14) lived here and was removed after the A/B: three
+    # samples per call did not reduce run-to-run flips (4/9 vs the 3/9 control
+    # band) and doubled cost, because within-run samples are correlated while
+    # marginal calls sit near 50/50. The finding and artifacts are in plan.md
+    # and backtests/ab-ledger.json; the code is one flag back in git history.
+    mgr_data = await timed(
+        "manager",
+        _run_agent(
+            manager,
+            ticker,
+            emit,
+            token_totals=token_totals,
+            role_usage=role_usage,
+            live=live_context,
+            payload=full_context,
+        ),
+    )
 
     # ROADMAP P2.14: flag stages that blew their budget so "which stage was
     # slow" is one log glance. No ticker in the line - incognito logs stay
@@ -1467,8 +1412,42 @@ async def analyze_ticker(
     manager_decision = final.decision if mgr_data else None
     manager_confidence = final.confidence if mgr_data else None
     manager_probability = final.probability_beat_spy if mgr_data else None
-    manager_weight = final.target_weight_pct if mgr_data else None
+    manager_proposed_weight = final.target_weight_pct if mgr_data else None
+    manager_weight = manager_proposed_weight
     target_weight_pct: float | None = None
+
+    # Item 19: calibration-driven sizing. The manager's reliability curve
+    # (observed vs predicted per band) scales the proposed BUY weight before
+    # the gate caps it; it can only shrink, and only in live runs, so the
+    # replay path never mixes the live record into a backtest.
+    calibration_note: str | None = None
+    if (
+        settings.calibration_sizing_enabled
+        and live_context
+        and mgr_data
+        and decision == "BUY"
+        and manager_weight
+        and manager_probability is not None
+    ):
+        from app import calibration
+
+        multiplier, calibration_note = await asyncio.to_thread(
+            calibration.sizing_multiplier_for, manager_probability
+        )
+        if multiplier != 1.0:
+            manager_weight = round(manager_weight * multiplier, 2)
+
+    # Risk-regime gate (phase 4, item 18): one deterministic SPY/VIX read per
+    # run (replays pass their point-in-time budget in). It scales NEW BUY
+    # sizing and can block entries, never picks. Replays never fetch live:
+    # a missing budget means an open gate, not look-ahead data.
+    regime = None
+    if settings.risk_regime_enabled:
+        from app import risk_regime
+
+        regime = regime_budget
+        if regime is None and live_context:
+            regime = await risk_regime.fetch_regime_budget()
 
     # Risk gate: deterministic sizing, forecast check, and exposure caps.
     size_usd, risk_flags = None, []
@@ -1496,7 +1475,12 @@ async def analyze_ticker(
             forecast_change_pct=forecast_change_pct,
             incognito=incognito,
             horizon_days=run_horizon,
+            regime_multiplier=regime.multiplier if regime else 1.0,
         )
+        if regime is not None and regime.state != "risk_on":
+            risk_flags.append(f"risk regime: {regime.detail}")
+        if calibration_note:
+            risk_flags.append(calibration_note)
         # Weight contract (item 11): the manager's proposed share of equity
         # can only shrink the deterministic size, never raise it - the gate
         # stays the upper bound. The final weight is the actual position the
@@ -1565,9 +1549,8 @@ async def analyze_ticker(
         manager_decision=manager_decision,
         manager_confidence=manager_confidence,
         manager_probability=manager_probability,
-        manager_target_weight_pct=manager_weight,
-        manager_votes=manager_votes,
-        manager_agreement=manager_agreement,
+        manager_target_weight_pct=manager_proposed_weight,
+        risk_regime_state=regime.state if regime else "",
         target_weight_pct=target_weight_pct,
         summary=summary,
         bull_case=bull_case,

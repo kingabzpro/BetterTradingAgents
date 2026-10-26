@@ -328,6 +328,70 @@ def scorecard_text(scorecard: dict) -> str:
     return text
 
 
+def _band_for(predicted: float) -> tuple[float, float | None]:
+    """The PROBABILITY_BANDS window containing `predicted`."""
+    lower = 0.0
+    for edge, _label in PROBABILITY_BANDS:
+        if predicted >= lower and (edge is None or predicted < edge):
+            return lower, edge
+        if edge is not None:
+            lower = edge
+    return 0.0, None
+
+
+def sizing_multiplier_for(
+    predicted: float | None, db_path=None, min_observations: int | None = None
+) -> tuple[float, str | None]:
+    """Item 19: scale a proposed risk by the manager's own reliability curve.
+
+    The band containing `predicted` reports its observed success rate over
+    mature graded decisions; the multiplier is observed/predicted, clamped to
+    [0.5, 1.0] - calibration can only shrink a position, never inflate it,
+    and the risk gate still caps the result. Below the minimum sample the
+    function returns 1.0 (no adjustment) rather than inventing a curve from
+    thin data. Returns (multiplier, note); note is None when nothing binds.
+    """
+    min_n = (
+        settings.calibration_min_observations
+        if min_observations is None
+        else min_observations
+    )
+    if predicted is None or predicted <= 0:
+        return 1.0, None
+    path = settings.db_path if db_path is None else db_path
+    with sqlite3.connect(path) as connection:
+        connection.row_factory = sqlite3.Row
+        rows = _load_rows(connection)
+    lower, upper = _band_for(predicted)
+    band = [
+        row
+        for row in rows
+        if row["manager_probability"] is not None
+        and row["alpha_vs_spy_pct"] is not None
+        and row["manager_probability"] >= lower
+        and (upper is None or row["manager_probability"] < upper)
+    ]
+    n = len(band)
+    if n < min_n:
+        return 1.0, None
+    observed = (
+        sum(
+            1
+            if _direction(str(row["decision"])) * row["alpha_vs_spy_pct"] > 0
+            else 0
+            for row in band
+        )
+        / n
+    )
+    multiplier = round(min(1.0, max(0.5, observed / predicted)), 2)
+    if multiplier >= 1.0:
+        return 1.0, None
+    return multiplier, (
+        f"calibration sizing x{multiplier:.2f}: band observed {observed:.0%} "
+        f"vs predicted {predicted:.0%} (n={n})"
+    )
+
+
 def build_report(db_path=None, min_observations: int | None = None) -> str:
     """Full calibration report as markdown. SQLite reads only, no LLM calls."""
     min_n = settings.calibration_min_observations if min_observations is None else min_observations

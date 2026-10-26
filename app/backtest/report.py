@@ -184,7 +184,8 @@ def _markdown(payload: dict) -> str:
         + " |",
         f"| Outlook | {config['outlook']} |",
         f"| Fundamentals | {flags['fundamentals_vintage']} |",
-        f"| Round-trip cost | {config['cost_pct']:.2f}% |",
+        f"| Round-trip cost | base {config['cost_pct']:.2f}% + participation/volatility term (item 17) |",
+        f"| Risk regime | {'enabled (item 18)' if config.get('risk_regime_enabled') else 'off'} |",
         f"| Short selling | {'enabled' if config['short'] else 'disabled (SELL is cash, graded on relative weakness vs SPY)'} |",
         "| Portfolio accounting | equal weight per decision date, compounded |",
         f"| Benchmarks (buy & hold) | SPY {_pct(overall.get('spy_cumulative_pct'))} · "
@@ -322,8 +323,8 @@ def _markdown(payload: dict) -> str:
         "",
         "## Decisions",
         "",
-        "| Ticker | Date | Decision | Conf. | Prob. | Weight | Entry | Exit | Net | SPY | Alpha |",
-        "|---|---|---|---|---|---|---|---|---|---|---|",
+        "| Ticker | Date | Decision | Conf. | Prob. | Weight | Entry | Exit | Cost | Net | SPY | Alpha | Regime |",
+        "|---|---|---|---|---|---|---|---|---|---|---|---|---|",
     ]
     for o in payload["outcomes"]:
         probability = o.get("manager_probability")
@@ -332,8 +333,10 @@ def _markdown(payload: dict) -> str:
             f"| {o['ticker']} | {o['date']} | {o['decision']} | {o['confidence']:.2f} "
             f"| {'-' if probability is None else f'{probability:.2f}'} "
             f"| {'-' if weight is None else f'{weight:.1f}%'} "
-            f"| {o['entry']:.2f} | {o['exit']:.2f} | {_pct(o['net_pct'])} | "
-            f"{_pct(o['spy_pct'])} | {_pct(o['alpha_pct'])} |"
+            f"| {o['entry']:.2f} | {o['exit']:.2f} | {_pct(o.get('cost_pct'), signed=False)} "
+            f"| {_pct(o['net_pct'])} | "
+            f"{_pct(o['spy_pct'])} | {_pct(o['alpha_pct'])} "
+            f"| {o.get('risk_regime') or '-'} |"
         )
     if payload["ungraded"]:
         lines += [

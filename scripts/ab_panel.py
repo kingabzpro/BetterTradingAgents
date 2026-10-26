@@ -62,7 +62,7 @@ def save_entry(entry: dict, path: Path = LEDGER_PATH) -> None:
 
 
 def same_config(a: dict, b: dict) -> bool:
-    keys = ("mode", "depth", "votes", "temperature", "tickers", "start", "end")
+    keys = ("mode", "depth", "votes", "temperature", "tickers", "start", "end", "extra")
     return all(a.get(key) == b.get(key) for key in keys)
 
 
@@ -109,9 +109,16 @@ def render_comparison(a: dict, b: dict, control: dict | None = None) -> str:
 
 def cmd_run(args: argparse.Namespace) -> int:
     # Environment first: app.config reads it at import time.
-    os.environ["MANAGER_VOTES"] = str(args.votes)
     if args.temperature is not None:
         os.environ["LLM_TEMPERATURE"] = str(args.temperature)
+    overrides: dict[str, str] = {}
+    for pair in args.set or []:
+        key, _, value = pair.partition("=")
+        if not key or not _:
+            print(f"--set expects KEY=VALUE, got {pair!r}", file=sys.stderr)
+            return 2
+        os.environ[key] = value
+        overrides[key] = value
 
     sys.path.insert(0, str(REPO))
     from app.config import settings  # noqa: E402
@@ -137,7 +144,6 @@ def cmd_run(args: argparse.Namespace) -> int:
         "created_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "mode": args.mode,
         "depth": args.depth,
-        "votes": settings.manager_votes,
         "temperature": settings.llm_temperature,
         "model": result.config.get("model", ""),
         "tickers": args.tickers,
@@ -145,6 +151,7 @@ def cmd_run(args: argparse.Namespace) -> int:
         "end": args.end,
         "tokens": usage.get("total_tokens", 0),
         "cost_usd": usage.get("cost_usd", 0.0),
+        "extra": overrides,
         "decisions": {
             f"{o.ticker}@{o.date}": o.decision for o in result.outcomes
         },
@@ -191,8 +198,11 @@ def main(argv: list[str] | None = None) -> int:
     run_p.add_argument("--end", default=PANEL_DEFAULTS["end"])
     run_p.add_argument("--step", type=int, default=PANEL_DEFAULTS["step"])
     run_p.add_argument("--horizon", type=int, default=PANEL_DEFAULTS["horizon"])
-    run_p.add_argument("--votes", type=int, default=1)
     run_p.add_argument("--temperature", type=float, default=None)
+    run_p.add_argument(
+        "--set", action="append", metavar="KEY=VALUE",
+        help="extra env override for this arm (repeatable), e.g. --set RISK_REGIME_ENABLED=1",
+    )
     run_p.set_defaults(func=cmd_run)
 
     cmp_p = sub.add_parser("compare", help="print the comparison table")
