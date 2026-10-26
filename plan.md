@@ -177,6 +177,48 @@ Feed the reliability curve back into the weight contract: scale the manager's pr
 
 The honesty note this section exists to record: three experiments (voting, trim, temperature) show the pipeline's marginal calls flip across runs by 14-30%; temperature 0 is the only lever that measurably halved it, and no lever changed which calls are marginal (AMD early June, NVDA mid July flip in every configuration). Stability is bounded by the model, not the harness.
 
+## Cons remediation (2026-10-26, the owner's "work on cons" pass)
+
+Each merge con from the pros/cons read, with what changed:
+
+| Con | Remediation |
+|---|---|
+| Published numbers will change; docs mismatch | **Main's published mock table is unreproducible by main's own code: run against today's cache, main (7c14f1a) produces the branch's exact decision set (0/138 decisions differ) and +1171.15% on the old basis, not the published -9.19/+45.04/+94.87; all 138 snapshot hashes in main's committed sweep manifest differ from today's cache, so the published table was computed on a data state that no longer exists** (proof: backtests/report-main-code-now.*). Depth numbers regenerated from the new code: holdout (60 decisions per depth) now Fast +43.95% / alpha +3.45% / dd 0.85%, Pro +32.43% / +2.86% / 4.98%, Max +17.53% / +2.97% / 6.35%. **Paired mock replay (owner-requested run): Fast - Max = +2.08% per matched decision on the holdout, 95% CI [+0.63, +3.91], excludes 0, n=60; tune period crossed 0.** Mock only: the live sweep's paired diffs all crossed 0, with Max's one reproducible effect being drawdown cut ~1/3 (and main's own old paired CI for Max was [+0.05, +2.75], barely excluding 0, in that dead data state). So mock says Fast > Max on picks, live says indistinguishable, and the tier-table framing (Fast = value, Pro = balanced, Max = most thorough + drawdown) is the only presentation both datasets support. README/wiki replacement text drafted for owner approval; reports now record the LLM temperature that produced them |
+| Behavioral defaults shift | .env.example documents every changed default (temperature 0.0, overlay/regime/calibration off); report settings table now shows the temperature for provenance |
+| Large single merge, hard to review | Commit-by-commit review index below |
+| New surface to maintain | Release surface table below: every new setting, its default, its evidence, and the recommended state |
+| Merging adds capability, not proven performance | Stop-overlay replay closes the biggest gap: 91 graded BUYs on the 5-ticker grid, stops would have fired 7 times (5 absolute, 2 trailing) at a mean cost of -0.62% per BUY vs holding. The stops are drawdown insurance, not alpha, and the evidence says so |
+| Process deviation (AGENTS.md says exp -> dev -> main) | After merging to main, fast-forward dev to main so the documented flow holds for the next feature branch |
+| Install friction (lockfile changed) | Release note: run `uv sync` after pulling; stale crewai packages are removed automatically |
+
+### Commit-by-commit review index (11 commits, main 7c14f1a -> exp 64f0997+)
+
+1. `5b937fd` framework swap: pyproject + uv.lock + workflow/agents rewrite (the big one)
+2. `a08fbaf` README points at the SDK (2 lines)
+3. `7c14be3` LLM_CONCURRENCY gate
+4. `5a50c0c` batch 1: grading, calibration, scorecard, QQQ
+5. `5a53db1` batches 2+3: trim, cache, weights, turnover, overlay
+6. `bc4e703` release-vs-baseline A/B artifacts
+7. `07dd22b` wash-trade guard + UI warnings
+8. `92b396b` merge-readiness record
+9. `ea8e682` phase 4 plan
+10. `c0c3bd9` regression panel (voting added then removed later)
+11. `64f0997` phase 4 batches 5-6 + drop/adopt (current candidate, plus this cons pass)
+
+### Release surface (every new knob)
+
+| Setting | Default | Evidence | Recommended |
+|---|---|---|---|
+| LLM_CONCURRENCY | 12 | Fixed the Modal 429 class | Keep |
+| MANAGER_VOTES | removed | 4/9 flips at +105% cost | Gone; finding in git history |
+| PROMPT_TRIM (+caps) | on | ~1.5% prompt tokens | Keep |
+| NEWS/HISTORY cache TTLs | 900s / 300s | 2 provider calls to 1 | Keep |
+| OVERLAY_ENABLED | off | Replay: 7/91 stops, -0.62%/BUY vs holding | Flip only as drawdown insurance |
+| MAX_TURNOVER_PCT | 0.5 | Caps session churn; sells exempt | Keep |
+| RISK_REGIME_ENABLED | off | Blocks entries in stress; June grid unaffected | Enable after overlay |
+| CALIBRATION_SIZING | off | Needs 30+ mature calls per band | Enable later |
+| LLM_TEMPERATURE | 0.0 | 6/20 vs 2/20 flips, -4.6% cost | Adopted |
+
 ## Batch 4 outcome (2026-10-26)
 
 Delivered: manager voting (MANAGER_VOTES, off by default, agreement badge in the UI, check_voting), the regression panel (scripts/ab_panel.py + backtests/ab-ledger.json + check_ab_panel), and the temperature study. Suite 37 groups green. All arms live on the June panel grid (9 decisions each), controls included.
