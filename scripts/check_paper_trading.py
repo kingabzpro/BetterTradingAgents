@@ -70,6 +70,7 @@ class _FakeClient:
         self.on_submit = None
         self.remote_order = None
         self.history = None
+        self.open_orders = []  # working orders the wash-trade pre-check reads
 
     def get_account(self):
         if self.error:
@@ -80,6 +81,11 @@ class _FakeClient:
         if self.error:
             raise self.error
         return self.positions
+
+    def get_orders(self, filter=None):  # noqa: A002 - mirrors the SDK's name
+        if self.error:
+            raise self.error
+        return self.open_orders
 
     def submit_order(self, order_data):
         self.submit_calls += 1
@@ -273,6 +279,7 @@ async def checks() -> None:
         _run("paperrun04", "MSFT", "HOLD"),
         _run("paperrun05", "AAPL", "SELL"),
         _run("paperrun06", "TSLA", "BUY", as_of="2026-01-01T00:00:00+00:00"),
+        _run("paperrun07", "ALAB", "SELL"),
     ):
         await run_history.save(saved, completed_at=1_790_000_010.0, owner_id="paper_check")
 
@@ -298,6 +305,52 @@ async def checks() -> None:
     await _rejects("paperrun01", "AAPL", "sell", 100, 400, "not a sell")
     await _rejects("paperrun01", "AAPL", "buy", 0.5, 400, "at least 1 USD")
     print("guard rails OK (HOLD, no position, stale, caps, side mismatch)")
+
+    # ---- wash-trade pre-check: a working opposite order blocks the submit ----
+    # (Seen live on ALAB 2026-10-26: a queued weekend BUY made Alpaca reject a
+    # SELL with its raw "potential wash trade detected" message; the app now
+    # applies the same rule first and names the blocking order and the remedy.)
+    alab = SimpleNamespace(
+        symbol="ALAB", qty="9.57", avg_entry_price="261.17",
+        current_price="254.5", market_value="2436.14",
+        unrealized_pl="-63.85", unrealized_plpc="-0.0255",
+    )
+    fake.positions = [alab]
+    fake.open_orders = [
+        SimpleNamespace(
+            side="buy", notional="2500", qty=None,
+            status=OrderStatus.NEW, submitted_at=datetime(2026, 10, 24, 14, 42, tzinfo=timezone.utc),
+        )
+    ]
+    await _rejects("paperrun07", "ALAB", "sell", 2400, 409, "open buy order for ALAB")
+    try:
+        await broker.submit_order("paperrun07", "ALAB", "sell", 2400)
+    except broker.BrokerRuleError as exc:
+        message = str(exc)
+        assert "$2,500.00" in message and "placed 2026-10-24 14:42 UTC" in message, message
+        assert "cancel it on the Trades page" in message, message
+    # the reverse direction: a working sell blocks a buy
+    fake.open_orders = [
+        SimpleNamespace(
+            side="sell", notional=None, qty="5", status=OrderStatus.NEW, submitted_at=None
+        )
+    ]
+    await _rejects("paperrun01", "AAPL", "buy", 1000, 409, "open sell order for AAPL")
+    # the risk-overlay exit path faces the same rule
+    fake.open_orders = [
+        SimpleNamespace(
+            side="buy", notional="2500", qty=None, status=OrderStatus.NEW, submitted_at=None
+        )
+    ]
+    try:
+        await broker.submit_exit_order("ALAB", 2400, "risk overlay absolute_stop")
+        raise AssertionError("overlay exit must be rejected while a buy is working")
+    except broker.BrokerRuleError as exc:
+        assert exc.status_code == 409 and "open buy order for ALAB" in str(exc), str(exc)
+    # no opposite orders: the submit proceeds as before
+    fake.open_orders = []
+    fake.positions = []
+    print("wash-trade pre-check OK (sell blocked by buy, buy by sell, overlay path too)")
 
 
     # ---- kill switch and confirm are endpoint-level --------------------------

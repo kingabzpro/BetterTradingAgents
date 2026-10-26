@@ -86,6 +86,9 @@ class _FakeClient:
     def get_all_positions(self):
         return self.positions
 
+    def get_orders(self, filter=None):  # noqa: A002 - mirrors the SDK's name
+        return []  # wash-trade pre-check: nothing working unless a test says so
+
     def submit_order(self, order_data):
         self.submit_calls.append(order_data)
         assert order_data.client_order_id
