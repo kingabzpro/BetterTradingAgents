@@ -39,3 +39,29 @@ jobs:
 
       - name: Offline check suite and import smoke
         run: uv run test offline
+
+  # Supply-chain gate (ROADMAP P2.23): dependency CVE audit plus secret
+  # scanning on every push and pull request, beside the ruff/offline checks.
+  supply-chain:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # Full history so the secret scan covers the whole log, not just
+          # the pushed commits.
+          fetch-depth: 0
+
+      - name: Secret scan (gitleaks)
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - name: Dependency CVE audit (pip-audit)
+        run: |
+          uv export --format requirements-txt --no-hashes --no-emit-project > requirements.txt
+          uvx pip-audit --requirement requirements.txt
