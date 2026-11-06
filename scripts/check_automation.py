@@ -29,7 +29,8 @@ os.environ["AUTOMATION_ENABLED"] = ""
 
 import httpx  # noqa: E402
 
-from app import automation, broker, run_history  # noqa: E402
+from app import automation, broker, migrations, run_history  # noqa: E402
+from app.db import connect as _connect  # noqa: E402
 import app.discovery as discovery  # noqa: E402
 from app.config import settings  # noqa: E402
 from app.main import app  # noqa: E402
@@ -93,6 +94,16 @@ class _FakeClient:
         assert row is not None and row["status"] == "pending_submit", (
             "the local row must exist before the POST"
         )
+        return SimpleNamespace(
+            id=uuid4(),
+            status="accepted",
+            filled_qty=None,
+            filled_avg_price=None,
+        )
+
+    def get_order_by_client_id(self, client_order_id):
+        # list_orders reconciles non-terminal rows through this; the fake's
+        # answer is "still accepted, nothing filled".
         return SimpleNamespace(
             id=uuid4(),
             status="accepted",
@@ -550,6 +561,7 @@ async def checks() -> None:
         assert body["enabled"] is False and body["configured"] is True
         assert body["interval_minutes"] == 240 and body["min_confidence"] == 0.65
         assert body["allow_sells"] is True and body["depth"] == "pro"
+        assert body["exit_enabled"] is False and body["exit_attempts"] == []
 
         toggled = await client.post("/api/automation", json={"enabled": True})
         assert toggled.status_code == 200 and toggled.json()["enabled"] is True
@@ -568,6 +580,111 @@ async def checks() -> None:
         snapshot = await automation.status_snapshot()
         assert snapshot.sessions[0].trigger == "manual"
     print("API status + toggle + run-now OK")
+
+    # ---- auto-exit rules: price-only, one attempt per position/reason/day ---
+    # The note column rides on broker_orders by migration (P2.2).
+    migrations.apply_latest()
+
+    def _exit_position(symbol: str, entry: str, current: str, available: str | None = None):
+        return SimpleNamespace(
+            symbol=symbol, qty="10", qty_available=available,
+            avg_entry_price=entry, current_price=current, market_value="0",
+            unrealized_pl="0", unrealized_plpc="0",
+        )
+
+    async def _attempts_today():
+        rows = await asyncio.to_thread(automation._todays_exit_attempts, 100)
+        return {(a.ticker, a.reason): a for a in rows}
+
+    # Gates: disabled, no rules, kill switch, closed market - none submit.
+    settings.automation_exit_enabled = True
+    assert await automation.run_exit_sweep() == []  # all rules at 0
+    settings.automation_exit_stop_loss_pct = 0.20
+    settings.alpaca_trading_enabled = False
+    assert await automation.run_exit_sweep() == []
+    settings.alpaca_trading_enabled = True
+    fake = _FakeClient(account=_raw_account(), clock=SimpleNamespace(is_open=False, next_open="tomorrow"))
+    _use(fake)
+    assert await automation.run_exit_sweep() == []
+    fake.clock = SimpleNamespace(is_open=True, next_open="")
+    print("exit sweep gates OK (off, no rules, kill switch, closed market)")
+
+    # Stop-loss: a position 30% under water trips the 20% rule and exits.
+    fake = _FakeClient(account=_raw_account(), positions=[_exit_position("LOS", "100", "70")])
+    _use(fake)
+    fired = await automation.run_exit_sweep()
+    assert len(fired) == 1 and fired[0].reason == "stop-loss" and fired[0].status == "accepted"
+    assert len(fake.submit_calls) == 1
+    order = (await broker.list_orders())[0]
+    assert order.run_id == "auto-exit" and order.note == "stop-loss" and order.side == "sell"
+    assert (await automation.run_exit_sweep()) == []  # once per position+reason/day
+    assert len(fake.submit_calls) == 1
+    assert len((await _attempts_today())) == 1
+    print("stop-loss exit OK (guarded submit, note on the order, once per day)")
+
+    # Take-profit: a position 60% up trips the 50% rule.
+    fake = _FakeClient(account=_raw_account(), positions=[_exit_position("PRO", "100", "160")])
+    _use(fake)
+    settings.automation_exit_take_profit_pct = 0.50
+    fired = await automation.run_exit_sweep()
+    assert len(fired) == 1 and fired[0].reason == "take-profit"
+    print("take-profit exit OK")
+
+    # Max-hold: held days come from local fills; a position with no fill
+    # history fails open (no exit on unknown age).
+    fake = _FakeClient(account=_raw_account(), positions=[_exit_position("NOF", "100", "100")])
+    _use(fake)
+    settings.automation_exit_max_hold_days = 30
+    assert await automation.run_exit_sweep() == []
+    with _connect() as connection:
+        connection.execute(
+            "INSERT INTO broker_orders (client_order_id, run_id, ticker, side, qty, "
+            "notional, status, created_at, updated_at) "
+            "VALUES ('bta-old-buy', 'oldrun', 'NOF', 'buy', 10, 1000, 'filled', "
+            "'2020-01-01 00:00:00', '2020-01-01 00:00:00')"
+        )
+    fired = await automation.run_exit_sweep()
+    assert len(fired) == 1 and fired[0].reason == "max-hold"
+    print("max-hold exit OK (local fills; unknown age fails open)")
+
+    # Priority: a position tripping stop-loss AND max-hold exits once, on the
+    # first rule - stop-loss wins, max-hold stays unattempted today.
+    fake = _FakeClient(account=_raw_account(), positions=[_exit_position("BOTH", "100", "70")])
+    _use(fake)
+    with _connect() as connection:
+        connection.execute(
+            "INSERT INTO broker_orders (client_order_id, run_id, ticker, side, qty, "
+            "notional, status, created_at, updated_at) "
+            "VALUES ('bta-old-both', 'oldrun', 'BOTH', 'buy', 10, 1000, 'filled', "
+            "'2020-01-01 00:00:00', '2020-01-01 00:00:00')"
+        )
+    fired = await automation.run_exit_sweep()
+    assert len(fired) == 1 and fired[0].reason == "stop-loss"
+    attempts = await _attempts_today()
+    assert ("BOTH", "max-hold") not in attempts
+    print("exit priority OK (one exit per position per sweep)")
+
+    # A rejected attempt still spends the day's single slot.
+    frozen = _raw_account()
+    frozen.status = "FROZEN"
+    fake = _FakeClient(account=frozen, positions=[_exit_position("REJ", "100", "70")])
+    _use(fake)
+    fired = await automation.run_exit_sweep()
+    assert len(fired) == 1 and fired[0].status == "rejected"
+    assert len(fake.submit_calls) == 0  # the account guard stopped it pre-POST
+    assert (await automation.run_exit_sweep()) == []
+    print("rejected exit recorded once OK")
+
+    # The status payload carries today's attempts for the UI/API.
+    snapshot = await automation.status_snapshot()
+    assert snapshot.exit_enabled is True and snapshot.exit_stop_loss_pct == 0.20
+    assert len(snapshot.exit_attempts) >= 5
+    print("exit attempts in status OK")
+
+    settings.automation_exit_enabled = False
+    settings.automation_exit_stop_loss_pct = 0.0
+    settings.automation_exit_take_profit_pct = 0.0
+    settings.automation_exit_max_hold_days = 0
 
     _restore()
     settings.alpaca_api_key_id = ""

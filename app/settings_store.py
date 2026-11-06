@@ -186,6 +186,20 @@ FIELD_GROUPS: list[dict[str, Any]] = [
             _field("automation_outlook", "AUTOMATION_OUTLOOK", "Outlook", section="Trading rules", choices=("day_trade", "short_term", "long_term")),
             _field("automation_depth", "AUTOMATION_DEPTH", "Depth", section="Trading rules", choices=("fast", "pro", "max")),
             _field("automation_allow_sells", "AUTOMATION_ALLOW_SELLS", "Allow SELLs", "bool", section="Trading rules", hint="A SELL decision exits the held position"),
+            _field("automation_exit_enabled", "AUTOMATION_EXIT_ENABLED", "Auto-exit rules", "bool", section="Trading rules", hint="Price-only exits between sessions: stop-loss, take-profit, max-hold; no LLM"),
+            _field("automation_exit_stop_loss_pct", "AUTOMATION_EXIT_STOP_LOSS_PCT", "Stop-loss (share of cost)", "float", lo=0, hi=1, section="Trading rules", hint="Exit when a position is down this share of its cost; 0 = off", example="0.2 (= -20%)"),
+            _field("automation_exit_take_profit_pct", "AUTOMATION_EXIT_TAKE_PROFIT_PCT", "Take-profit (share of cost)", "float", lo=0, hi=1, section="Trading rules", hint="Exit when a position is up this share of its cost; 0 = off", example="0.5 (= +50%)"),
+            _field("automation_exit_max_hold_days", "AUTOMATION_EXIT_MAX_HOLD_DAYS", "Max hold (days)", "int", lo=0, hi=3650, section="Trading rules", hint="Exit a position held longer than this many days; 0 = off", example="30"),
+        ],
+    },
+    {
+        "key": "ops",
+        "tab": "Operations",
+        "label": "Operations",
+        "fields": [
+            _field("backup_interval_hours", "BACKUP_INTERVAL_HOURS", "Backup interval (hours)", "int", lo=0, hi=168, section="Backups", hint="One consistent snapshot per interval; 0 = only at startup and on demand", example="24"),
+            _field("backup_keep", "BACKUP_KEEP", "Backups kept", "int", lo=1, hi=100, section="Backups", hint="Newest portfolio-*.db files kept; older ones are deleted", example="7"),
+            _field("backup_dir", "BACKUP_DIR", "Backup directory", section="Backups", hint="Empty = a backups folder next to the database", example="D:\\bta-backups"),
         ],
     },
     {

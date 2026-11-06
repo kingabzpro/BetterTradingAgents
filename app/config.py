@@ -293,6 +293,41 @@ class Settings:
     # never fails the session it reports on.
     webhook_url: str = _env("WEBHOOK_URL")
 
+    # Auto-exit rules (wiki Roadmap P2.4, the last open slice): a price-only
+    # check between sessions evaluates every open position against stop-loss,
+    # take-profit, and max-hold, and exits through the guarded broker path.
+    # No LLM is involved. 0 disables a rule; all three off = no sweep.
+    automation_exit_enabled: bool = _env("AUTOMATION_EXIT_ENABLED", "0").lower() in (
+        "1",
+        "true",
+        "yes",
+    )
+    automation_exit_stop_loss_pct: float = min(
+        1.0, max(0.0, float(_env("AUTOMATION_EXIT_STOP_LOSS_PCT", "0")))
+    )
+    automation_exit_take_profit_pct: float = min(
+        1.0, max(0.0, float(_env("AUTOMATION_EXIT_TAKE_PROFIT_PCT", "0")))
+    )
+    automation_exit_max_hold_days: int = max(
+        0, int(_env("AUTOMATION_EXIT_MAX_HOLD_DAYS", "0"))
+    )
+
+    # Shared-deployment owner gate (wiki Roadmap P2.2). Empty = today's
+    # posture: loopback-only trust. When set, every page and API call needs
+    # the token (X-Owner-Token header, or the cookie /login hands out), so a
+    # server shared with other local users isolates its controls behind one
+    # owner secret. Env-only on purpose: a Settings field could lock the
+    # owner out of the app that would let them clear it.
+    owner_token: str = _env("OWNER_TOKEN")
+
+    # Scheduled backups of the portfolio database (wiki Roadmap P2.2): one
+    # consistent SQLite snapshot at startup and every BACKUP_INTERVAL_HOURS
+    # (0 = only at startup and on demand), keeping the newest BACKUP_KEEP
+    # files. Empty BACKUP_DIR puts a backups/ folder next to the database.
+    backup_interval_hours: int = max(0, int(_env("BACKUP_INTERVAL_HOURS", "24")))
+    backup_keep: int = max(1, int(_env("BACKUP_KEEP", "7")))
+    backup_dir: str = _env("BACKUP_DIR")
+
     # Live reasoning stream (wiki Roadmap 3.2): stream agent tokens to the
     # UI as agent_token SSE events. OFF by default - in live use the stream is
     # mostly the final JSON blob, which reads as noise next to the result card.

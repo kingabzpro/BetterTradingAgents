@@ -77,8 +77,9 @@ settings_store.apply_overrides()  # what startup does; also creates the table
 
 snapshot = client.get("/api/settings").json()
 fields = {f["name"]: f for g in snapshot["groups"] for f in g["fields"]}
-check("snapshot exposes groups", len(snapshot["groups"]) == 9)
+check("snapshot exposes groups", len(snapshot["groups"]) == 10)
 check("experimental group in spec", any(g["key"] == "experimental" for g in snapshot["groups"]))
+check("operations group in spec", any(g["key"] == "ops" for g in snapshot["groups"]))
 check("snapshot masks unset secrets", fields["llm_api_key"]["source"] == "not set")
 check("snapshot says keychain available", snapshot["keychain_available"] is True)
 

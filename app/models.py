@@ -556,6 +556,9 @@ class BrokerOrder(BaseModel):
     decision: str | None = None
     confidence: float | None = None
     decision_as_of: str | None = None
+    # Why an order exists when no research run does: the auto-exit rule that
+    # fired (stop-loss, take-profit, max-hold); None for decision-backed orders.
+    note: str | None = None
     filled_qty: float | None = None
     filled_avg_price: float | None = None
     error: str | None = None
@@ -599,6 +602,19 @@ class AutomationSession(BaseModel):
     error: str | None = None
 
 
+class AutomationExitAttempt(BaseModel):
+    """One price-only auto-exit attempt: one per position and reason per day."""
+
+    ticker: str
+    reason: str  # stop-loss | take-profit | max-hold
+    status: str  # submitted (or an Alpaca status) | rejected | skipped
+    qty: float | None = None
+    price: float | None = None
+    client_order_id: str | None = None
+    error: str | None = None
+    created_at: str = ""
+
+
 class AutomationStatus(BaseModel):
     """Current autopilot state for the portfolio page card."""
 
@@ -615,12 +631,23 @@ class AutomationStatus(BaseModel):
     allow_sells: bool = True
     next_check_at: float | None = None
     sessions: list[AutomationSession] = Field(default_factory=list)
+    exit_enabled: bool = False
+    exit_stop_loss_pct: float = 0.0
+    exit_take_profit_pct: float = 0.0
+    exit_max_hold_days: int = 0
+    exit_attempts: list[AutomationExitAttempt] = Field(default_factory=list)
 
 
 class AutomationUpdateRequest(BaseModel):
     """Body of POST /api/automation; flips the persisted on/off toggle."""
 
     enabled: bool
+
+
+class OwnerLoginRequest(BaseModel):
+    """Body of POST /api/owner/login: the shared-deployment owner token (P2.2)."""
+
+    token: str = Field(min_length=1, max_length=256)
 
 
 class SettingsUpdateRequest(BaseModel):

@@ -5,16 +5,23 @@ import ipaddress
 import json
 import logging
 import re
+import secrets
 import time
 from datetime import date, timedelta
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import quote_plus, urlparse
 
 from fastapi import FastAPI, Header, HTTPException, Query
-from fastapi.responses import PlainTextResponse, RedirectResponse, StreamingResponse
+from fastapi.responses import (
+    HTMLResponse,
+    JSONResponse,
+    PlainTextResponse,
+    RedirectResponse,
+    StreamingResponse,
+)
 from fastapi.staticfiles import StaticFiles
 
-from app import accuracy, automation, broker, calibration, chat, memory, pages, settings_store, watchlist
+from app import accuracy, automation, backup, broker, calibration, chat, memory, metrics, migrations, pages, settings_store, watchlist
 from app.config import settings
 from app.discovery import discover_stocks
 from app.models import (
@@ -35,6 +42,7 @@ from app.models import (
     EquityMark,
     ManagerChatRequest,
     ManagerChatResponse,
+    OwnerLoginRequest,
     RunHistoryItem,
     RunStatus,
     SettingsUpdateRequest,
@@ -86,6 +94,40 @@ def _peer_is_remote(peer: str | None) -> bool:
     if address.version == 6 and address.ipv4_mapped is not None:
         address = address.ipv4_mapped
     return not address.is_loopback
+
+
+_OWNER_COOKIE = "bta_owner"
+# Paths reachable without the owner token when one is configured: the
+# readiness probe, the login page and its endpoints, and the static assets
+# the login page loads. Everything else needs the token (P2.2).
+_OWNER_EXEMPT = ("/api/health", "/login", "/api/owner/login", "/api/owner/logout")
+
+
+@app.middleware("http")
+async def owner_gate(request, call_next):
+    """Owner isolation for a shared deployment (P2.2).
+
+    An empty OWNER_TOKEN keeps today's posture: a loopback-only app with no
+    login. When a token is set, every page and API call needs it - the
+    X-Owner-Token header for scripts and curl, or the session cookie /login
+    hands the browser - so other users of the same machine cannot reach the
+    trading, settings, or history surfaces. The gate runs inside the
+    loopback and rate-limit middleware, so their verdicts come first.
+    """
+    token = settings.owner_token
+    if not token:
+        return await call_next(request)
+    path = request.url.path
+    if path.startswith("/static") or path in _OWNER_EXEMPT:
+        return await call_next(request)
+    supplied = (
+        request.headers.get("x-owner-token") or request.cookies.get(_OWNER_COOKIE) or ""
+    )
+    if secrets.compare_digest(supplied.encode("utf-8"), token.encode("utf-8")):
+        return await call_next(request)
+    if path.startswith("/api"):
+        return JSONResponse({"detail": "owner token required"}, status_code=401)
+    return RedirectResponse(f"/login?next={quote_plus(path)}", status_code=307)
 
 
 @app.middleware("http")
@@ -151,6 +193,7 @@ _EXPENSIVE_LIMITS: dict[tuple[str, str], int] = {
     ("/api/automation/run", "POST"): 12,
     ("/api/settings/reset", "POST"): 12,
     ("/api/broker/sync", "POST"): 30,
+    ("/api/owner/login", "POST"): 12,  # brute-force brake on the owner gate
 }
 # Keys are (peer, bucket) -> (tokens, monotonic last-seen). Peers are
 # loopback in practice (the server binds 127.0.0.1), so this stays tiny.
@@ -233,6 +276,9 @@ async def startup() -> None:
     await broker.init()
     await store.init()
     await automation.init()
+    # Schema migrations run after the module inits created the tables they
+    # alter, and before anything reads or writes a migrated column (P2.2).
+    schema_version = await asyncio.to_thread(migrations.apply_latest)
     # Keychain/DB overrides must land on the settings object before the
     # automation loop and anything else first reads them.
     await asyncio.to_thread(settings_store.apply_overrides)
@@ -242,8 +288,20 @@ async def startup() -> None:
     broker.start_sync_loop()
     memory.start()  # P1.17: settle matured decisions on a schedule
     automation.start()
+    backup.start()  # P2.2: one snapshot at startup, then the interval loop
+    metrics.mark_started()
+    try:
+        snapshot = await backup.run_backup()
+    except Exception as exc:  # noqa: BLE001 - a failed backup never stops startup
+        logger.warning("[startup] initial backup failed: %s", exc)
+        snapshot = None
     mode = "mock (no LLM_API_KEY)" if not settings.llm_configured else settings.llm_model
-    logger.info("[startup] BetterTradingAgents ready | llm=%s", mode)
+    logger.info(
+        "[startup] BetterTradingAgents ready | llm=%s | schema v%d | backup=%s",
+        mode,
+        schema_version,
+        snapshot["name"] if snapshot else "failed",
+    )
 
 
 def _page(filename: str, active: str):
@@ -337,6 +395,61 @@ async def health():
         "max_tickers": settings.max_tickers,
         "debate_rounds": settings.debate_rounds,
     }
+
+
+@app.get("/login")
+async def login_page():
+    """The owner-gate login page (P2.2), served raw on purpose: when the gate
+    is on it is the only page a stranger ever sees, so it carries no nav and
+    no data - just the one field the token goes into."""
+    return HTMLResponse((STATIC_DIR / "login.html").read_text(encoding="utf-8"))
+
+
+@app.post("/api/owner/login")
+async def owner_login(body: OwnerLoginRequest):
+    """Exchange the owner token for the session cookie the browser uses on
+    every later request, including the SSE streams fetch cannot reach."""
+    token = settings.owner_token
+    if not token:
+        raise HTTPException(status_code=400, detail="no owner token is configured")
+    if not secrets.compare_digest(body.token.encode("utf-8"), token.encode("utf-8")):
+        raise HTTPException(status_code=401, detail="wrong owner token")
+    response = JSONResponse({"ok": True})
+    response.set_cookie(
+        _OWNER_COOKIE, body.token, httponly=True, samesite="strict", path="/"
+    )
+    return response
+
+
+@app.post("/api/owner/logout")
+async def owner_logout():
+    """Drop the owner session cookie."""
+    response = JSONResponse({"ok": True})
+    response.delete_cookie(_OWNER_COOKIE, path="/")
+    return response
+
+
+@app.get("/api/metrics")
+async def metrics_snapshot():
+    """Operational metrics (P2.2): process, database, trading, automation."""
+    return await asyncio.to_thread(metrics.snapshot)
+
+
+@app.get("/api/backups")
+async def backups_list():
+    """What is in the backup directory (P2.2)."""
+    def _list():
+        return {"dir": str(backup.backup_dir()), "backups": backup.list_backups()}
+
+    return await asyncio.to_thread(_list)
+
+
+@app.post("/api/backups")
+async def backups_create():
+    """Run one backup now (P2.2); returns the new snapshot's record."""
+    record = await backup.run_backup()
+    logger.info("[backup] manual backup via API: %s", record["name"])
+    return record
 
 
 @app.get("/api/settings")
