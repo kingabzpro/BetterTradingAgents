@@ -209,9 +209,13 @@ function renderOrders(orders) {
   for (const order of orders) {
     const terminal = PAPER_TERMINAL.has(order.status);
     const filled = order.filled_avg_price != null ? fmt(order.filled_avg_price) : "n/a";
-    const decision = order.run_id
-      ? `<a href="/?run=${encodeURIComponent(order.run_id)}">View decision</a>`
-      : "n/a";
+    // Auto-exit orders have no research run to link to; the note (the rule
+    // that fired) is the useful label instead (P2.4).
+    const decision = order.run_id === "auto-exit"
+      ? esc(order.note || "auto-exit")
+      : order.run_id
+        ? `<a href="/?run=${encodeURIComponent(order.run_id)}">View decision</a>`
+        : "n/a";
     const row = document.createElement("tr");
     row.innerHTML = `
       <td data-label="Placed">${esc(order.created_at || "")}</td>
@@ -491,9 +495,15 @@ function renderAutomation(status) {
   const next = status.enabled && status.next_check_at && !status.session_active
     ? ` Next check ${fmtWhen(status.next_check_at)}.`
     : "";
+  const rule = (value, unit) => (value > 0 ? `${Math.round(value * 100)}%${unit}` : "off");
+  const exits = status.exit_enabled
+    ? ` Auto-exit rules on: stop-loss ${rule(status.exit_stop_loss_pct, "")}, ` +
+      `take-profit ${rule(status.exit_take_profit_pct, "")}, ` +
+      `max-hold ${status.exit_max_hold_days > 0 ? status.exit_max_hold_days + "d" : "off"}.`
+    : "";
   $("automation-config").textContent =
     `Every ${every} while the market is open: scans the market for the top ${status.candidates} candidates, adds held tickers, runs the full agent crew ` +
-    `(${status.depth} depth, ${status.outlook}), then submits BUYs at ${Math.round(status.min_confidence * 100)}%+ confidence and SELLs that exit held positions, through the guarded paper broker.${next}`;
+    `(${status.depth} depth, ${status.outlook}), then submits BUYs at ${Math.round(status.min_confidence * 100)}%+ confidence and SELLs that exit held positions, through the guarded paper broker.${exits}${next}`;
 
   const warn = $("automation-warn");
   if (status.enabled && !status.trading_enabled) {

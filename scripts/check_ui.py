@@ -46,13 +46,18 @@ for path in sorted((STATIC / "js").glob("*.js")):
 print("single-source helpers OK:", len(SHARED), "helpers, page scripts clean")
 
 # ---- pages carry the nav marker, not hand-copied markup ------------------------
+# login.html is exempt on purpose: behind the owner gate (P2.2) it is the one
+# page a stranger sees, so it carries no nav and no app surface.
+NO_NAV_PAGES = {"login.html"}
 for page in sorted(STATIC.glob("*.html")):
+    if page.name in NO_NAV_PAGES:
+        continue
     text = page.read_text(encoding="utf-8")
     assert text.count("<!--@nav-->") == 1, f"{page.name}: exactly one nav marker expected"
     assert 'aria-label="Primary navigation"' not in text, \
         f"{page.name} carries hand-copied nav markup; keep the <!--@nav--> marker"
     assert "/static/js/ui.js" in text, f"{page.name} must load the shared ui.js"
-print("nav markers OK:", len(list(STATIC.glob("*.html"))), "pages")
+print("nav markers OK:", len(list(STATIC.glob("*.html"))) - len(NO_NAV_PAGES), "pages")
 
 # ---- no manual asset version stamps --------------------------------------------
 for folder, pattern in ((STATIC, "*.html"), (STATIC / "js", "*.js"), (STATIC / "css", "*.css")):

@@ -394,6 +394,9 @@ def _row_to_order(row: sqlite3.Row) -> BrokerOrder:
         decision=row["decision"],
         confidence=row["confidence"],
         decision_as_of=row["decision_as_of"],
+        # The note column arrives by migration (P2.2); a database that has
+        # not run it yet still reads fine without the column.
+        note=row["note"] if "note" in row.keys() else None,
         filled_qty=row["filled_qty"],
         filled_avg_price=row["filled_avg_price"],
         error=row["error"],
@@ -439,26 +442,32 @@ def _insert_order(
     decision: str,
     confidence: float,
     decision_as_of: str,
+    note: str | None = None,
 ) -> None:
+    # The note column exists once migrations run (startup always runs them);
+    # older rows and databases that skipped the step keep working by leaving
+    # the column out of the statement entirely.
+    columns = "client_order_id, run_id, ticker, side, qty, notional, status, decision, confidence, decision_as_of"
+    placeholders = "?, ?, ?, ?, ?, ?, 'pending_submit', ?, ?, ?"
+    params: list = [
+        client_order_id,
+        run_id,
+        ticker,
+        side,
+        qty,
+        notional,
+        decision,
+        confidence,
+        decision_as_of,
+    ]
+    if note is not None:
+        columns += ", note"
+        placeholders += ", ?"
+        params.append(note)
     with _connect() as connection:
         connection.execute(
-            """
-            INSERT INTO broker_orders (
-                client_order_id, run_id, ticker, side, qty, notional,
-                status, decision, confidence, decision_as_of
-            ) VALUES (?, ?, ?, ?, ?, ?, 'pending_submit', ?, ?, ?)
-            """,
-            (
-                client_order_id,
-                run_id,
-                ticker,
-                side,
-                qty,
-                notional,
-                decision,
-                confidence,
-                decision_as_of,
-            ),
+            f"INSERT INTO broker_orders ({columns}) VALUES ({placeholders})",
+            params,
         )
 
 
@@ -580,6 +589,32 @@ async def _raise_if_opposite_working(ticker: str, side: str) -> None:
     )
 
 
+async def _cap_sell_qty(
+    ticker: str, qty: float, price_hint: float | None
+) -> tuple[float, float]:
+    """Clamp a SELL to the shares actually owned and price its notional.
+
+    Hard limit: a sell can never exceed the shares actually held.
+    qty_available excludes shares locked in open orders; fall back to the
+    full position when the broker does not break it out. `price_hint` is the
+    decision's reference price when one exists, else the broker's own mark.
+    """
+    held = next((p for p in await positions() if p.symbol == ticker), None)
+    if held is None:
+        raise BrokerRuleError(
+            f"no paper position in {ticker} to sell; shorting is out of scope"
+        )
+    sellable = held.available if held.available is not None else held.quantity
+    qty = min(qty, floor_qty(sellable))
+    if qty <= 0:
+        raise BrokerRuleError(
+            f"cannot sell {ticker}: the request exceeds the "
+            f"{held.quantity:g} shares held "
+            f"({sellable:g} sellable right now)"
+        )
+    return qty, round(qty * (price_hint or held.current_price or 0.0), 2)
+
+
 async def submit_order(run_id: str, ticker: str, side: str, qty: float) -> BrokerOrder:
     """Place one paper market/day order of `qty` shares for a run's decision.
 
@@ -663,25 +698,7 @@ async def submit_order(run_id: str, ticker: str, side: str, qty: float) -> Broke
         )
 
     if side == "sell":
-        held = next(
-            (p for p in await positions() if p.symbol == ticker), None
-        )
-        if held is None:
-            raise BrokerRuleError(
-                f"no paper position in {ticker} to sell; shorting is out of scope"
-            )
-        # Hard limit: a sell can never exceed the shares actually owned.
-        # qty_available excludes shares locked in open orders; fall back to
-        # the full position when the broker does not break it out.
-        sellable = held.available if held.available is not None else held.quantity
-        qty = min(qty, floor_qty(sellable))
-        if qty <= 0:
-            raise BrokerRuleError(
-                f"cannot sell {ticker}: the request exceeds the "
-                f"{held.quantity:g} shares held "
-                f"({sellable:g} sellable right now)"
-            )
-        notional = round(qty * (analysis.price or held.current_price or 0.0), 2)
+        qty, notional = await _cap_sell_qty(ticker, qty, analysis.price)
 
     # Alpaca's wash-trade rule, applied earlier with a readable message.
     await _raise_if_opposite_working(ticker, side)
@@ -712,6 +729,78 @@ async def submit_order(run_id: str, ticker: str, side: str, qty: float) -> Broke
             analysis.as_of,
         )
     return await _submit_market_order(client_order_id, ticker, side, qty)
+
+
+AUTO_EXIT_RUN_ID = "auto-exit"
+
+
+async def submit_exit_order(ticker: str, qty: float, reason: str) -> BrokerOrder:
+    """Place one guarded full-position SELL without a research run behind it
+    (P2.4 auto-exit: the stop-loss / take-profit / max-hold sweep).
+
+    The guarded sibling of submit_order: same kill switch, account state,
+    sell cap (never more than owned), wash-trade rule, open-order dedupe,
+    and daily cap - minus only the decision-match and decision-age checks,
+    because a price-only exit has no decision to match. The order is
+    recorded with run_id AUTO_EXIT_RUN_ID and the rule name in `note`, so
+    run-less orders stay auditable in the trades table.
+    """
+    ticker = ticker.strip().upper()
+    if not TICKER_RE.match(ticker):
+        raise BrokerRuleError(f"invalid ticker symbol: '{ticker}'")
+    if not settings.alpaca_configured:
+        raise BrokerNotConfigured(
+            "Alpaca paper trading is not configured; add the API key ID and "
+            "secret key on the Settings page"
+        )
+    if not settings.alpaca_trading_enabled:
+        raise BrokerRuleError(
+            "paper order submissions are disabled (ALPACA_TRADING_ENABLED)",
+            status_code=403,
+        )
+    if qty <= 0:
+        raise BrokerRuleError("share quantity must be positive")
+    if qty > 1_000_000:
+        raise BrokerRuleError("share quantity must not exceed 1,000,000")
+    qty = floor_qty(qty)
+    if qty <= 0:
+        raise BrokerRuleError("share quantity is below one millionth of a share")
+
+    snapshot = await account()
+    if snapshot.status != "ACTIVE" or snapshot.trading_blocked:
+        raise BrokerRuleError(
+            "the paper account is not open for trading", status_code=403
+        )
+
+    qty, notional = await _cap_sell_qty(ticker, qty, None)
+
+    await _raise_if_opposite_working(ticker, "sell")
+
+    async with _submit_lock:
+        if _has_active_order(AUTO_EXIT_RUN_ID, ticker, "sell"):
+            raise BrokerRuleError(
+                f"an auto-exit order for {ticker} is already open", status_code=409
+            )
+        if _non_rejected_orders_today() >= settings.alpaca_max_orders_per_day:
+            raise BrokerRuleError(
+                f"daily paper order cap reached ({settings.alpaca_max_orders_per_day})",
+                status_code=429,
+            )
+        client_order_id = f"bta-{uuid.uuid4()}"
+        await asyncio.to_thread(
+            _insert_order,
+            client_order_id,
+            AUTO_EXIT_RUN_ID,
+            ticker,
+            "sell",
+            qty,
+            notional,
+            "SELL",
+            None,
+            None,
+            note=reason,
+        )
+    return await _submit_market_order(client_order_id, ticker, "sell", qty)
 
 
 async def _submit_market_order(
