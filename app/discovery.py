@@ -25,9 +25,15 @@ from statistics import mean, pstdev
 from threading import Lock
 from time import monotonic
 
-import yfinance as yf
-
 from app.outlook import Outlook
+
+
+def _yf():
+    """Import yfinance lazily (P2.10): the screener path is the only
+    user, so ordinary runs never pay the pandas import at startup."""
+    import yfinance
+
+    return yfinance
 
 logger = logging.getLogger("discovery")
 MIN_MARKET_CAP_USD = 1_000_000_000
@@ -179,7 +185,7 @@ def _download_candidates() -> tuple[dict[str, list[float]], dict[str, float]]:
     if not eligible:
         return {}, {}
     try:
-        data = yf.download(
+        data = _yf().download(
             " ".join(eligible),
             period="1y",
             interval="1d",
@@ -208,24 +214,24 @@ def _download_candidates() -> tuple[dict[str, list[float]], dict[str, float]]:
 def _screen_growth_candidates() -> dict[str, float]:
     """Find liquid, growing $1B-$50B U.S. companies with room to break out."""
     try:
-        query = yf.EquityQuery(
+        query = _yf().EquityQuery(
             "and",
             [
-                yf.EquityQuery("eq", ["region", "us"]),
-                yf.EquityQuery("is-in", ["exchange", "NMS", "NYQ", "ASE"]),
-                yf.EquityQuery("gt", ["intradaymarketcap", MIN_MARKET_CAP_USD]),
-                yf.EquityQuery("lt", ["intradaymarketcap", MAX_MARKET_CAP_USD]),
-                yf.EquityQuery(
+                _yf().EquityQuery("eq", ["region", "us"]),
+                _yf().EquityQuery("is-in", ["exchange", "NMS", "NYQ", "ASE"]),
+                _yf().EquityQuery("gt", ["intradaymarketcap", MIN_MARKET_CAP_USD]),
+                _yf().EquityQuery("lt", ["intradaymarketcap", MAX_MARKET_CAP_USD]),
+                _yf().EquityQuery(
                     "gt", ["totalrevenues.lasttwelvemonths", MIN_TRAILING_REVENUE_USD]
                 ),
-                yf.EquityQuery(
+                _yf().EquityQuery(
                     "gt",
                     ["totalrevenues1yrgrowth.lasttwelvemonths", MIN_REVENUE_GROWTH_PCT],
                 ),
-                yf.EquityQuery("gt", ["avgdailyvol3m", MIN_AVG_DAILY_VOLUME]),
+                _yf().EquityQuery("gt", ["avgdailyvol3m", MIN_AVG_DAILY_VOLUME]),
             ],
         )
-        quotes = yf.screen(
+        quotes = _yf().screen(
             query,
             size=SCREEN_SIZE,
             sortField="totalrevenues1yrgrowth.lasttwelvemonths",

@@ -24,6 +24,7 @@ from types import SimpleNamespace
 from typing import Any, Awaitable, Callable
 
 from app import changes, cost, quality, risk
+from app.redact import redact
 from app.agents import (
     bear,
     bull,
@@ -578,7 +579,7 @@ async def _run_agent(
                 except Exception as exc:  # noqa: BLE001 - classify, maybe retry
                     last_error = exc
                     kind = _classify_failure(exc)
-                    detail = str(exc)[:120]
+                    detail = redact(str(exc))[:120]
                     if kind == "stream":
                         replacement = _drop_stream_mode(llm_key)
                         if replacement is None:
@@ -619,7 +620,7 @@ async def _run_agent(
                             detail,
                         )
                         correction = (
-                            f"Your previous response was rejected: {str(exc)[:300]} "
+                            f"Your previous response was rejected: {redact(str(exc))[:300]} "
                             "Respond with ONLY a corrected JSON object matching the "
                             "requested schema - no markdown fences, no text outside "
                             "the JSON.\n\n"
@@ -653,10 +654,10 @@ async def _run_agent(
         )
         return data
     except Exception as exc:  # noqa: BLE001 - one agent failing must not kill the run
-        logger.warning("[%s] failed: %s", agent_name, exc)
+        logger.warning("[%s] failed: %s", agent_name, redact(str(exc)))
         await emit(
             "agent_failed",
-            {"ticker": ticker, "agent": agent_name, "error": str(exc)[:200]},
+            {"ticker": ticker, "agent": agent_name, "error": redact(str(exc))[:200]},
         )
         return None
 
@@ -942,10 +943,11 @@ async def analyze_ticker(
                 "data_fetch", get_stock_data(ticker, forecast=forecast_hook)
             )
         except Exception as exc:  # noqa: BLE001
-            logger.warning("[analysis] %s aborted: market data failed: %s", ticker, exc)
-            await emit("ticker_failed", {"ticker": ticker, "error": str(exc)[:200]})
+            detail = redact(str(exc))
+            logger.warning("[analysis] %s aborted: market data failed: %s", ticker, detail)
+            await emit("ticker_failed", {"ticker": ticker, "error": detail[:200]})
             return StockAnalysis(
-                ticker=ticker, error=f"market data failed: {exc}"[:300]
+                ticker=ticker, error=f"market data failed: {detail}"[:300]
             )
 
     indicators = compute_indicators(
@@ -1537,7 +1539,7 @@ async def analyze_ticker(
                 },
             )
         except Exception as exc:  # noqa: BLE001 - best-effort like the portfolio
-            logger.warning("[memory] could not record decision: %s", exc)
+            logger.warning("[memory] could not record decision: %s", redact(str(exc)))
     await emit(
         "ticker_completed",
         {

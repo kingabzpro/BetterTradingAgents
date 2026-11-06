@@ -47,7 +47,7 @@ REAL_CACHED = discovery._cached_candidates
 REAL_STORE_CREATE = store.create
 REAL_BEAR = automation._bear_market
 REAL_CLOSES = market_data.get_closes_between
-REAL_HTTPX = automation.httpx
+REAL_GET_CLIENT = automation.get_client
 
 
 async def _no_bear():
@@ -65,7 +65,7 @@ def _restore():
     store.create = REAL_STORE_CREATE
     automation._bear_market = REAL_BEAR
     market_data.get_closes_between = REAL_CLOSES
-    automation.httpx = REAL_HTTPX
+    automation.get_client = REAL_GET_CLIENT
 
 
 class _FakeClient:
@@ -480,10 +480,10 @@ async def checks() -> None:
         async def __aexit__(self, *exc):
             return False
 
-        async def post(self, url, content=None, headers=None):
+        async def post(self, url, content=None, headers=None, timeout=None):
             webhook_posts.append((url, content, headers))
 
-    automation.httpx = SimpleNamespace(AsyncClient=_HookClient)
+    automation.get_client = lambda: _HookClient()
     settings.webhook_url = "https://hooks.example/abc"
 
     fake = _FakeClient(
@@ -518,7 +518,7 @@ async def checks() -> None:
         async def post(self, url, content=None, headers=None):
             raise RuntimeError("hook down")
 
-    automation.httpx = SimpleNamespace(AsyncClient=_RaisingHookClient)
+    automation.get_client = lambda: _RaisingHookClient()
     store.create = _run_for
     session = await automation.run_session("schedule")
     assert session.status == "completed", session.error  # a dead hook never fails a session

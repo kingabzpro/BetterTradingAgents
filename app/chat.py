@@ -17,6 +17,7 @@ import textwrap
 from app.agents import TaskSpec, agent_instructions
 from app.config import settings
 from app.models import PortfolioSummary, StockAnalysis
+from app.redact import redact
 from app.workflow import (
     _BACKOFF_SECONDS,
     _classify_failure,
@@ -232,5 +233,7 @@ async def answer_question(
                 await asyncio.sleep(_BACKOFF_SECONDS[min(attempt - 1, 1)])
                 continue
             break
-    logger.warning("[chat] %s failed: %s", analysis.ticker, last_error)
-    raise RuntimeError(str(last_error)[:200])
+    # Redact at the source: this text becomes the HTTP 503 detail and the
+    # log line, and provider errors can carry key-bearing request URLs.
+    logger.warning("[chat] %s failed: %s", analysis.ticker, redact(str(last_error)))
+    raise RuntimeError(redact(str(last_error))[:200])

@@ -1,19 +1,24 @@
 """In-memory run store with event fan-out for Server-Sent Events."""
 
 import asyncio
+import json
 import logging
 import time
 import uuid
+from collections import OrderedDict
 
 from app.config import settings
 from app.depth import DEFAULT_DEPTH, normalize_depth
 from app.models import PortfolioSummary, RunHistoryItem, RunStatus, StockAnalysis
 from app.outlook import DEFAULT_OUTLOOK, normalize_outlook
 from app import changes, run_history
+from app.redact import redact
 from app.workflow import analyze_ticker, fetch_held_closes, fetch_portfolio_summary
 
 logger = logging.getLogger("analysis")
 ANALYSIS_CACHE_TTL_SECONDS = 60 * 60
+# Eviction cap: the cache would otherwise grow for the life of the process.
+ANALYSIS_CACHE_MAX_ENTRIES = 64
 # How long a finished run stays in memory after persisting, so a browser tab
 # whose SSE stream dropped mid-run can reconnect and replay its ending.
 FINISHED_RUN_GRACE_SECONDS = 600
@@ -22,6 +27,31 @@ FINISHED_RUN_GRACE_SECONDS = 600
 # "unavailable"), incognito, then the sizing/gating settings that shape the
 # result. Kept as a plain tuple so new inputs cannot silently miss the alias.
 AnalysisCacheKey = tuple
+
+
+def _portfolio_key(portfolio: PortfolioSummary | None) -> str:
+    """A stable portfolio identity for the cache key (P2.10).
+
+    Live price drift rewrites values, PnL, and equity on every call, which
+    used to make the key unique per run and the cache unable to hit across
+    runs. Only the holdings, the cash bucket, and the drawdown high-water
+    bucket change what the manager and the risk gates decide, so the key
+    carries those; buckets are $100 so a mark-to-market wiggle cannot split
+    it. A real trade moves quantities/cash/high-water into another bucket.
+    """
+    if portfolio is None:
+        return "unavailable"
+    return json.dumps(
+        {
+            "holdings": sorted(
+                (position.ticker, round(position.quantity or 0.0, 6))
+                for position in portfolio.positions
+            ),
+            "cash_bucket": round(portfolio.cash / 100),
+            "high_water_bucket": round((portfolio.equity_high_water or 0.0) / 100),
+        },
+        sort_keys=True,
+    )
 
 
 def _no_usable_output(result: StockAnalysis) -> bool:
@@ -104,9 +134,9 @@ class RunStore:
 
     def __init__(self) -> None:
         self.runs: dict[str, Run] = {}
-        self.analysis_cache: dict[
+        self.analysis_cache: OrderedDict[
             AnalysisCacheKey, tuple[float, StockAnalysis]
-        ] = {}
+        ] = OrderedDict()
         self.analysis_inflight: dict[
             AnalysisCacheKey, asyncio.Task[StockAnalysis]
         ] = {}
@@ -238,7 +268,7 @@ class RunStore:
             run.depth,
             settings.debate_rounds,
             run.mock_mode,
-            portfolio.model_dump_json() if portfolio is not None else "unavailable",
+            _portfolio_key(portfolio),
             # Incognito analyses never merge with normal ones: they ran
             # without decision-memory context and must not be saved or served
             # as if they had.
@@ -254,6 +284,13 @@ class RunStore:
             settings.max_positions,
             settings.max_correlated_pct,
         )
+
+    def _cache_result(self, key: AnalysisCacheKey, result: StockAnalysis) -> None:
+        """Store newest-first and evict the oldest beyond the cap (P2.10)."""
+        self.analysis_cache[key] = (time.monotonic(), result)
+        self.analysis_cache.move_to_end(key)
+        while len(self.analysis_cache) > ANALYSIS_CACHE_MAX_ENTRIES:
+            self.analysis_cache.popitem(last=False)
 
     @staticmethod
     async def _emit_cached(run: Run, result: StockAnalysis, cached: bool = True) -> None:
@@ -335,6 +372,7 @@ class RunStore:
             and cached
             and time.monotonic() - cached[0] < ANALYSIS_CACHE_TTL_SECONDS
         ):
+            self.analysis_cache.move_to_end(key)
             result = cached[1].model_copy(deep=True)
             changes.attach(result, previous)
             logger.info("[analysis] %s cache hit", ticker)
@@ -345,10 +383,7 @@ class RunStore:
         if task is not None:
             result = await self._await_inflight(run, key, task)
             if not run.incognito and not result.error:
-                self.analysis_cache[key] = (
-                    time.monotonic(),
-                    result.model_copy(deep=True),
-                )
+                self._cache_result(key, result.model_copy(deep=True))
             result = result.model_copy(deep=True)
             changes.attach(result, previous)
             logger.info("[analysis] %s joined cached in-flight analysis", ticker)
@@ -373,10 +408,7 @@ class RunStore:
         self.analysis_inflight[key] = task
         result = await self._await_inflight(run, key, task)
         if not run.incognito and not result.error:
-            self.analysis_cache[key] = (
-                time.monotonic(),
-                result.model_copy(deep=True),
-            )
+            self._cache_result(key, result.model_copy(deep=True))
         return result
 
     async def _execute(self, run: Run) -> None:
@@ -409,8 +441,8 @@ class RunStore:
                                 run, ticker, portfolio_summary, held_closes
                             )
                         except Exception as exc:  # noqa: BLE001 - last-resort guard
-                            logger.error("[analysis] %s crashed: %s", ticker, exc)
-                            result = StockAnalysis(ticker=ticker, error=str(exc)[:300])
+                            logger.error("[analysis] %s crashed: %s", ticker, redact(str(exc)))
+                            result = StockAnalysis(ticker=ticker, error=redact(str(exc))[:300])
                     # Publish per ticker, not only at the end: the manager chat and
                     # run-status polls can serve a finished ticker while the rest
                     # of the run is still going.
@@ -451,8 +483,8 @@ class RunStore:
                 )
         except Exception as exc:  # noqa: BLE001 - preserve an interrupted run
             run.status = "failed"
-            run.error = str(exc)[:300]
-            logger.error("[analysis] run %s failed: %s", run.run_id, exc)
+            run.error = redact(str(exc))[:300]
+            logger.error("[analysis] run %s failed: %s", run.run_id, redact(str(exc)))
         if run.cancel_requested:
             # A cancel accepted at any point wins, even a hair after the
             # gather returned: a cancelled run can never flip to completed.

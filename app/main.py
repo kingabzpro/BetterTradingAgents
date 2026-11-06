@@ -5,6 +5,7 @@ import ipaddress
 import json
 import logging
 import re
+import time
 from datetime import date, timedelta
 from pathlib import Path
 from urllib.parse import urlparse
@@ -43,6 +44,7 @@ from app.models import (
     WatchlistUpdateRequest,
 )
 from app.outlook import DEFAULT_OUTLOOK, Outlook
+from app.redact import redact
 from app.runs import store
 from app.tools.market_data import get_closes_between
 
@@ -126,6 +128,101 @@ async def revalidate_assets(request, call_next):
     """
     response = await call_next(request)
     response.headers["Cache-Control"] = "no-cache"
+    return response
+
+
+# Per-endpoint request caps (requests per minute per peer, P2.23): the local
+# API does real work (a run fans out to live LLM calls), so a runaway loop or
+# a compromised page must not be able to hammer it into resource exhaustion.
+# The LLM side is already bounded by the concurrency gate; this bounds the
+# HTTP surface. Buckets refill continuously and hold one full burst.
+_RATE_LIMITS: dict[str, int] = {
+    "GET": 600,
+    "HEAD": 600,
+    "POST": 180,
+    "PUT": 180,
+    "PATCH": 180,
+    "DELETE": 120,
+}
+# Costlier endpoints get their own, tighter bucket (prefix, method) -> cap.
+_EXPENSIVE_LIMITS: dict[tuple[str, str], int] = {
+    ("/api/analyze", "POST"): 20,
+    ("/api/runs/", "POST"): 30,  # chat, discard, cancel per run id
+    ("/api/automation/run", "POST"): 12,
+    ("/api/settings/reset", "POST"): 12,
+    ("/api/broker/sync", "POST"): 30,
+}
+# Keys are (peer, bucket) -> (tokens, monotonic last-seen). Peers are
+# loopback in practice (the server binds 127.0.0.1), so this stays tiny.
+_rate_buckets: dict[tuple[str, str], tuple[float, float]] = {}
+
+
+def _rate_limit_for(method: str, path: str) -> tuple[str, int]:
+    """The (bucket name, per-minute cap) this request counts against."""
+    for (prefix, limit_method), cap in _EXPENSIVE_LIMITS.items():
+        if method == limit_method and path.startswith(prefix):
+            return f"{method} {prefix}", cap
+    return f"{method} *", _RATE_LIMITS.get(method, 600)
+
+
+@app.middleware("http")
+async def rate_limit(request, call_next):
+    """Bound resource exhaustion on /api (OWASP unbounded consumption).
+
+    Static assets and page loads are exempt (cheap, and the smoke test loads
+    many), as is /api/health (readiness polling). A peer that outruns its
+    bucket gets a 429 with Retry-After instead of queuing real work.
+    """
+    path = request.url.path
+    if not path.startswith("/api") or path == "/api/health":
+        return await call_next(request)
+    bucket, cap = _rate_limit_for(request.method, path)
+    peer = request.client.host if request.client else "local"
+    now = time.monotonic()
+    key = (peer, bucket)
+    tokens, last = _rate_buckets.get(key, (float(cap), now))
+    tokens = min(float(cap), tokens + (now - last) * cap / 60.0)
+    if tokens < 1.0:
+        retry_after = max(1, int((1.0 - tokens) * 60.0 / cap) + 1)
+        return PlainTextResponse(
+            "rate limit exceeded",
+            status_code=429,
+            headers={"Retry-After": str(retry_after)},
+        )
+    _rate_buckets[key] = (tokens - 1.0, now)
+    return await call_next(request)
+
+
+# Security headers on every response (P2.23): the UI is one-origin vanilla
+# JS with no inline scripts or handlers, so script-src 'self' is exact. The
+# two inline-style allowances cover the JS-injected bar widths and the
+# Google Fonts stylesheet the pages already load.
+_SECURITY_HEADERS = {
+    "Content-Security-Policy": (
+        "default-src 'self'; "
+        "script-src 'self'; "
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+        "font-src 'self' https://fonts.gstatic.com; "
+        "img-src 'self' data:; "
+        "connect-src 'self'; "
+        "frame-ancestors 'none'; "
+        "base-uri 'self'; "
+        "form-action 'self'"
+    ),
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "DENY",
+    "Referrer-Policy": "no-referrer",
+}
+
+
+@app.middleware("http")
+async def security_headers(request, call_next):
+    """Stamp CSP and the hardening headers onto every response, including
+    the guard middlewares' own 403/429 replies (registered last, so this is
+    the outermost middleware and sees every response)."""
+    response = await call_next(request)
+    for name, value in _SECURITY_HEADERS.items():
+        response.headers.setdefault(name, value)
     return response
 
 
@@ -528,7 +625,7 @@ async def manager_chat(
             incognito=bool(run and run.incognito),
         )
     except Exception as exc:  # noqa: BLE001 - surfaced as a retryable 503
-        raise HTTPException(status_code=503, detail=f"manager chat failed: {exc}") from exc
+        raise HTTPException(status_code=503, detail=f"manager chat failed: {redact(str(exc))}") from exc
     return ManagerChatResponse(
         ticker=ticker, answer=answer, mock_mode=not settings.llm_configured
     )
@@ -540,7 +637,9 @@ def _broker_http_error(exc: Exception) -> HTTPException:
         return HTTPException(status_code=503, detail=str(exc))
     if isinstance(exc, broker.BrokerRuleError):
         return HTTPException(status_code=exc.status_code, detail=str(exc))
-    return HTTPException(status_code=503, detail=f"paper trading unavailable: {exc}")
+    # Arbitrary broker/provider exception text: redact before it reaches the
+    # browser (P2.23).
+    return HTTPException(status_code=503, detail=f"paper trading unavailable: {redact(str(exc))}")
 
 
 @app.get("/api/broker/status", response_model=BrokerStatus)

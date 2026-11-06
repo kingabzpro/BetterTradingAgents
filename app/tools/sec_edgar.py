@@ -22,9 +22,9 @@ import logging
 from datetime import date, timedelta
 from math import isfinite
 
-import httpx
 
 from app.config import settings
+from app.tools.http_client import get_client
 
 logger = logging.getLogger("sec_edgar")
 
@@ -234,10 +234,10 @@ def fundamentals_as_of(companyfacts: dict, as_of: str) -> dict:
 
 
 async def _get_json(url: str) -> dict:
-    async with httpx.AsyncClient(timeout=30, headers=_headers()) as client:
-        response = await client.get(url)
-        response.raise_for_status()
-        return response.json()
+    client = get_client()
+    response = await client.get(url, headers=_headers(), timeout=30)
+    response.raise_for_status()
+    return response.json()
 
 
 async def _cik_for(ticker: str) -> int | None:

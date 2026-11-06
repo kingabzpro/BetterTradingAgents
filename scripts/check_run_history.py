@@ -84,6 +84,27 @@ async def checks() -> None:
     ]
     assert items[2].decisions == {"TSLA": "HOLD"}
 
+    # P2.10: WAL is active (readers and writers stop blocking each other),
+    # and the newest-analysis probe decodes exactly one row instead of the
+    # whole listing round-trip.
+    with sqlite3.connect(history_db) as connection:
+        mode = connection.execute("PRAGMA journal_mode").fetchone()[0]
+    assert mode == "wal", f"journal_mode is {mode}, want wal"
+
+    newest = await run_history.newest_analysis("device_history_test", "TSLA")
+    assert newest is not None and newest.run_id == "completed001"
+    assert newest.analysis.decision == "HOLD"
+    assert await run_history.newest_analysis(
+        "device_history_test", "TSLA", before_at=1_780_000_000
+    ) is None, "started_at must bound the search"
+    assert await run_history.newest_analysis(
+        "device_history_test", "TSLA", after_at=1_780_000_000
+    ) is None, "after_at must bound the search"
+    assert await run_history.newest_analysis(
+        "device_history_test", "TSLA", exclude_run_id="completed001"
+    ) is None
+    print("history internals OK: WAL on, newest-analysis probe exact")
+
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://127.0.0.1") as client:
         listing = await client.get(

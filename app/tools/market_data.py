@@ -22,9 +22,18 @@ from time import monotonic
 from urllib.parse import urlparse
 
 import httpx
-import yfinance as yf
 
 from app.config import settings
+from app.tools.http_client import get_client
+
+
+def _yf():
+    """Import yfinance lazily (P2.10): it pulls pandas and friends, so a
+    top-level import stalled every cold start, including boots that never
+    touch market data (mock mode, settings-only visits)."""
+    import yfinance
+
+    return yfinance
 
 logger = logging.getLogger("market")
 
@@ -231,8 +240,13 @@ async def get_stock_data(
 async def get_closes(ticker: str) -> list[float]:
     """Six months of daily closes, for the concentration gate's cross-ticker
     correlation (app/risk.py). Raises on provider failure; callers decide the
-    fallback. """
-    return await asyncio.to_thread(lambda: _yf_history(ticker)["closes"])
+    fallback. TTL-cached like the windowed histories: a multi-holding run
+    used to refetch the same series per held ticker (P2.10)."""
+    return await _ttl_cached(
+        f"closes6mo:{ticker}",
+        lambda: asyncio.to_thread(lambda: _yf_history(ticker)["closes"]),
+        settings.history_cache_ttl_seconds,
+    )
 
 
 async def get_current_price(ticker: str) -> float | None:
@@ -262,7 +276,7 @@ async def get_closes_between(ticker: str, start: str, end: str) -> dict[str, flo
 
 def _yf_closes_between(ticker: str, start: str, end: str) -> dict[str, float]:
     try:
-        hist = yf.Ticker(ticker).history(start=start, end=end, interval="1d")
+        hist = _yf().Ticker(ticker).history(start=start, end=end, interval="1d")
     except Exception as exc:  # noqa: BLE001 - yfinance raises many shapes
         logger.warning("[%s] close history fetch failed: %s", ticker, exc)
         return {}
@@ -290,7 +304,7 @@ async def get_ohlcv_between(ticker: str, start: str, end: str) -> dict:
 def _yf_ohlcv_between(ticker: str, start: str, end: str) -> dict:
     out: dict = {"closes": [], "highs": [], "lows": [], "volumes": [], "price": None}
     try:
-        hist = yf.Ticker(ticker).history(start=start, end=end, interval="1d")
+        hist = _yf().Ticker(ticker).history(start=start, end=end, interval="1d")
     except Exception as exc:  # noqa: BLE001
         logger.warning("[%s] OHLCV history fetch failed: %s", ticker, exc)
         return out
@@ -327,15 +341,16 @@ async def get_bako_forecast(
     """
     if not settings.bako_api_key or horizon < 1 or not ticker or not current_price:
         return None
+    client = get_client()
     try:
-        async with httpx.AsyncClient(timeout=30) as client:
-            response = await client.get(
-                BAKO_PREDICTIONS,
-                headers={"api-key": settings.bako_api_key},
-                params={"symbol": ticker},
-            )
-            response.raise_for_status()
-            return _normalize_bako_forecast(response.json(), current_price, horizon)
+        response = await client.get(
+            BAKO_PREDICTIONS,
+            headers={"api-key": settings.bako_api_key},
+            params={"symbol": ticker},
+            timeout=30,
+        )
+        response.raise_for_status()
+        return _normalize_bako_forecast(response.json(), current_price, horizon)
     except Exception as exc:  # noqa: BLE001 - provider failure must degrade gracefully
         logger.warning("Bako forecast failed: %s", exc)
         return None
@@ -426,7 +441,7 @@ async def _yf_all(ticker: str) -> dict:
 
 def _yf_history(ticker: str) -> dict:
     out = {"closes": [], "highs": [], "lows": [], "volumes": [], "price": None}
-    hist = yf.Ticker(ticker).history(period="6mo", interval="1d")
+    hist = _yf().Ticker(ticker).history(period="6mo", interval="1d")
     if not hist.empty:
         hist = hist.dropna(subset=["Close"])
         out["closes"] = [round(float(c), 4) for c in hist["Close"].tolist()]
@@ -442,7 +457,7 @@ def _yf_history(ticker: str) -> dict:
 
 def _yf_profile(ticker: str) -> dict:
     try:
-        info = yf.Ticker(ticker).info or {}
+        info = _yf().Ticker(ticker).info or {}
         return {
             "name": info.get("shortName") or info.get("longName") or ticker,
             "fundamentals": _map_yf_fundamentals(info),
@@ -454,7 +469,7 @@ def _yf_profile(ticker: str) -> dict:
 
 def _yf_news(ticker: str) -> dict:
     try:
-        return {"news": _normalize_yf_news(yf.Ticker(ticker).news or [])[:6]}
+        return {"news": _normalize_yf_news(_yf().Ticker(ticker).news or [])[:6]}
     except Exception as exc:  # noqa: BLE001
         logger.warning("[%s] yfinance news failed: %s", ticker, exc)
         return {"news": []}
@@ -462,7 +477,7 @@ def _yf_news(ticker: str) -> dict:
 
 def _yf_price(ticker: str) -> float | None:
     try:
-        price = yf.Ticker(ticker).fast_info.get("lastPrice")
+        price = _yf().Ticker(ticker).fast_info.get("lastPrice")
         return float(price) if price else None
     except Exception as exc:  # noqa: BLE001
         logger.warning("[%s] price fetch failed: %s", ticker, exc)
@@ -536,7 +551,7 @@ async def _finnhub_get(
     client: httpx.AsyncClient, path: str, ticker: str, extra: dict | None = None
 ) -> dict:
     params = {"symbol": ticker, "token": settings.finnhub_api_key, **(extra or {})}
-    response = await client.get(f"{FINNHUB_BASE}{path}", params=params)
+    response = await client.get(f"{FINNHUB_BASE}{path}", params=params, timeout=15)
     response.raise_for_status()
     return response.json()
 
@@ -544,12 +559,12 @@ async def _finnhub_get(
 async def _finnhub_fundamentals(ticker: str) -> dict:
     if not settings.finnhub_api_key:
         return {}
+    client = get_client()
     try:
-        async with httpx.AsyncClient(timeout=15) as client:
-            profile, metrics = await asyncio.gather(
-                _finnhub_get(client, "/stock/profile2", ticker),
-                _finnhub_get(client, "/stock/metric", ticker, {"metric": "all"}),
-            )
+        profile, metrics = await asyncio.gather(
+            _finnhub_get(client, "/stock/profile2", ticker),
+            _finnhub_get(client, "/stock/metric", ticker, {"metric": "all"}),
+        )
     except Exception as exc:  # noqa: BLE001
         logger.warning("[%s] finnhub fundamentals failed: %s", ticker, exc)
         return {}
@@ -581,19 +596,20 @@ async def _finnhub_news(
         return []
     to_day = to_date or datetime.now(timezone.utc).date()
     from_day = from_date or (to_day - timedelta(days=14))
+    client = get_client()
     try:
-        async with httpx.AsyncClient(timeout=15) as client:
-            response = await client.get(
-                f"{FINNHUB_BASE}/company-news",
-                params={
-                    "symbol": ticker,
-                    "from": from_day.isoformat(),
-                    "to": to_day.isoformat(),
-                    "token": settings.finnhub_api_key,
-                },
-            )
-            response.raise_for_status()
-            items = response.json()
+        response = await client.get(
+            f"{FINNHUB_BASE}/company-news",
+            params={
+                "symbol": ticker,
+                "from": from_day.isoformat(),
+                "to": to_day.isoformat(),
+                "token": settings.finnhub_api_key,
+            },
+            timeout=15,
+        )
+        response.raise_for_status()
+        items = response.json()
     except Exception as exc:  # noqa: BLE001
         logger.warning("[%s] finnhub news failed: %s", ticker, exc)
         return []
@@ -631,39 +647,40 @@ async def _olostep_news(ticker: str, company_name: str) -> list[dict]:
         return []
     headers = {"Authorization": f"Bearer {settings.olostep_api_key}"}
     query = f"{company_name or ticker} {ticker} stock news latest".strip()
+    client = get_client()
     try:
-        async with httpx.AsyncClient(timeout=OLOSTEP_TIMEOUT) as client:
-            response = await client.post(
-                OLOSTEP_SEARCH,
-                headers=headers,
-                json={"query": query, "num_results": 6},
-            )
-            response.raise_for_status()
-            links = _olostep_links(response.json())
+        response = await client.post(
+            OLOSTEP_SEARCH,
+            headers=headers,
+            json={"query": query, "num_results": 6},
+            timeout=OLOSTEP_TIMEOUT,
+        )
+        response.raise_for_status()
+        links = _olostep_links(response.json())
 
-            items = []
-            for link in links[:6]:
-                url = _safe_http_url(link.get("url", ""))
-                items.append(
-                    {
-                        "title": link.get("title", ""),
-                        "source": urlparse(url).netloc.replace("www.", ""),
-                        "published": "",
-                        "summary": (link.get("description") or "")[:300],
-                        "url": url,
-                    }
-                )
-            items = [n for n in items if n["title"]]
-
-            # Enrich the top hits with actual article text, scraped in parallel.
-            targets = [n for n in items[:2] if n.get("url")]
-            markdowns = await asyncio.gather(
-                *(_olostep_scrape(client, headers, n["url"]) for n in targets)
+        items = []
+        for link in links[:6]:
+            url = _safe_http_url(link.get("url", ""))
+            items.append(
+                {
+                    "title": link.get("title", ""),
+                    "source": urlparse(url).netloc.replace("www.", ""),
+                    "published": "",
+                    "summary": (link.get("description") or "")[:300],
+                    "url": url,
+                }
             )
-            for item, markdown in zip(targets, markdowns):
-                if markdown:
-                    item["content"] = markdown[:1500]
-            return items
+        items = [n for n in items if n["title"]]
+
+        # Enrich the top hits with actual article text, scraped in parallel.
+        targets = [n for n in items[:2] if n.get("url")]
+        markdowns = await asyncio.gather(
+            *(_olostep_scrape(client, headers, n["url"]) for n in targets)
+        )
+        for item, markdown in zip(targets, markdowns):
+            if markdown:
+                item["content"] = markdown[:1500]
+        return items
     except Exception as exc:  # noqa: BLE001
         logger.warning("[%s] olostep news failed: %s", ticker, exc)
         return []
@@ -708,22 +725,23 @@ async def _tavily_news(ticker: str, company_name: str) -> list[dict]:
     if not settings.tavily_api_key:
         return []
     query = f"{company_name or ticker} {ticker} stock news latest".strip()
+    client = get_client()
     try:
-        async with httpx.AsyncClient(timeout=OLOSTEP_TIMEOUT) as client:
-            response = await client.post(
-                TAVILY_SEARCH,
-                json={
-                    "api_key": settings.tavily_api_key,
-                    "query": query,
-                    "max_results": 6,
-                    "search_depth": "basic",
-                },
-            )
-            response.raise_for_status()
-            results = response.json().get("results")
-            return _news_items_from_rows(
-                results if isinstance(results, list) else [], "content"
-            )
+        response = await client.post(
+            TAVILY_SEARCH,
+            json={
+                "api_key": settings.tavily_api_key,
+                "query": query,
+                "max_results": 6,
+                "search_depth": "basic",
+            },
+            timeout=OLOSTEP_TIMEOUT,
+        )
+        response.raise_for_status()
+        results = response.json().get("results")
+        return _news_items_from_rows(
+            results if isinstance(results, list) else [], "content"
+        )
     except Exception as exc:  # noqa: BLE001
         logger.warning("[%s] tavily news failed: %s", ticker, exc)
         return []
@@ -734,18 +752,19 @@ async def _firecrawl_news(ticker: str, company_name: str) -> list[dict]:
     if not settings.firecrawl_api_key:
         return []
     query = f"{company_name or ticker} {ticker} stock news latest".strip()
+    client = get_client()
     try:
-        async with httpx.AsyncClient(timeout=OLOSTEP_TIMEOUT) as client:
-            response = await client.post(
-                FIRECRAWL_SEARCH,
-                headers={"Authorization": f"Bearer {settings.firecrawl_api_key}"},
-                json={"query": query, "limit": 6},
-            )
-            response.raise_for_status()
-            rows = response.json().get("data")
-            return _news_items_from_rows(
-                rows if isinstance(rows, list) else [], "description"
-            )
+        response = await client.post(
+            FIRECRAWL_SEARCH,
+            headers={"Authorization": f"Bearer {settings.firecrawl_api_key}"},
+            json={"query": query, "limit": 6},
+            timeout=OLOSTEP_TIMEOUT,
+        )
+        response.raise_for_status()
+        rows = response.json().get("data")
+        return _news_items_from_rows(
+            rows if isinstance(rows, list) else [], "description"
+        )
     except Exception as exc:  # noqa: BLE001
         logger.warning("[%s] firecrawl news failed: %s", ticker, exc)
         return []
@@ -814,27 +833,28 @@ async def _olostep_social(ticker: str) -> list[dict]:
     if not settings.olostep_api_key:
         return []
     query = f"{ticker} stock (site:reddit.com OR site:stocktwits.com)"
+    client = get_client()
     try:
-        async with httpx.AsyncClient(timeout=OLOSTEP_TIMEOUT) as client:
-            response = await client.post(
-                OLOSTEP_SEARCH,
-                headers={"Authorization": f"Bearer {settings.olostep_api_key}"},
-                json={"query": query, "num_results": 8},
+        response = await client.post(
+            OLOSTEP_SEARCH,
+            headers={"Authorization": f"Bearer {settings.olostep_api_key}"},
+            json={"query": query, "num_results": 8},
+            timeout=OLOSTEP_TIMEOUT,
+        )
+        response.raise_for_status()
+        items = []
+        for link in _olostep_links(response.json())[:8]:
+            url = _safe_http_url(link.get("url", ""))
+            items.append(
+                {
+                    "title": link.get("title", ""),
+                    "source": urlparse(url).netloc.replace("www.", ""),
+                    "published": "",
+                    "summary": (link.get("description") or "")[:300],
+                    "url": url,
+                }
             )
-            response.raise_for_status()
-            items = []
-            for link in _olostep_links(response.json())[:8]:
-                url = _safe_http_url(link.get("url", ""))
-                items.append(
-                    {
-                        "title": link.get("title", ""),
-                        "source": urlparse(url).netloc.replace("www.", ""),
-                        "published": "",
-                        "summary": (link.get("description") or "")[:300],
-                        "url": url,
-                    }
-                )
-            return [n for n in items if n["title"]]
+        return [n for n in items if n["title"]]
     except Exception as exc:  # noqa: BLE001
         logger.warning("[%s] olostep social search failed: %s", ticker, exc)
         return []
@@ -862,6 +882,7 @@ async def _olostep_scrape(
             OLOSTEP_SCRAPE,
             headers=headers,
             json={"url_to_scrape": url, "formats": ["markdown"]},
+            timeout=OLOSTEP_TIMEOUT,
         )
         response.raise_for_status()
         return (response.json().get("result") or {}).get("markdown_content")
@@ -881,7 +902,7 @@ _MARKET_INDEXES = {
 
 
 def _index_stats(symbol: str) -> dict:
-    hist = yf.Ticker(symbol).history(period="6mo", interval="1d")
+    hist = _yf().Ticker(symbol).history(period="6mo", interval="1d")
     hist = hist.dropna(subset=["Close"]) if not hist.empty else hist
     closes = [float(c) for c in hist["Close"].tolist()]
     if not closes:

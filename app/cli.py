@@ -17,8 +17,9 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
 # Fast, fully offline checks that exercise the core: indicators and
-# accounting, the cost estimate, durable history, and the setup wizard.
-FAST_CHECKS = ("quick_wins", "cost", "run_history", "changes", "ui", "accuracy", "watchlist", "search_export", "paper_trading", "setup_wizard")
+# accounting, the cost estimate, durable history, the setup wizard, and
+# the P2.23 security guarantees (rebinding, headers, rate limits, secrets).
+FAST_CHECKS = ("quick_wins", "cost", "run_history", "changes", "ui", "accuracy", "watchlist", "search_export", "paper_trading", "setup_wizard", "security")
 
 APP_URL = "http://127.0.0.1:8000"
 WIKI_URL = "https://github.com/kingabzpro/BetterTradingAgents/wiki"
