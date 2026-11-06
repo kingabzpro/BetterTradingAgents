@@ -162,22 +162,12 @@ async def previous_call(
     from app import run_history
 
     ticker = ticker.strip().upper()
-    runs = await run_history.list_runs(owner_id, limit=100)
-    for item in runs:
-        if item.status != "completed" or ticker not in item.tickers:
-            continue
-        if item.run_id == before_run_id:
-            continue
-        if before_at is not None and item.started_at >= before_at:
-            continue
-        status = await run_history.get(item.run_id)
-        if status is None:
-            continue
-        analysis = status.results.get(ticker)
-        if analysis is None or analysis.error:
-            continue
-        call = snapshot(analysis)
-        call.run_id = item.run_id
-        call.analyzed_at = item.started_at
-        return call
-    return None
+    found = await run_history.newest_analysis(
+        owner_id, ticker, exclude_run_id=before_run_id, before_at=before_at
+    )
+    if found is None:
+        return None
+    call = snapshot(found.analysis)
+    call.run_id = found.run_id
+    call.analyzed_at = found.started_at
+    return call

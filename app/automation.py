@@ -38,8 +38,6 @@ import logging
 import time
 from datetime import date, timedelta
 
-import httpx
-
 from app.config import settings
 from app.depth import normalize_depth
 from app.models import (
@@ -49,6 +47,8 @@ from app.models import (
     StockAnalysis,
 )
 from app.outlook import normalize_outlook
+from app.redact import redact
+from app.tools.http_client import get_client
 from app.db import connect as _connect
 
 logger = logging.getLogger("automation")
@@ -377,12 +377,16 @@ async def _post_webhook(session_outcome: "AutomationSession") -> None:
     if session_outcome.error:
         lines.append(f"Error: {session_outcome.error}")
     try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            await client.post(
-                url, content="\n".join(lines), headers={"Content-Type": "text/plain"}
-            )
+        client = get_client()
+        await client.post(
+            url,
+            content="\n".join(lines),
+            headers={"Content-Type": "text/plain"},
+            timeout=10.0,
+        )
     except Exception as exc:  # noqa: BLE001
-        logger.warning("[automation] webhook POST failed: %s", exc)
+        # The webhook URL itself is a secret; httpx errors can echo it whole.
+        logger.warning("[automation] webhook POST failed: %s", redact(str(exc)))
 
 
 async def run_session(trigger: str = "schedule") -> AutomationSession:

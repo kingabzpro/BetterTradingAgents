@@ -21,16 +21,15 @@ import time
 import uuid
 from datetime import datetime, timezone
 from enum import Enum
+from typing import TYPE_CHECKING
 
 import requests
-from alpaca.common.exceptions import APIError
-from alpaca.trading.client import TradingClient
-from alpaca.trading.enums import OrderSide, OrderType, QueryOrderStatus, TimeInForce
-from alpaca.trading.requests import (
-    GetOrdersRequest,
-    GetPortfolioHistoryRequest,
-    MarketOrderRequest,
-)
+if TYPE_CHECKING:
+    # alpaca-py is imported lazily at each use site (P2.10): only the broker
+    # paths need it, and every server boot (mock mode included) used to pay
+    # for the import.
+    from alpaca.common.exceptions import APIError
+    from alpaca.trading.client import TradingClient
 
 from app.config import settings
 from app.models import (
@@ -87,6 +86,8 @@ def _client() -> TradingClient:
             "Alpaca paper trading is not configured; add the API key ID and "
             "secret key on the Settings page"
         )
+    from alpaca.trading.client import TradingClient
+
     return TradingClient(
         settings.alpaca_api_key_id,
         settings.alpaca_api_secret_key,
@@ -116,6 +117,7 @@ async def _call(fn):
     backoff (P2.3); auth/validation errors map through immediately. Only
     reads go through here - the order POST path retries nothing blindly.
     """
+    from alpaca.common.exceptions import APIError
     for attempt in range(BROKER_READ_RETRIES + 1):
         try:
             return await asyncio.to_thread(fn)
@@ -549,6 +551,9 @@ async def _raise_if_opposite_working(ticker: str, side: str) -> None:
     opposite = "sell" if side == "buy" else "buy"
 
     def _fetch():
+        from alpaca.trading.enums import OrderSide, QueryOrderStatus
+        from alpaca.trading.requests import GetOrdersRequest
+
         return _client().get_orders(
             GetOrdersRequest(
                 status=QueryOrderStatus.OPEN,
@@ -714,8 +719,12 @@ async def _submit_market_order(
 ) -> BrokerOrder:
     """POST one market/day order of `qty` shares and settle the local row from
     the response. The caller must have inserted the row before this runs."""
+    from alpaca.common.exceptions import APIError
 
     def _submit():
+        from alpaca.trading.enums import OrderSide, OrderType, TimeInForce
+        from alpaca.trading.requests import MarketOrderRequest
+
         return _client().submit_order(
             MarketOrderRequest(
                 symbol=ticker,
@@ -767,6 +776,7 @@ def _update_from_remote_order(client_order_id: str, order) -> None:
 
 
 async def refresh_order(client_order_id: str) -> BrokerOrder:
+    from alpaca.common.exceptions import APIError
     """Reconcile one local row against Alpaca by client_order_id.
 
     This is the single recovery path for pending_submit/unknown rows and the
@@ -826,6 +836,8 @@ async def equity(period: str = "1M") -> dict:
     """Paper-account equity timeseries for the performance card."""
 
     def _fetch():
+        from alpaca.trading.requests import GetPortfolioHistoryRequest
+
         return _client().get_portfolio_history(
             GetPortfolioHistoryRequest(period=period, timeframe="1D")
         )
@@ -919,6 +931,7 @@ async def order_performance(limit: int = 50) -> list[dict]:
 
 
 async def cancel_order(client_order_id: str) -> BrokerOrder:
+    from alpaca.common.exceptions import APIError
     """Cancel a non-terminal order; 422 passes through when Alpaca says it
     can no longer be canceled."""
     row = await asyncio.to_thread(_get_order_row, client_order_id)
@@ -1021,6 +1034,8 @@ async def sync_state(max_age_s: float = 0.0) -> dict:
 
 
 async def sync_once() -> dict:
+    from alpaca.trading.enums import QueryOrderStatus
+    from alpaca.trading.requests import GetOrdersRequest
     """One reconciliation sweep (P2.3).
 
     Every non-terminal local row is refreshed against Alpaca by client

@@ -5,6 +5,7 @@ import json
 import logging
 import sqlite3
 import time
+from typing import NamedTuple
 
 from app.depth import DEFAULT_DEPTH, normalize_depth
 from app.models import RunHistoryItem, RunStatus, StockAnalysis
@@ -12,6 +13,14 @@ from app.outlook import DEFAULT_OUTLOOK, normalize_outlook
 from app.db import connect as _connect
 
 logger = logging.getLogger("analysis")
+
+
+class NewestAnalysis(NamedTuple):
+    """One ticker's newest completed result, with the run that produced it."""
+
+    run_id: str
+    started_at: float
+    analysis: StockAnalysis
 
 
 
@@ -199,40 +208,48 @@ def _list(limit: int, owner_id: str) -> list[RunHistoryItem]:
     items: list[RunHistoryItem] = []
     for row in rows:
         try:
-            status = _decode_status(row)
+            raw_results = json.loads(row["results_json"] or "{}")
+            tickers = json.loads(row["tickers_json"])
         except (json.JSONDecodeError, ValueError, TypeError) as exc:
             logger.warning("[history] skipping corrupt run %s: %s", row["run_id"], exc)
             continue
-        # Cost is summed from each result's estimate; a result with tokens but
-        # no price for its model makes the total a floor, flagged cost_unknown.
+        if not isinstance(raw_results, dict):
+            logger.warning("[history] skipping corrupt run %s", row["run_id"])
+            continue
+        # The listing only needs decision/error/cost/tokens, so read those
+        # straight from the JSON instead of Pydantic-decoding every full
+        # agent payload of every run on every page load (P2.10). Only the
+        # detail view needs the full decode.
         any_tokens = False
         cost_usd = 0.0
         cost_unknown = False
-        for result in status.results.values():
-            estimate = result.cost_estimate or {}
-            if result.token_usage:
+        has_errors = False
+        decisions: dict[str, str | None] = {}
+        for ticker, result in raw_results.items():
+            if result.get("error"):
+                has_errors = True
+                continue
+            decisions[ticker] = result.get("decision")
+            estimate = result.get("cost_estimate") or {}
+            if result.get("token_usage"):
                 any_tokens = True
                 if not estimate or not estimate.get("priced"):
                     cost_unknown = True
             cost_usd += float(estimate.get("total_usd") or 0.0)
         items.append(
             RunHistoryItem(
-                run_id=status.run_id,
-                tickers=status.tickers,
-                outlook=status.outlook,
-                depth=status.depth,
-                status=status.status,
-                mock_mode=status.mock_mode,
-                started_at=status.started_at,
-                duration_s=status.duration_s,
-                error=status.error,
-                result_count=len(status.results),
-                has_errors=any(result.error for result in status.results.values()),
-                decisions={
-                    ticker: result.decision
-                    for ticker, result in status.results.items()
-                    if not result.error
-                },
+                run_id=row["run_id"],
+                tickers=tickers,
+                outlook=normalize_outlook(row["outlook"]),
+                depth=normalize_depth(row["depth"]),
+                status=row["status"],
+                mock_mode=bool(row["mock_mode"]),
+                started_at=row["started_at"],
+                duration_s=row["duration_s"],
+                error=row["error"],
+                result_count=len(raw_results),
+                has_errors=has_errors,
+                decisions=decisions,
                 cost_usd=round(cost_usd, 6) if any_tokens else None,
                 cost_unknown=cost_unknown,
             )
@@ -242,6 +259,68 @@ def _list(limit: int, owner_id: str) -> list[RunHistoryItem]:
 
 async def list_runs(owner_id: str, limit: int = 50) -> list[RunHistoryItem]:
     return await asyncio.to_thread(_list, min(100, max(1, limit)), owner_id)
+
+
+def _newest_analysis(
+    owner_id: str,
+    ticker: str,
+    exclude_run_id: str,
+    before_at: float | None,
+    after_at: float | None,
+) -> NewestAnalysis | None:
+    """Newest completed, non-error result for one ticker, in one SQL probe.
+
+    The JSON1 match pushes the ticker and error filters into SQLite so at
+    most one row is ever decoded, where the listing round-trip used to
+    Pydantic-decode up to 100 full runs per lookup (P2.10). Shared by
+    What-changed and the watchlist.
+    """
+    sql = (
+        "SELECT run_id, started_at, results_json FROM analysis_runs "
+        "WHERE owner_id = ? AND status = 'completed' AND run_id != ? "
+        "AND json_valid(results_json) "
+        "AND json_extract(results_json, ?) IS NOT NULL "
+        "AND json_extract(results_json, ?) IS NULL "
+    )
+    params: list = [
+        owner_id,
+        exclude_run_id or "",
+        f'$."{ticker}"',
+        f'$."{ticker}".error',
+    ]
+    if before_at is not None:
+        sql += "AND started_at < ? "
+        params.append(before_at)
+    if after_at is not None:
+        sql += "AND started_at > ? "
+        params.append(after_at)
+    sql += "ORDER BY started_at DESC LIMIT 1"
+    with _connect() as connection:
+        row = connection.execute(sql, params).fetchone()
+    if row is None:
+        return None
+    try:
+        raw = json.loads(row["results_json"] or "{}")[ticker]
+        return NewestAnalysis(
+            run_id=row["run_id"],
+            started_at=row["started_at"],
+            analysis=StockAnalysis.model_validate(raw),
+        )
+    except (json.JSONDecodeError, ValueError, TypeError, KeyError) as exc:
+        logger.warning("[history] could not decode newest %s result: %s", ticker, exc)
+        return None
+
+
+async def newest_analysis(
+    owner_id: str,
+    ticker: str,
+    exclude_run_id: str = "",
+    before_at: float | None = None,
+    after_at: float | None = None,
+) -> NewestAnalysis | None:
+    return await asyncio.to_thread(
+        _newest_analysis, owner_id, ticker, exclude_run_id, before_at, after_at
+    )
 
 
 def _clear(owner_id: str) -> list[str]:
