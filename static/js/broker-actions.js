@@ -60,6 +60,14 @@ function sellableShares(analysis, positions) {
   return floor6(held.available != null ? held.available : held.quantity);
 }
 
+// Human-readable held amount: sub-cent-of-a-share leftovers from full exits
+// are dust, and printing "1.59e-07 sh" tells the reader nothing.
+function fmtHeld(position) {
+  const qty = Number(position?.quantity || 0);
+  if (qty > 0 && qty < 0.01) return "under 0.01 sh (leftover dust from a previous exit)";
+  return `${fmtQty(qty)} sh`;
+}
+
 // Orders are sized in shares, never dollars: a dollar notional gets converted
 // to shares by the broker at its own price, which let a price tick turn a
 // full exit into an over-sell. Sells default to the whole sellable position;
@@ -117,14 +125,40 @@ function orderWarnings(analysis) {
 export async function attachPaperOrder(actionsEl, analysis, runId) {
   if (!(await paperOrderAvailable(analysis))) return;
   const ticker = analysis.ticker;
+  const isSell = analysis.decision === "SELL";
   const { status, positions } = await brokerInfo();
-  const qty = qtyFor(analysis, positions);
-  const warnings = orderWarnings(analysis);
-  const heldQty = sellableShares(analysis, positions);
+  const held = isSell ? positions.find((position) => position.symbol === ticker) : null;
+  const heldQty = isSell ? sellableShares(analysis, positions) : 0;
   const refPrice = Number(analysis.price) || 0;
   const capUsd = status.max_order_usd || 0;
-  const sizeHint = analysis.decision === "SELL"
-    ? `you hold ${fmtQty(heldQty)} sh`
+
+  // A sell only makes sense when the shares are worth placing: dust leftovers
+  // and locked-up positions get an explanation instead of an order form.
+  const sellableValue = heldQty * Number(held?.current_price || analysis.price || 0);
+  if (isSell && (heldQty <= 0 || sellableValue < 1)) {
+    let reason;
+    if (held && Number(held.quantity) > 0 && held.available != null && Number(held.available) <= 0) {
+      reason = "the sellable shares are locked in open orders";
+    } else if (heldQty <= 0) {
+      reason = "that is below the smallest sellable quantity (a millionth of a share)";
+    } else {
+      reason = `at the broker's price that is about ${fmtUsd(sellableValue)}, under the $1 minimum order`;
+    }
+    const note = document.createElement("div");
+    note.className = "paper-order";
+    note.innerHTML =
+      `<p class="hint flag-warn paper-warn">You hold ${escapeHtml(fmtHeld(held))} of ` +
+      `${escapeHtml(ticker)}: ${reason}. Nothing to place.</p>`;
+    actionsEl.prepend(note);
+    return;
+  }
+
+  const qty = qtyFor(analysis, positions);
+  const warnings = orderWarnings(analysis);
+  const sizeHint = isSell
+    ? (held && held.available != null && floor6(held.available) !== floor6(held.quantity)
+        ? `you hold ${fmtQty(held.quantity)} sh, ${fmtQty(heldQty)} sellable now`
+        : `you hold ${fmtQty(held?.quantity ?? heldQty)} sh`)
     : `cap ${fmtUsd(capUsd)} = ${fmtQty(floor6(capUsd / refPrice))} sh`;
   const panel = document.createElement("div");
   panel.className = "paper-order";
@@ -149,6 +183,9 @@ export async function attachPaperOrder(actionsEl, analysis, runId) {
       <div class="add-row">
         <label for="paper-qty-${escapeAttr(ticker)}">Quantity (shares)</label>
         <input id="paper-qty-${escapeAttr(ticker)}" type="number" min="0.000001" step="any" value="${qty}" ${status.enabled ? "" : "disabled"}>
+        ${isSell ? `
+        <button type="button" class="add-btn paper-size" data-size="half">Half</button>
+        <button type="button" class="add-btn paper-size" data-size="full">Full</button>` : ""}
         <span class="muted">${escapeHtml(sizeHint)}</span>
       </div>
       <label class="paper-confirm">
@@ -170,23 +207,62 @@ export async function attachPaperOrder(actionsEl, analysis, runId) {
   // document and breaks document-wide getElementById lookups.
   const openBtn = panel.querySelector(".paper-open-btn");
   const reviewEl = panel.querySelector(".paper-review");
+  const qtyInput = panel.querySelector("input[type=number]");
+  const qtyEl = () => panel.querySelector(`[id="paper-qty-${ticker}"]`);
+
+  // Exposure is a function of the typed quantity, so it recomputes whenever
+  // the size changes (a preset click or an edit), not just once on open.
+  let account = null;
+  const updateExposure = () => {
+    const expEl = panel.querySelector(`[id="paper-exp-${ticker}"]`);
+    if (!expEl) return;
+    if (!account || account.equity == null || account.cash == null || account.equity <= 0) {
+      expEl.textContent = "Unavailable";
+      return;
+    }
+    const orderUsd = Number(qtyEl()?.value || 0) * refPrice;
+    const deployed = account.equity - account.cash;
+    // A sell releases exposure instead of adding it.
+    const after = deployed + (isSell ? -orderUsd : orderUsd);
+    expEl.textContent = `${((after / account.equity) * 100).toFixed(1)}% of equity`;
+  };
+
   openBtn.addEventListener("click", () => {
     const show = reviewEl.classList.contains("hidden");
     reviewEl.classList.toggle("hidden", !show);
     openBtn.setAttribute("aria-expanded", String(show));
     if (show) {
-      loadAccountFacts(ticker, analysis, refPrice);
+      fetch("/api/broker/account")
+        .then((response) => (response.ok ? response.json() : null))
+        .catch(() => null)
+        .then((data) => {
+          account = data;
+          const bpEl = panel.querySelector(`[id="paper-bp-${ticker}"]`);
+          if (bpEl && account) {
+            bpEl.textContent =
+              account.buying_power != null ? fmtUsd(account.buying_power) : "Unavailable";
+          }
+          updateExposure();
+        });
       loadMarketContext(ticker, analysis);
     }
   });
 
   // The sell limit is visible before submit too: typing more than the
   // sellable share count snaps the input back to it.
-  const qtyInput = panel.querySelector("input[type=number]");
   qtyInput.addEventListener("change", () => {
-    if (analysis.decision === "SELL" && Number(qtyInput.value) > heldQty) {
+    if (isSell && Number(qtyInput.value) > heldQty) {
       qtyInput.value = heldQty;
     }
+    updateExposure();
+  });
+  // Sell sizing presets: half the sellable shares, or all of them; the input
+  // itself stays the custom path.
+  panel.querySelectorAll(".paper-size").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      qtyInput.value = fmtQty(btn.dataset.size === "half" ? floor6(heldQty / 2) : heldQty);
+      updateExposure();
+    });
   });
 
   const confirmBox = panel.querySelector(".paper-confirm input");
@@ -195,25 +271,6 @@ export async function attachPaperOrder(actionsEl, analysis, runId) {
     placeBtn.disabled = !confirmBox.checked;
   });
   placeBtn.addEventListener("click", () => placePaperOrder(ticker, analysis, runId));
-}
-
-async function loadAccountFacts(ticker, analysis, refPrice) {
-  const account = await fetch("/api/broker/account")
-    .then((response) => (response.ok ? response.json() : null))
-    .catch(() => null);
-  const bpEl = $(`paper-bp-${ticker}`);
-  const expEl = $(`paper-exp-${ticker}`);
-  if (!account || bpEl == null) return;
-  bpEl.textContent = account.buying_power != null ? fmtUsd(account.buying_power) : "Unavailable";
-  let exposure = "Unavailable";
-  if (account.equity != null && account.cash != null && account.equity > 0) {
-    const orderUsd = Number($(`paper-qty-${ticker}`)?.value || 0) * refPrice;
-    const deployed = account.equity - account.cash;
-    // A sell releases exposure instead of adding it.
-    const after = deployed + (analysis.decision === "SELL" ? -orderUsd : orderUsd);
-    exposure = `${((after / account.equity) * 100).toFixed(1)}% of equity`;
-  }
-  expEl.textContent = exposure;
 }
 
 // The chart and the live price ride one fetch: the review shows the trend and
