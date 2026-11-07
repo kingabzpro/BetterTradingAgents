@@ -27,6 +27,13 @@ from app.config import settings
 from app.tools.http_client import get_client
 
 
+def _exc_text(exc: BaseException) -> str:
+    """The whole diagnostic for one provider failure. Some exceptions (the
+    httpx timeouts) stringify to '', which logs as 'failed: ' and hides the
+    cause - fall back to the exception type so a warning always names one."""
+    return str(exc) or type(exc).__name__
+
+
 def _yf():
     """Import yfinance lazily (P2.10): it pulls pandas and friends, so a
     top-level import stalled every cold start, including boots that never
@@ -118,7 +125,7 @@ async def _with_timeout(coro, timeout: int, fallback):
     try:
         return await asyncio.wait_for(coro, timeout)
     except Exception as exc:  # noqa: BLE001 - a slow provider must degrade
-        logger.warning("provider call exceeded %ss: %s", timeout, exc)
+        logger.warning("provider call exceeded %ss: %s", timeout, _exc_text(exc))
         return fallback
 
 
@@ -278,7 +285,7 @@ def _yf_closes_between(ticker: str, start: str, end: str) -> dict[str, float]:
     try:
         hist = _yf().Ticker(ticker).history(start=start, end=end, interval="1d")
     except Exception as exc:  # noqa: BLE001 - yfinance raises many shapes
-        logger.warning("[%s] close history fetch failed: %s", ticker, exc)
+        logger.warning("[%s] close history fetch failed: %s", ticker, _exc_text(exc))
         return {}
     if hist.empty:
         return {}
@@ -306,7 +313,7 @@ def _yf_ohlcv_between(ticker: str, start: str, end: str) -> dict:
     try:
         hist = _yf().Ticker(ticker).history(start=start, end=end, interval="1d")
     except Exception as exc:  # noqa: BLE001
-        logger.warning("[%s] OHLCV history fetch failed: %s", ticker, exc)
+        logger.warning("[%s] OHLCV history fetch failed: %s", ticker, _exc_text(exc))
         return out
     if hist.empty:
         return out
@@ -352,7 +359,7 @@ async def get_bako_forecast(
         response.raise_for_status()
         return _normalize_bako_forecast(response.json(), current_price, horizon)
     except Exception as exc:  # noqa: BLE001 - provider failure must degrade gracefully
-        logger.warning("Bako forecast failed: %s", exc)
+        logger.warning("Bako forecast failed: %s", _exc_text(exc))
         return None
 
 
@@ -463,7 +470,7 @@ def _yf_profile(ticker: str) -> dict:
             "fundamentals": _map_yf_fundamentals(info),
         }
     except Exception as exc:  # noqa: BLE001 - yfinance raises many shapes
-        logger.warning("[%s] yfinance info failed: %s", ticker, exc)
+        logger.warning("[%s] yfinance info failed: %s", ticker, _exc_text(exc))
         return {"name": ticker, "fundamentals": {}}
 
 
@@ -471,7 +478,7 @@ def _yf_news(ticker: str) -> dict:
     try:
         return {"news": _normalize_yf_news(_yf().Ticker(ticker).news or [])[:6]}
     except Exception as exc:  # noqa: BLE001
-        logger.warning("[%s] yfinance news failed: %s", ticker, exc)
+        logger.warning("[%s] yfinance news failed: %s", ticker, _exc_text(exc))
         return {"news": []}
 
 
@@ -480,7 +487,7 @@ def _yf_price(ticker: str) -> float | None:
         price = _yf().Ticker(ticker).fast_info.get("lastPrice")
         return float(price) if price else None
     except Exception as exc:  # noqa: BLE001
-        logger.warning("[%s] price fetch failed: %s", ticker, exc)
+        logger.warning("[%s] price fetch failed: %s", ticker, _exc_text(exc))
         return None
 
 
@@ -566,7 +573,7 @@ async def _finnhub_fundamentals(ticker: str) -> dict:
             _finnhub_get(client, "/stock/metric", ticker, {"metric": "all"}),
         )
     except Exception as exc:  # noqa: BLE001
-        logger.warning("[%s] finnhub fundamentals failed: %s", ticker, exc)
+        logger.warning("[%s] finnhub fundamentals failed: %s", ticker, _exc_text(exc))
         return {}
 
     out: dict = {}
@@ -611,7 +618,7 @@ async def _finnhub_news(
         response.raise_for_status()
         items = response.json()
     except Exception as exc:  # noqa: BLE001
-        logger.warning("[%s] finnhub news failed: %s", ticker, exc)
+        logger.warning("[%s] finnhub news failed: %s", ticker, _exc_text(exc))
         return []
 
     items = sorted(items, key=lambda i: i.get("datetime", 0), reverse=True)
@@ -682,7 +689,7 @@ async def _olostep_news(ticker: str, company_name: str) -> list[dict]:
                 item["content"] = markdown[:1500]
         return items
     except Exception as exc:  # noqa: BLE001
-        logger.warning("[%s] olostep news failed: %s", ticker, exc)
+        logger.warning("[%s] olostep news failed: %s", ticker, _exc_text(exc))
         return []
 
 
@@ -743,7 +750,7 @@ async def _tavily_news(ticker: str, company_name: str) -> list[dict]:
             results if isinstance(results, list) else [], "content"
         )
     except Exception as exc:  # noqa: BLE001
-        logger.warning("[%s] tavily news failed: %s", ticker, exc)
+        logger.warning("[%s] tavily news failed: %s", ticker, _exc_text(exc))
         return []
 
 
@@ -766,7 +773,7 @@ async def _firecrawl_news(ticker: str, company_name: str) -> list[dict]:
             rows if isinstance(rows, list) else [], "description"
         )
     except Exception as exc:  # noqa: BLE001
-        logger.warning("[%s] firecrawl news failed: %s", ticker, exc)
+        logger.warning("[%s] firecrawl news failed: %s", ticker, _exc_text(exc))
         return []
 
 
@@ -856,7 +863,7 @@ async def _olostep_social(ticker: str) -> list[dict]:
             )
         return [n for n in items if n["title"]]
     except Exception as exc:  # noqa: BLE001
-        logger.warning("[%s] olostep social search failed: %s", ticker, exc)
+        logger.warning("[%s] olostep social search failed: %s", ticker, _exc_text(exc))
         return []
 
 
@@ -887,7 +894,7 @@ async def _olostep_scrape(
         response.raise_for_status()
         return (response.json().get("result") or {}).get("markdown_content")
     except Exception as exc:  # noqa: BLE001
-        logger.warning("olostep scrape failed for %s: %s", url, exc)
+        logger.warning("olostep scrape failed for %s: %s", url, _exc_text(exc))
         return None
 
 
