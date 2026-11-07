@@ -39,6 +39,7 @@ const ICONS = {
   dollar: '<svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/></svg>',
   play: '<svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10"/><polygon points="10 8 16 12 10 16 10 8"/></svg>',
   flask: '<svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 2h6M10 2v6L4.7 18.4A2 2 0 0 0 6.5 21h11a2 2 0 0 0 1.8-2.6L14 8V2"/><line x1="7.5" y1="14" x2="16.5" y2="14"/></svg>',
+  ops: '<svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.66 3.58 3 8 3s8-1.34 8-3V5"/><path d="M4 12c0 1.66 3.58 3 8 3s8-1.34 8-3"/></svg>',
 };
 
 /* A field's live value from the current spec payload (false before load). */
@@ -81,6 +82,12 @@ const NAV = [
     ],
   },
   {
+    caption: "Operations",
+    items: [
+      { key: "ops", label: "Operations" },
+    ],
+  },
+  {
     caption: "Experimentation",
     items: [
       { key: "experimental", label: "Experimentation" },
@@ -97,6 +104,7 @@ const BLURBS = {
   memory: "How past decisions are graded and reused.",
   alpaca: "Your Alpaca paper account; paper-only, no live trading.",
   autopilot: "Scheduled research-and-trade sessions on your paper account.",
+  ops: "Scheduled backups of the portfolio database; the snapshot also runs at startup.",
   experimental: "Retired UIs behind an opt-in; off for everyone by default.",
 };
 
@@ -240,7 +248,7 @@ function renderNav() {
 }
 
 function iconFor(key) {
-  return { llm: "llm", llm_roles: "layers", providers: "globe", analysis: "search", risk: "shield", memory: "clock", alpaca: "dollar", autopilot: "play", experimental: "flask" }[key];
+  return { llm: "llm", llm_roles: "layers", providers: "globe", analysis: "search", risk: "shield", memory: "clock", alpaca: "dollar", autopilot: "play", ops: "ops", experimental: "flask" }[key];
 }
 
 function renderPanels() {

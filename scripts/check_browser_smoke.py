@@ -25,8 +25,19 @@ import time
 from types import SimpleNamespace
 import urllib.request
 import uuid
+from urllib.parse import parse_qs, urlparse
 
 from alpaca.trading.enums import OrderStatus
+
+try:
+    # Locator-based expect() waits retry through Playwright's own machinery,
+    # which the app CSP (script-src 'self', no unsafe-eval, P2.23) cannot
+    # block. String-predicate wait_for_function compiles its predicate with
+    # in-page eval, which breaks after a confirm dialog forces the poller to
+    # re-attach - so this file waits through expect(), never wait_for_function.
+    from playwright.sync_api import expect
+except ImportError:
+    expect = None  # the skip path in main() handles a missing playwright
 
 # Isolate state before app modules read their configuration. Alpaca keys are
 # cleared too: the smoke must never reach the broker, even when a developer's
@@ -206,10 +217,7 @@ def check_analysis_page(page) -> None:
     page.keyboard.press("Enter")
     page.wait_for_selector("#live-section:not(.hidden)", timeout=10_000)
     page.wait_for_selector("#results-list .result-card", timeout=20_000)
-    page.wait_for_function(
-        "document.activeElement && document.activeElement.id === 'results-heading'",
-        timeout=10_000,
-    )
+    expect(page.locator("#results-heading")).to_be_focused(timeout=10_000)
 
     # Announcements: one polite region for the run, none per agent step.
     assert page.locator("#overall-status[aria-live='polite']").count() == 1
@@ -225,11 +233,7 @@ def check_analysis_page(page) -> None:
 
     # The evidence-strength fact shows the label first, raw value second, and
     # a track-record line that is honest about a small sample (P1.1).
-    page.wait_for_function(
-        f"document.querySelector('#track-record-{TICKER}') "
-        f"&& document.querySelector('#track-record-{TICKER}').textContent.trim().length > 0",
-        timeout=10_000,
-    )
+    expect(page.locator(f"#track-record-{TICKER}")).not_to_have_text("", timeout=10_000)
     strength = page.evaluate(
         f"document.getElementById('track-record-{TICKER}').parentElement.querySelector('strong').textContent"
     )
@@ -296,10 +300,7 @@ def check_history_page(page) -> None:
     # focus on the results heading again.
     rerun.click()
     page.wait_for_selector("#results-list .result-card", timeout=20_000)
-    page.wait_for_function(
-        "document.activeElement && document.activeElement.id === 'results-heading'",
-        timeout=10_000,
-    )
+    expect(page.locator("#results-heading")).to_be_focused(timeout=10_000)
     # The rerun is a cache-hit repeat analysis: it must lead with What changed.
     assert "What changed" in (page.text_content("#results-list .result-card") or ""), \
         "repeat analyses must lead with What changed"
@@ -333,18 +334,15 @@ def check_p1_6_filters_and_exports(page) -> None:
 
     # Searching the smoke ticker keeps exactly the runs that contain it.
     page.fill("#run-search", TICKER)
-    page.wait_for_function(
-        f"document.querySelectorAll('.history-run').length === {total_runs}", timeout=5_000
-    )
+    expect(page.locator(".history-run")).to_have_count(total_runs, timeout=5_000)
     assert page.evaluate("window.__fetches") == 0
 
     # Keyboard: removing the chip clears the filter and keeps focus in the bar.
     tab_until_focused(page, ".chip-remove")
     page.keyboard.press("Enter")
-    page.wait_for_function(
-        "new URLSearchParams(location.search).get('q') === null", timeout=5_000
-    )
-    assert page.locator(".chip-remove").count() == 0, "chip must disappear with its filter"
+    expect(page.locator(".chip-remove")).to_have_count(0, timeout=5_000)
+    assert "q" not in parse_qs(urlparse(page.url).query), \
+        "removing the chip must clear the q filter from the URL"
     assert page.evaluate("document.activeElement.id") == "run-search", \
         "removing the last chip must return focus to the search input"
 
@@ -562,10 +560,7 @@ def check_paper_portfolio(page) -> None:
 
         page.on("dialog", lambda dialog: dialog.accept())
         page.click("#orders-body .cancel-btn")
-        page.wait_for_function(
-            "document.querySelectorAll('#orders-body .cancel-btn').length === 0",
-            timeout=10_000,
-        )
+        expect(page.locator("#orders-body .cancel-btn")).to_have_count(0, timeout=10_000)
         assert state["canceled"], "cancel must call the DELETE path"
         assert "canceled" in page.inner_text("#orders-body").lower()
 
@@ -586,10 +581,8 @@ def check_paper_portfolio(page) -> None:
         page.check(f"#paper-confirm-{TICKER}")
         assert not page.is_disabled(f"#paper-place-{TICKER}")
         page.click(f"#paper-place-{TICKER}")
-        page.wait_for_function(
-            "(ticker) => document.querySelector(`#paper-status-${ticker}`)?.textContent.includes('accepted')",
-            arg=TICKER,
-            timeout=10_000,
+        expect(page.locator(f"#paper-status-{TICKER}")).to_contain_text(
+            "accepted", timeout=10_000
         )
         status_line = page.inner_text(f"#paper-status-{TICKER}")
         assert "accepted" in status_line, f"placement status must show: {status_line}"
@@ -634,6 +627,11 @@ def check_paper_portfolio(page) -> None:
                 id=uuid.uuid4(), status=OrderStatus.FILLED,
                 filled_qty="12", filled_avg_price="100.00",
             )
+
+        def get_orders(self, order_filter=None):
+            # The wash-trade pre-check and the sync sweep read open orders;
+            # the fake broker never has any.
+            return []
 
         def get_portfolio_history(self, history_filter=None):
             return SimpleNamespace(
