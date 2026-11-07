@@ -209,10 +209,11 @@ function renderOrders(orders) {
   for (const order of orders) {
     const terminal = PAPER_TERMINAL.has(order.status);
     const filled = order.filled_avg_price != null ? fmt(order.filled_avg_price) : "n/a";
-    // Auto-exit orders have no research run to link to; the note (the rule
-    // that fired) is the useful label instead (P2.4).
-    const decision = order.run_id === "auto-exit"
-      ? esc(order.note || "auto-exit")
+    // Orders with no research run behind them (auto-exit rules, dust
+    // cleanup) have no decision to link to; the note (the rule, or the
+    // cleanup reason) is the useful label instead (P2.4).
+    const decision = ["auto-exit", "dust-cleanup"].includes(order.run_id)
+      ? esc(order.note || order.run_id)
       : order.run_id
         ? `<a href="/?run=${encodeURIComponent(order.run_id)}">View decision</a>`
         : "n/a";
