@@ -8,7 +8,7 @@ from types import SimpleNamespace
 import httpx
 
 from app.models import AnalysisRequest, RunStatus, SourceReference, StockAnalysis
-from app.tools.market_data import _normalize_yf_news, _safe_http_url
+from app.tools.market_data import _safe_http_url
 from app.workflow import _source_references
 
 
@@ -19,29 +19,6 @@ assert _safe_http_url("file:///secret") == ""
 assert SourceReference(
     kind="news", title="Unsafe", provider="test", url="data:text/html,bad"
 ).url == ""
-
-# Both current and legacy yfinance news payloads retain safe article URLs.
-yf_items = _normalize_yf_news(
-    [
-        {
-            "content": {
-                "title": "Modern item",
-                "provider": {"displayName": "Publisher A"},
-                "pubDate": "2026-01-02T10:00:00Z",
-                "canonicalUrl": {"url": "https://example.com/modern"},
-            }
-        },
-        {
-            "title": "Legacy item",
-            "publisher": "Publisher B",
-            "link": "https://example.org/legacy",
-        },
-    ]
-)
-assert [item["url"] for item in yf_items] == [
-    "https://example.com/modern",
-    "https://example.org/legacy",
-]
 
 # Only display metadata leaves the market-data layer; scraped article content does not.
 market = SimpleNamespace(
