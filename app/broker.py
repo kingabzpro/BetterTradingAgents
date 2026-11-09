@@ -152,6 +152,13 @@ def floor_qty(qty: float) -> float:
     return math.floor(qty * 1_000_000) / 1_000_000
 
 
+def clean_qty(qty: float) -> float:
+    """Proposed order sizes come in half-share steps: whole or .5 shares,
+    never a long fraction. Round DOWN so the notional budget still holds;
+    a size that floors below half a share is not tradeable here."""
+    return math.floor(qty * 2) / 2
+
+
 def _text(value) -> str:
     return str(value.value if isinstance(value, Enum) else value or "")
 
