@@ -910,12 +910,19 @@ async def _act_on_decision(
                 )
         # Shares, not dollars: the budget stays a USD estimate, but the order
         # itself is a share count fixed at the decision's reference price.
+        # Sizes land on half-share steps (26 or 26.5, never 26.7389), so the
+        # proposal a person confirms is the order that gets placed.
         if not analysis.price or analysis.price <= 0:
             return AutomationOrderOutcome(
                 ticker=ticker, side="buy", notional=notional, status="skipped",
                 error="decision has no reference price to size shares from",
             )
-        qty = broker.floor_qty(notional / analysis.price)
+        qty = broker.clean_qty(notional / analysis.price)
+        if qty <= 0:
+            return AutomationOrderOutcome(
+                ticker=ticker, side="buy", notional=notional, status="skipped",
+                error="budget is under half a share at the reference price",
+            )
     elif analysis.decision == "SELL" and settings.automation_allow_sells:
         position = held_map.get(ticker)
         if position is None:

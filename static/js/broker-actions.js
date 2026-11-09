@@ -11,6 +11,9 @@ let info = { status: null, positions: [], orders: [] };
 // Alpaca accepts at most 6 decimals on share quantities; always round DOWN.
 const floor6 = (value) => Math.floor(value * 1e6) / 1e6;
 const fmtQty = (value) => String(floor6(Number(value)));
+// Proposed sizes come in half-share steps (26 or 26.5, never 26.7389); the
+// broker-side cap stays exact so a capped sell can never overshoot.
+const floorHalf = (value) => Math.floor(value * 2) / 2;
 
 // Status, open positions, and recent orders, fetched once per page and reused
 // by every card. The orders list feeds the wash-trade warning below: open
@@ -71,10 +74,11 @@ function fmtHeld(position) {
 // Orders are sized in shares, never dollars: a dollar notional gets converted
 // to shares by the broker at its own price, which let a price tick turn a
 // full exit into an over-sell. Sells default to the whole sellable position;
-// buys convert the suggested USD size at the decision's reference price.
+// buys convert the suggested USD size at the decision's reference price,
+// rounded to half-share steps like every other proposed size.
 function qtyFor(analysis, positions) {
   if (analysis.decision === "SELL") return sellableShares(analysis, positions);
-  return floor6((analysis.suggested_size_usd || 10000) / Number(analysis.price));
+  return floorHalf((analysis.suggested_size_usd || 10000) / Number(analysis.price));
 }
 
 const TERMINAL_STATUSES = new Set(["filled", "canceled", "cancelled", "expired", "rejected"]);
@@ -159,7 +163,7 @@ export async function attachPaperOrder(actionsEl, analysis, runId) {
     ? (held && held.available != null && floor6(held.available) !== floor6(held.quantity)
         ? `you hold ${fmtQty(held.quantity)} sh, ${fmtQty(heldQty)} sellable now`
         : `you hold ${fmtQty(held?.quantity ?? heldQty)} sh`)
-    : `cap ${fmtUsd(capUsd)} = ${fmtQty(floor6(capUsd / refPrice))} sh`;
+    : `cap ${fmtUsd(capUsd)} = ${fmtQty(floorHalf(capUsd / refPrice))} sh`;
   const panel = document.createElement("div");
   panel.className = "paper-order";
   panel.innerHTML = `
@@ -256,11 +260,11 @@ export async function attachPaperOrder(actionsEl, analysis, runId) {
     }
     updateExposure();
   });
-  // Sell sizing presets: half the sellable shares, or all of them; the input
-  // itself stays the custom path.
+  // Sell sizing presets: half the sellable shares (half-share steps), or all
+  // of them; the input itself stays the custom path.
   panel.querySelectorAll(".paper-size").forEach((btn) => {
     btn.addEventListener("click", () => {
-      qtyInput.value = fmtQty(btn.dataset.size === "half" ? floor6(heldQty / 2) : heldQty);
+      qtyInput.value = fmtQty(btn.dataset.size === "half" ? floorHalf(heldQty / 2) : heldQty);
       updateExposure();
     });
   });

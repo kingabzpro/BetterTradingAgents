@@ -419,6 +419,15 @@ async def checks() -> None:
     assert rounded.qty == 20.123456
     print("buy qty floored to 6dp OK")
 
+    # Proposed sizes land on half-share steps (26 or 26.5, never 26.7389);
+    # the broker-side 6dp floor stays exact for capped sells and exits.
+    assert broker.clean_qty(36.4963) == 36.0
+    assert broker.clean_qty(36.7) == 36.5
+    assert broker.clean_qty(26.7389) == 26.5
+    assert broker.clean_qty(50.0) == 50.0
+    assert broker.clean_qty(0.4) == 0.0
+    print("half-share sizing steps OK")
+
     # A dust position (well under one share) stays closable: the sell cap is
     # the share count held, not a USD floor.
     dust = SimpleNamespace(
