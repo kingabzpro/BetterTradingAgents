@@ -116,7 +116,7 @@ requires-dist = [
     { name = "python-dotenv", specifier = ">=1.0" },
     { name = "questionary", specifier = ">=2.1.1" },
     { name = "uvicorn", specifier = ">=0.30" },
-    { name = "yfinance", specifier = ">=0.2.50" },
+    { name = "yfinance", specifier = ">=0.2.50,<1.8" },
 ]
 
 [package.metadata.requires-dev]
