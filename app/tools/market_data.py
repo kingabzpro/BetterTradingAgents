@@ -5,7 +5,7 @@
               and the Reddit / StockTwits social search behind the Sentiment
               Analyst (ROADMAP 3.1)
 - yfinance -> historical daily closes (all technical indicators are computed
-              from these) and as a general fallback for fundamentals/news
+              from these) and as a general fallback for fundamentals
 
 Everything degrades gracefully: a missing key or a failing provider just means
 we fall back to the next source.
@@ -212,13 +212,15 @@ async def get_stock_data(
         "finnhub" if finnhub_fund else ("yfinance" if data.fundamentals else "none")
     )
 
-    # News: Finnhub -> web search (Olostep, then Tavily, then Firecrawl) -> yfinance.
+    # News: Finnhub -> web search (Olostep, then Tavily, then Firecrawl).
+    # Yahoo retired its news endpoint (404 for everyone), so there is no
+    # yfinance leg left: no Finnhub key and no web-search key means no news.
     if finnhub_news:
         data.news, data.sources["news"] = finnhub_news, "finnhub"
     elif web_source:
         data.news, data.sources["news"] = web_news, web_source
     else:
-        data.news, data.sources["news"] = yf_data["news"], "yfinance"
+        data.sources["news"] = "none"
     # Social sentiment posts (ROADMAP 3.1): Olostep site-restricted search;
     # with no posts (no key or a thin crowd) a price/volume proxy keeps the
     # sentiment analyst grounded in real math instead of nothing.
@@ -419,18 +421,18 @@ def _normalize_bako_forecast(
 
 
 # --------------------------------------------------------------------------
-# yfinance: price history (always required) + fallback fundamentals/news
+# yfinance: price history (always required) + fallback fundamentals
 # --------------------------------------------------------------------------
 
 
 async def _yf_all(ticker: str) -> dict:
-    """History, profile and news fetched concurrently (3 round-trips -> 1 wait).
+    """History and profile fetched concurrently (2 round-trips -> 1 wait).
 
-    History is required (its timeout aborts the ticker); profile and news are
-    best-effort, each with a hard cap so a rate-limited .info call cannot hang
+    History is required (its timeout aborts the ticker); the profile is
+    best-effort with a hard cap so a rate-limited .info call cannot hang
     the data phase (ROADMAP P2.14).
     """
-    history, profile, news = await asyncio.gather(
+    history, profile = await asyncio.gather(
         _with_timeout(
             asyncio.to_thread(_yf_history, ticker),
             YF_HISTORY_TIMEOUT,
@@ -441,9 +443,8 @@ async def _yf_all(ticker: str) -> dict:
             YF_SLOW_TIMEOUT,
             {"name": ticker, "fundamentals": {}},
         ),
-        _with_timeout(asyncio.to_thread(_yf_news, ticker), YF_SLOW_TIMEOUT, {"news": []}),
     )
-    return {**history, **profile, **news}
+    return {**history, **profile}
 
 
 def _yf_history(ticker: str) -> dict:
@@ -472,14 +473,6 @@ def _yf_profile(ticker: str) -> dict:
     except Exception as exc:  # noqa: BLE001 - yfinance raises many shapes
         logger.warning("[%s] yfinance info failed: %s", ticker, _exc_text(exc))
         return {"name": ticker, "fundamentals": {}}
-
-
-def _yf_news(ticker: str) -> dict:
-    try:
-        return {"news": _normalize_yf_news(_yf().Ticker(ticker).news or [])[:6]}
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("[%s] yfinance news failed: %s", ticker, _exc_text(exc))
-        return {"news": []}
 
 
 def _yf_price(ticker: str) -> float | None:
@@ -515,38 +508,6 @@ def _map_yf_fundamentals(info: dict) -> dict:
         if isinstance(value, (int, float)):
             out[name] = round(float(value) * scale, 2)
     return out
-
-
-def _normalize_yf_news(items: list) -> list[dict]:
-    """yfinance changed its news payload shape; support both."""
-    out = []
-    for item in items:
-        if isinstance(item, dict) and isinstance(item.get("content"), dict):
-            content = item["content"]
-            canonical = (
-                content.get("canonicalUrl") or content.get("clickThroughUrl") or {}
-            )
-            article_url = canonical.get("url", "") if isinstance(canonical, dict) else canonical
-            out.append(
-                {
-                    "title": content.get("title", ""),
-                    "source": (content.get("provider") or {}).get("displayName", ""),
-                    "published": content.get("pubDate", ""),
-                    "summary": "",
-                    "url": _safe_http_url(article_url),
-                }
-            )
-        elif isinstance(item, dict) and item.get("title"):
-            out.append(
-                {
-                    "title": item.get("title", ""),
-                    "source": item.get("publisher", ""),
-                    "published": "",
-                    "summary": "",
-                    "url": _safe_http_url(item.get("link", "")),
-                }
-            )
-    return [n for n in out if n["title"]]
 
 
 # --------------------------------------------------------------------------
