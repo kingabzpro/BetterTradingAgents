@@ -73,6 +73,7 @@ _MOCK_STREAM_DELAY = 0.025  # seconds between chunks
 
 _llms: dict[str, Any] = {}  # role -> AppLLM wrapper (None in mock mode)
 _llm_roles_initialized: set[str] = set()
+_llm_configs: dict[str, tuple] = {}
 _THINK_BLOCK = re.compile(r"<think>.*?</think>", re.DOTALL)
 _BACKOFF_SECONDS = (1.0, 4.0, 16.0, 60.0)  # HTTP 429/5xx: wait, retry, wait longer
 
@@ -230,16 +231,18 @@ def get_llm(key: str = "analysts") -> Any:
     per-role env overrides fall back to the global LLM_* values, per-agent
     overrides beat both. Returns None when no LLM is configured (mock mode).
     """
-    if key not in _llm_roles_initialized:
+    conf = settings.llm_for(key)
+    identity = (
+        *conf.values(), settings.llm_temperature, settings.llm_timeout_seconds,
+        settings.llm_max_tokens, settings.llm_reasoning_effort,
+        settings.llm_reasoning_effort_manager, settings.stream_reasoning,
+    )
+    if key not in _llm_roles_initialized or _llm_configs.get(key) != identity:
+        if settings.llm_configured and not conf["api_key"]:
+            raise ValueError(f"no LLM API key configured for {key}")
+        _llms[key] = _build_llm(key) if conf["api_key"] else None
+        _llm_configs[key] = identity
         _llm_roles_initialized.add(key)
-        if settings.llm_configured:
-            try:
-                _llms[key] = _build_llm(key)
-            except Exception as exc:  # noqa: BLE001 - degrade to mock, don't crash
-                logger.error("[llm] could not build LLM for %s: %s", key, exc)
-                _llms[key] = None
-        else:
-            _llms[key] = None
     return _llms.get(key)
 
 
@@ -247,19 +250,21 @@ def get_chat_llm() -> Any:
     """LLM for the follow-up manager chat: the manager role's model, but plain
     prose - no JSON mode, no streaming (the chat is request/response, not a
     live token pane). Returns None when no LLM is configured (mock mode)."""
-    if "chat" not in _llm_roles_initialized:
+    conf = settings.llm_for("manager")
+    identity = (
+        *conf.values(), settings.llm_temperature, settings.llm_timeout_seconds,
+        settings.llm_max_tokens, settings.llm_reasoning_effort,
+    )
+    if "chat" not in _llm_roles_initialized or _llm_configs.get("chat") != identity:
+        if settings.llm_configured and not conf["api_key"]:
+            raise ValueError("no LLM API key configured for manager")
+        _llms["chat"] = (
+            _build_llm("manager", json_mode=False, stream=False,
+                       reasoning_effort=settings.llm_reasoning_effort)
+            if conf["api_key"] else None
+        )
+        _llm_configs["chat"] = identity
         _llm_roles_initialized.add("chat")
-        if settings.llm_configured:
-            try:
-                _llms["chat"] = _build_llm(
-                    "manager", json_mode=False, stream=False,
-                    reasoning_effort=settings.llm_reasoning_effort,
-                )
-            except Exception as exc:  # noqa: BLE001 - degrade to mock, don't crash
-                logger.error("[llm] could not build chat LLM: %s", exc)
-                _llms["chat"] = None
-        else:
-            _llms["chat"] = None
     return _llms.get("chat")
 
 
@@ -479,8 +484,11 @@ def _regime_cache_key(indices: dict) -> str:
     # Settings apply live without a restart: a model switch (or mock -> real)
     # under an unchanged snapshot must not be answered by the old model's read.
     llm_key = settings.llm_key_for(market_regime.NAME)
-    llm = get_llm(llm_key)
-    identity = "mock" if llm is None else f"{llm_key}:{settings.llm_for(llm_key)['model']}"
+    identity = (
+        llm_key, settings.llm_for(llm_key), settings.llm_temperature,
+        settings.llm_max_tokens, settings.llm_reasoning_effort,
+        settings.stream_reasoning,
+    )
     return hashlib.sha256(
         json.dumps([indices, identity], sort_keys=True, default=str).encode()
     ).hexdigest()

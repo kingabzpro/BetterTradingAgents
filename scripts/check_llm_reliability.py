@@ -82,6 +82,56 @@ assert mgr.additional_params.get("response_format") == {"type": "json_object"}
 assert ana.additional_params.get("response_format") == {"type": "json_object"}
 print("per-role LLMs OK:", mgr.model, "/", ana.model)
 
+# Changing a saved model must replace a warmed client.
+settings.llm_model_manager = "updated-manager"
+assert workflow.get_llm("manager").model.endswith("updated-manager")
+settings.llm_model_manager = "zai-org/GLM-5.3"
+workflow._llms.clear()
+workflow._llm_roles_initialized.clear()
+
+# Enabling a key after a mock call must create a live client.
+settings.llm_api_key = ""
+assert workflow.get_llm("manager") is None
+settings.llm_api_key = "test-key"
+assert workflow.get_llm("manager") is not None
+old_chat = workflow.get_chat_llm()
+settings.llm_model_manager = "updated-chat-model"
+assert workflow.get_chat_llm() is not old_chat
+settings.llm_model_manager = "zai-org/GLM-5.3"
+workflow._llms.clear()
+workflow._llm_roles_initialized.clear()
+
+# Role-only credentials count as configured and do not mock other roles.
+settings.llm_api_key = ""
+settings.llm_api_key_manager = "role-test-key"
+assert settings.llm_configured
+assert workflow.get_llm("manager") is not None
+try:
+    workflow.get_llm("analysts")
+    raise AssertionError("missing role credentials fell back to mock")
+except ValueError as exc:
+    assert "no LLM API key" in str(exc)
+settings.llm_api_key_manager = ""
+settings.llm_api_key = "test-key"
+workflow._llms.clear()
+workflow._llm_roles_initialized.clear()
+
+# A configured client that cannot initialize must surface an error.
+original_build = workflow._build_llm
+def broken_build(*args, **kwargs):
+    raise ValueError("client setup failed")
+workflow._build_llm = broken_build
+try:
+    try:
+        workflow.get_llm("manager")
+        raise AssertionError("configured client failure fell back to mock")
+    except ValueError as exc:
+        assert "client setup failed" in str(exc)
+finally:
+    workflow._build_llm = original_build
+    workflow._llms.clear()
+    workflow._llm_roles_initialized.clear()
+
 # ---- P2.18: runaway bounds forwarded to every provider ----------------------
 settings.llm_max_tokens = 4096
 capped = workflow._build_llm("analysts")

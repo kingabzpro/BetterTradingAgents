@@ -140,6 +140,9 @@ async def run_backtest(
 
     if mode == "mock":
         settings.llm_api_key = ""
+        for key in ("manager", "analysts", "debate", "market", "technical",
+                    "fundamental", "news", "sentiment", "forecast", "judge"):
+            setattr(settings, f"llm_api_key_{key}", "")
         workflow._llms.clear()
         workflow._llm_roles_initialized.clear()
     settings.bako_api_key = ""  # no hosted forecasts inside a backtest
