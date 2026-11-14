@@ -91,6 +91,14 @@ flowchart LR
 ### Portable binaries (Python included)
 
 Download an archive from [Releases](https://github.com/kingabzpro/BetterTradingAgents/releases) or from **Artifacts** on the [latest successful Actions run](https://github.com/kingabzpro/BetterTradingAgents/actions/workflows/portable-binaries.yml).
+For the desktop app, download the `desktop-windows-x64.zip` or
+`desktop-linux-x64.tar.gz` archive, extract it and launch `bettertradingagents`
+(`bettertradingagents.exe` on Windows). The app opens in its own window;
+Python is included. Windows requires the Microsoft Edge WebView2 runtime.
+Linux requires a graphical desktop and Qt system libraries (on Ubuntu:
+`sudo apt install libxcb-cursor0 libxkbcommon-x11-0 libxcb-xinerama0 libxcb-icccm4 libxcb-keysyms1 libxcb-render-util0 libxcb-xkb1 libxcb-shape0 libegl1`).
+
+The terminal-based downloads are also available:
 Extract it, then run the matching command from the `bettertradingagents` folder.
 
 | Platform | Archive | Command |
