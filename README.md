@@ -98,6 +98,10 @@ Extract it, then run the matching command from the `bettertradingagents` folder.
 | Windows x64 | `bettertradingagents-windows-x64.zip` | `.\bettertradingagents.exe` |
 | Linux x64 (Ubuntu 22.04 or newer) | `bettertradingagents-linux-x64.tar.gz` | `./bettertradingagents` |
 
+On Windows, you can also double-click `bettertradingagents.exe` to start the
+server in a terminal, then click the URL it prints.
+Keep the terminal open while using the app.
+
 Keep `_internal` beside the executable. Open the URL printed in the terminal
 (usually `http://127.0.0.1:8000`) and add provider keys in **Settings**.
 
