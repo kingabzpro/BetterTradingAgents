@@ -51,7 +51,7 @@ jobs:
         run: uv run --no-sync python scripts/smoke_bundle.py packages/${{ matrix.archive }}
       - name: Install Linux desktop test dependencies
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y xvfb libxcb-cursor0 libxkbcommon-x11-0 libxcb-xinerama0 libxcb-icccm4 libxcb-keysyms1 libxcb-render-util0 libxcb-xkb1 libegl1
+        run: sudo apt-get update && sudo apt-get install -y xvfb libxcb-cursor0 libxkbcommon-x11-0 libxcb-xinerama0 libxcb-icccm4 libxcb-keysyms1 libxcb-render-util0 libxcb-xkb1 libxcb-shape0 libegl1
       - name: Build desktop archive
         run: uv run --frozen --no-dev --with pyinstaller==6.22.3 --with '${{ matrix.desktop-deps }}' python scripts/build_bundle.py packages --desktop
       - name: Test Windows desktop archive

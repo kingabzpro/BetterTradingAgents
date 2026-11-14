@@ -96,7 +96,7 @@ For the desktop app, download the `desktop-windows-x64.zip` or
 (`bettertradingagents.exe` on Windows). The app opens in its own window;
 Python is included. Windows requires the Microsoft Edge WebView2 runtime.
 Linux requires a graphical desktop and Qt system libraries (on Ubuntu:
-`sudo apt install libxcb-cursor0 libxkbcommon-x11-0 libxcb-xinerama0 libxcb-icccm4 libxcb-keysyms1 libxcb-render-util0 libxcb-xkb1 libegl1`).
+`sudo apt install libxcb-cursor0 libxkbcommon-x11-0 libxcb-xinerama0 libxcb-icccm4 libxcb-keysyms1 libxcb-render-util0 libxcb-xkb1 libxcb-shape0 libegl1`).
 
 The terminal-based downloads are also available:
 Extract it, then run the matching command from the `bettertradingagents` folder.
