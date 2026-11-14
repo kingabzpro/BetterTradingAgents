@@ -20,6 +20,7 @@ def smoke(archive: Path) -> None:
         bundle = root / "bettertradingagents"
         exe = bundle / ("bettertradingagents.exe" if os.name == "nt" else "bettertradingagents")
         assert exe.is_file(), f"Missing executable in {archive.name}"
+        assert (bundle / "_internal/agents/sandbox/memory/prompts/memory_consolidation_prompt.md").is_file(), "OpenAI Agents prompt is missing"
         assert not (bundle / "portfolio.db").exists(), "Archive contains a portfolio database"
         assert not (bundle / ".env").exists(), "Archive contains a .env file"
 

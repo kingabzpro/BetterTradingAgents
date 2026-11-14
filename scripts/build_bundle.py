@@ -26,6 +26,7 @@ def build(output: Path) -> Path:
                 "--specpath", temp,
                 "--paths", str(ROOT),
                 "--add-data", f"{ROOT / 'static'}:static",
+                "--collect-data", "agents",
                 str(ROOT / "scripts" / "bundle_entry.py"),
             ],
             cwd=ROOT,
