@@ -268,6 +268,16 @@ class RunStore:
             run.depth,
             settings.debate_rounds,
             run.mock_mode,
+            tuple(
+                (key, *settings.llm_for(key).values())
+                for key in ("analysts", "debate", "manager", "market", "technical",
+                            "fundamental", "news", "sentiment", "forecast", "judge")
+            ),
+            settings.llm_temperature,
+            settings.llm_max_tokens,
+            settings.llm_reasoning_effort,
+            settings.llm_reasoning_effort_manager,
+            settings.stream_reasoning,
             _portfolio_key(portfolio),
             # Incognito analyses never merge with normal ones: they ran
             # without decision-memory context and must not be saved or served

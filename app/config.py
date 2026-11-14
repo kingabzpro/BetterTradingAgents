@@ -359,7 +359,12 @@ class Settings:
 
     @property
     def llm_configured(self) -> bool:
-        return bool(self.llm_api_key)
+        return any(
+            getattr(self, name, "")
+            for name in ("llm_api_key", *(f"llm_api_key_{key}" for key in AGENT_ROLES),
+                         "llm_api_key_analysts", "llm_api_key_debate",
+                         "llm_api_key_manager")
+        )
 
     @property
     def alpaca_configured(self) -> bool:

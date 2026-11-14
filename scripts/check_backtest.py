@@ -352,6 +352,7 @@ END_CHECKS = {"mid": GRID_DAYS[1]}
 
 async def e2e():
     await memory.init()
+    settings.llm_api_key_manager = "test-key-that-must-not-be-used"
 
     result = await run_backtest(
         tickers=["NVDA", "AMD"],
@@ -364,6 +365,7 @@ async def e2e():
         out_dir=OUT_DIR,
         cache=cache,
     )
+    assert not settings.llm_configured, "mock backtest must clear role keys"
     assert len(result.outcomes) == 6, [(o.ticker, o.date) for o in result.outcomes]
     assert not result.ungraded, result.ungraded
     assert all(o.alpha_pct is not None for o in result.outcomes)
