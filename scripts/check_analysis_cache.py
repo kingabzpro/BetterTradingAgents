@@ -30,6 +30,11 @@ async def main() -> None:
     portfolio = PortfolioSummary(cash=100_000)
     first_run = runs.Run(["NVDA"], outlook="short_term", depth="medium")
     second_run = runs.Run(["NVDA"], outlook="short_term", depth="medium")
+    original_model = runs.settings.llm_model
+    original_key = cache._cache_key(first_run, "NVDA", portfolio)
+    runs.settings.llm_model = "changed-model-for-test"
+    assert cache._cache_key(first_run, "NVDA", portfolio) != original_key
+    runs.settings.llm_model = original_model
     try:
         first = await cache._analyze_one(first_run, "NVDA", portfolio)
         second = await cache._analyze_one(second_run, "NVDA", portfolio)
