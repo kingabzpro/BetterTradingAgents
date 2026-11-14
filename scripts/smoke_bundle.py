@@ -56,7 +56,9 @@ def smoke(archive: Path) -> None:
                 assert health["mock_mode"] and health["max_tickers"] == 4, health
                 if "-desktop-" in archive.name:
                     time.sleep(5)
-                    assert process.poll() is None, "Desktop window exited during startup"
+                    if process.poll() is not None:
+                        log.seek(0)
+                        raise AssertionError(f"Desktop window exited during startup:\n{log.read().decode(errors='replace')}")
                 with client.open(f"{base}/", timeout=5) as response:
                     assert b"BetterTradingAgents" in response.read()
                 with client.open(f"{base}/static/js/app.js", timeout=5) as response:
