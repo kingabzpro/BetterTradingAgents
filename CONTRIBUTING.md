@@ -6,6 +6,8 @@ Thanks for wanting to help. The setup here is simple: `dev` is where work happen
 
 `main` is protected. Changes land there only through a pull request with green CI, never pushed directly. `dev` is the long-lived integration branch; it runs ahead of `main` and gets merged up whenever a batch is ready.
 
+CI runs on pull requests and pushes to `main`. If you push directly to `dev`, run the CI workflow manually from the Actions tab; merging a tested pull request into `dev` does not start it again.
+
 For your own work, branch off `dev` and use a prefix that says what it is: `feat/`, `fix/`, `docs/`, or `exp/` for experiments (usually the ones that spend API budget). Delete your branch after it merges; `dev` and `main` stay.
 
 ## The usual loop
