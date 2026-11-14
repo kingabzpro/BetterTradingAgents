@@ -12,14 +12,16 @@ const FUTURE_STEPS = 6; // legacy fallback when an old run has no forecast path
 const state = new WeakMap();
 let resizeTimer = null;
 
-export async function loadPriceChart(targetId, analysis) {
+export async function loadPriceChart(targetId, analysis, prefetched = null) {
   const target = document.getElementById(targetId);
   if (!target || target.dataset.loaded) return;
   target.dataset.loaded = "1";
   try {
-    const response = await fetch(`/api/price-history/${encodeURIComponent(analysis.ticker)}`);
-    if (!response.ok) throw new Error(`failed (${response.status})`);
-    const data = await response.json();
+    const data = prefetched || await fetch(`/api/price-history/${encodeURIComponent(analysis.ticker)}`)
+      .then((response) => {
+        if (!response.ok) throw new Error(`failed (${response.status})`);
+        return response.json();
+      });
     state.set(target, { analysis, data });
     renderChart(target);
     // One shared resize listener redraws at the new width (crisp text,

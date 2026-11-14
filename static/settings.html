@@ -32,8 +32,9 @@
 
     <main id="main-content" tabindex="-1">
       <p class="hint">
-        Everything here overrides <code>.env</code> and applies immediately. Keys are stored in
-        your OS keychain (Windows Credential Manager), never in the database or this browser.
+        Configuration priority: <code>.env</code>, then process environment, then saved settings.
+        Fields set in <code>.env</code> or the environment are locked here; edit them there and restart.
+        Other changes apply immediately. Saved keys go to your OS keychain (Windows Credential Manager).
         Pick a section on the left; the dot shows whether it is ready.
       </p>
       <p class="error hidden" id="insecure-note" role="alert">

@@ -1,16 +1,23 @@
 """Application configuration loaded from environment variables / .env file."""
 
 import os
+import sys
 from pathlib import Path
 from urllib.parse import urlparse
 
 from dotenv import load_dotenv
 
-# Must happen before crewai is imported anywhere.
-os.environ.setdefault("CREWAI_TELEMETRY_OPT_OUT", "true")
+# Must happen before the agents SDK is imported anywhere: keeps the tracer
+# from ever warning about or exporting to an absent OPENAI_API_KEY.
+os.environ.setdefault("OPENAI_AGENTS_DISABLE_TRACING", "1")
 
-BASE_DIR = Path(__file__).resolve().parent.parent
-load_dotenv(BASE_DIR / ".env")
+# The portable executable keeps user files beside the launcher, outside its runtime files.
+BASE_DIR = (
+    Path(sys.executable).resolve().parent
+    if getattr(sys, "frozen", False)
+    else Path(__file__).resolve().parent.parent
+)
+load_dotenv(BASE_DIR / ".env", override=True)
 
 # P2.11: the LLM API key follows base_url to whatever host it names, so a
 # plain-http remote URL would hand the key to anyone on the path. Local
@@ -59,19 +66,27 @@ LLM_DEFAULT_MODEL = "gpt-6-luna"
 
 
 class Settings:
-    """Simple env-driven settings. No hierarchy, no layers."""
+    """File values override the process environment; saved settings are fallbacks."""
 
     # LLM (any OpenAI-compatible endpoint: OpenAI, OpenRouter, DeepSeek, Qwen, GLM, vLLM...)
     llm_base_url: str = _env("LLM_BASE_URL", LLM_DEFAULT_BASE_URL)
     llm_api_key: str = _env("LLM_API_KEY")
     llm_model: str = _env("LLM_MODEL", LLM_DEFAULT_MODEL)
-    llm_temperature: float = float(_env("LLM_TEMPERATURE", "0.2"))
+    # 0.0 default since the phase-4 panel: identical runs flipped 6/20 decisions
+    # at 0.2 vs 2/20 at 0.0 (pooled 31% -> 14% over 29 pairs/arm) and 0.0 also
+    # costs ~4.6% less. Any explicit LLM_TEMPERATURE (env or .env) still wins.
+    llm_temperature: float = float(_env("LLM_TEMPERATURE", "0.0"))
     llm_timeout_seconds: float = float(_env("LLM_TIMEOUT_SECONDS", "90"))
     # P2.18 runaway bounds: max tokens forwarded to every provider (0 = let
     # the provider default stand) and smart retries per LLM call after
     # 429/5xx/malformed-output failures (0 = fail fast). Defaults = today.
     llm_max_tokens: int = max(0, int(_env("MAX_TOKENS", "0")))
     llm_max_retries: int = min(10, max(0, int(_env("LLM_MAX_RETRIES", "2"))))
+    # Cap on in-flight LLM calls across the whole app. Parallel researchers +
+    # multi-ticker runs can burst past what shared endpoints allow (Modal's
+    # shared DeepSeek endpoints cap at 16 concurrent per workspace), and every
+    # bounced call costs a retry round-trip. 0 = unlimited (default off).
+    llm_concurrency: int = max(0, int(_env("LLM_CONCURRENCY", "12")))
     # Optional provider-specific reasoning effort (e.g. "none"/"low" for GLM).
     llm_reasoning_effort: str = _env("LLM_REASONING_EFFORT")
     llm_reasoning_effort_manager: str = _env("LLM_REASONING_EFFORT_MANAGER")
@@ -284,12 +299,63 @@ class Settings:
     # never fails the session it reports on.
     webhook_url: str = _env("WEBHOOK_URL")
 
+    # Auto-exit rules (wiki Roadmap P2.4, the last open slice): a price-only
+    # check between sessions evaluates every open position against stop-loss,
+    # take-profit, and max-hold, and exits through the guarded broker path.
+    # No LLM is involved. 0 disables a rule; all three off = no sweep.
+    automation_exit_enabled: bool = _env("AUTOMATION_EXIT_ENABLED", "0").lower() in (
+        "1",
+        "true",
+        "yes",
+    )
+    automation_exit_stop_loss_pct: float = min(
+        1.0, max(0.0, float(_env("AUTOMATION_EXIT_STOP_LOSS_PCT", "0")))
+    )
+    automation_exit_take_profit_pct: float = min(
+        1.0, max(0.0, float(_env("AUTOMATION_EXIT_TAKE_PROFIT_PCT", "0")))
+    )
+    automation_exit_max_hold_days: int = max(
+        0, int(_env("AUTOMATION_EXIT_MAX_HOLD_DAYS", "0"))
+    )
+
+    # Shared-deployment owner gate (wiki Roadmap P2.2). Empty = today's
+    # posture: loopback-only trust. When set, every page and API call needs
+    # the token (X-Owner-Token header, or the cookie /login hands out), so a
+    # server shared with other local users isolates its controls behind one
+    # owner secret. Env-only on purpose: a Settings field could lock the
+    # owner out of the app that would let them clear it.
+    owner_token: str = _env("OWNER_TOKEN")
+
+    # Scheduled backups of the portfolio database (wiki Roadmap P2.2): one
+    # consistent SQLite snapshot at startup and every BACKUP_INTERVAL_HOURS
+    # (0 = only at startup and on demand), keeping the newest BACKUP_KEEP
+    # files. Empty BACKUP_DIR puts a backups/ folder next to the database.
+    backup_interval_hours: int = max(0, int(_env("BACKUP_INTERVAL_HOURS", "24")))
+    backup_keep: int = max(1, int(_env("BACKUP_KEEP", "7")))
+    backup_dir: str = _env("BACKUP_DIR")
+
     # Live reasoning stream (wiki Roadmap 3.2): stream agent tokens to the
     # UI as agent_token SSE events. OFF by default - in live use the stream is
     # mostly the final JSON blob, which reads as noise next to the result card.
     # Set STREAM_REASONING=1 to enable; a provider that rejects streaming makes
     # the role's LLM fall back to non-streaming on first use.
     stream_reasoning: bool = _env("STREAM_REASONING", "0").lower() in ("1", "true", "yes")
+
+    # Prompt trim (release batch 2, item 8): cap the news/social payloads the
+    # researchers read (NOT what the UI shows; provenance keeps the full
+    # list). PROMPT_TRIM=0 restores the untrimmed payloads for A/B runs.
+    prompt_trim: bool = _env("PROMPT_TRIM", "1").lower() in ("1", "true", "yes")
+    news_prompt_items: int = max(1, int(_env("NEWS_PROMPT_ITEMS", "5")))
+    news_prompt_summary_chars: int = max(80, int(_env("NEWS_PROMPT_SUMMARY_CHARS", "240")))
+    news_prompt_content_chars: int = max(200, int(_env("NEWS_PROMPT_CONTENT_CHARS", "800")))
+    social_prompt_items: int = max(1, int(_env("SOCIAL_PROMPT_ITEMS", "8")))
+
+    # Live data TTL cache (release batch 2, item 9): news and history fetches
+    # are reused for this many seconds across analyses of the same ticker in
+    # one process, so a watchlist rerun does not re-pay every provider.
+    # 0 disables the cache (every analysis fetches fresh).
+    news_cache_ttl_seconds: int = max(0, int(_env("NEWS_CACHE_TTL_SECONDS", "900")))
+    history_cache_ttl_seconds: int = max(0, int(_env("HISTORY_CACHE_TTL_SECONDS", "300")))
 
     @property
     def llm_configured(self) -> bool:

@@ -113,7 +113,7 @@ class _FakeClient:
 async def _insert(run_id: str, ticker: str, side: str) -> str:
     client_order_id = f"bta-{uuid4()}"
     await asyncio.to_thread(
-        broker._insert_order, client_order_id, run_id, ticker, side, 1000.0,
+        broker._insert_order, client_order_id, run_id, ticker, side, 10.0, 1000.0,
         "BUY" if side == "buy" else "SELL", 0.9,
         datetime.now(timezone.utc).isoformat(),
     )

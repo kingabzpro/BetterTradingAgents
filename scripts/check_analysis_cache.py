@@ -11,7 +11,7 @@ from pathlib import Path
 os.environ["DB_PATH"] = str(Path(tempfile.mkdtemp()) / "analysis_cache_test.db")
 
 from app import run_history, runs  # noqa: E402
-from app.models import PortfolioSummary, StockAnalysis  # noqa: E402
+from app.models import PortfolioPosition, PortfolioSummary, StockAnalysis  # noqa: E402
 
 
 async def main() -> None:
@@ -60,6 +60,40 @@ async def main() -> None:
         assert calls == 4 and not concurrent_cache.analysis_inflight
     finally:
         runs.analyze_ticker = original_analyze
+
+    # P2.10: the portfolio part of the key ignores live price drift (values,
+    # PnL, equity) but reacts to holdings, cash, and the high-water mark.
+    flat = PortfolioSummary(cash=100_000)
+    drifted = PortfolioSummary(
+        cash=100_000, positions_value=12_345.67, total_equity=112_345.67, total_pnl=1_234.56
+    )
+    assert runs._portfolio_key(flat) == runs._portfolio_key(drifted)
+    assert runs._portfolio_key(flat) != runs._portfolio_key(PortfolioSummary(cash=100_400))
+    held = PortfolioSummary(
+        cash=100_000,
+        positions=[PortfolioPosition(id=1, ticker="NVDA", quantity=10.0, entry_price=100.0)],
+    )
+    held_drift = PortfolioSummary(
+        cash=100_000,
+        positions=[PortfolioPosition(id=1, ticker="NVDA", quantity=10.0, entry_price=100.0, current_price=999.0, value=9_990.0)],
+    )
+    assert runs._portfolio_key(held) == runs._portfolio_key(held_drift)
+    assert runs._portfolio_key(held) != runs._portfolio_key(
+        PortfolioSummary(
+            cash=100_000,
+            positions=[PortfolioPosition(id=1, ticker="NVDA", quantity=11.0, entry_price=100.0)],
+        )
+    )
+
+    # P2.10: eviction caps the cache; the oldest entries fall out first.
+    evictor = runs.RunStore()
+    for index in range(runs.ANALYSIS_CACHE_MAX_ENTRIES + 5):
+        evictor._cache_result((f"T{index}",), StockAnalysis(ticker=f"T{index}"))
+    assert len(evictor.analysis_cache) == runs.ANALYSIS_CACHE_MAX_ENTRIES
+    assert ("T0",) not in evictor.analysis_cache, "oldest entry must be evicted first"
+    assert (
+        f"T{runs.ANALYSIS_CACHE_MAX_ENTRIES + 4}",
+    ) in evictor.analysis_cache, "newest entry must survive"
 
     print("analysis cache OK: ticker inputs cached independently of run ID")
 

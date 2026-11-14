@@ -2,32 +2,33 @@
 
 import json
 
-from app.agents import analyst_result
+from app.agents import analyst_result, TaskSpec, agent_instructions
 from app.models import AgentResult
 
 NAME = "fundamental"
 
 
 def build_agent(llm):
-    from crewai import Agent
+    from agents import Agent
 
     return Agent(
-        role="Fundamental Analyst",
-        goal="Assess the business quality and valuation of a stock from basic fundamentals.",
-        backstory=(
-            "You are a bottom-up equity analyst. You care about revenue and earnings "
-            "growth, margins, profitability and valuation multiples, and you keep it "
-            "simple - no deep financial modeling."
+        name="Fundamental Analyst",
+        instructions=agent_instructions(
+            role="Fundamental Analyst",
+            goal="Assess the business quality and valuation of a stock from basic fundamentals.",
+            backstory=(
+                "You are a bottom-up equity analyst. You care about revenue and earnings "
+                "growth, margins, profitability and valuation multiples, and you keep it "
+                "simple - no deep financial modeling."
+            ),
         ),
-        llm=llm,
-        allow_delegation=False,
+        model=llm.model_obj,
+        model_settings=llm.model_settings,
     )
 
 
 def build_task(agent, ticker: str, payload: dict):
-    from crewai import Task
-
-    return Task(
+    return TaskSpec(
         description=f"""Assess the fundamentals of stock ticker {ticker}.
 
 Normalized fundamentals (percentages are plain numbers, e.g. 31.4 means 31.4%; keys may be missing):
@@ -41,7 +42,6 @@ Respond with ONLY a JSON object, no markdown fences, no text outside the JSON:
             "A JSON object with keys: ticker, signal (bullish|bearish|neutral), "
             "confidence (0.0-1.0), summary (max 2 sentences)."
         ),
-        agent=agent,
     )
 
 

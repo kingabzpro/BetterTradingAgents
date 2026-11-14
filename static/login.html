@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>BetterTradingAgents - owner sign-in</title>
+  <style>
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      font-family: system-ui, sans-serif;
+      background: #f4f5f7;
+      color: #1a1a1a;
+    }
+    .login-card {
+      width: min(22rem, calc(100vw - 2rem));
+      background: #fff;
+      border: 1px solid #d9dce1;
+      border-radius: 12px;
+      padding: 1.75rem;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.06);
+    }
+    h1 { font-size: 1.1rem; margin: 0 0 0.25rem; }
+    p.hint { font-size: 0.85rem; color: #5b6470; margin: 0 0 1.25rem; }
+    label { display: block; font-size: 0.8rem; font-weight: 600; margin-bottom: 0.35rem; }
+    input {
+      width: 100%;
+      box-sizing: border-box;
+      padding: 0.55rem 0.7rem;
+      font-size: 1rem;
+      border: 1px solid #c9ced6;
+      border-radius: 8px;
+    }
+    button {
+      width: 100%;
+      margin-top: 0.9rem;
+      padding: 0.6rem;
+      font-size: 0.95rem;
+      font-weight: 600;
+      color: #fff;
+      background: #2563eb;
+      border: 0;
+      border-radius: 8px;
+      cursor: pointer;
+    }
+    button:disabled { opacity: 0.6; cursor: default; }
+    .error { color: #b42318; font-size: 0.85rem; min-height: 1.2em; margin: 0.75rem 0 0; }
+  </style>
+</head>
+<body>
+  <main class="login-card">
+    <h1>BetterTradingAgents</h1>
+    <p class="hint">This deployment is owner-protected. Enter the owner token to continue.</p>
+    <form id="login-form">
+      <label for="owner-token">Owner token</label>
+      <input id="owner-token" name="token" type="password" autocomplete="current-password" required>
+      <button type="submit">Sign in</button>
+    </form>
+    <p class="error" id="login-error" role="alert"></p>
+  </main>
+  <script src="/static/js/login.js"></script>
+</body>
+</html>

@@ -1,0 +1,66 @@
+{
+  "cells": [
+    {
+      "ticker": "NVDA",
+      "date": "2026-09-03",
+      "decision": "Overweight",
+      "ok": true,
+      "seconds": 156.8,
+      "calls": 16,
+      "input_tokens": 127230,
+      "output_tokens": 25590
+    },
+    {
+      "ticker": "AMD",
+      "date": "2026-09-03",
+      "decision": "Underweight",
+      "ok": true,
+      "seconds": 168.1,
+      "calls": 16,
+      "input_tokens": 139851,
+      "output_tokens": 26714
+    },
+    {
+      "ticker": "MSFT",
+      "date": "2026-09-03",
+      "decision": "Overweight",
+      "ok": true,
+      "seconds": 226.6,
+      "calls": 16,
+      "input_tokens": 137061,
+      "output_tokens": 28942
+    },
+    {
+      "ticker": "NVDA",
+      "date": "2026-09-25",
+      "decision": "Overweight",
+      "ok": true,
+      "seconds": 158.0,
+      "calls": 16,
+      "input_tokens": 125598,
+      "output_tokens": 25347
+    },
+    {
+      "ticker": "AMD",
+      "date": "2026-09-25",
+      "decision": "Hold",
+      "ok": true,
+      "seconds": 176.0,
+      "calls": 18,
+      "input_tokens": 116453,
+      "output_tokens": 23037
+    },
+    {
+      "ticker": "MSFT",
+      "date": "2026-09-25",
+      "decision": "Overweight",
+      "ok": true,
+      "seconds": 181.3,
+      "calls": 16,
+      "input_tokens": 121918,
+      "output_tokens": 22086
+    }
+  ],
+  "endpoint": "modal (configured via .env, see report)",
+  "model": "deepseek-ai/DeepSeek-V4.1-Flash"
+}

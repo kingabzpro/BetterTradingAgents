@@ -102,8 +102,8 @@ async def sink_checks():
     assert [e["text"] for e in events] == ["buy ", "signal"], events
     assert all(e["type"] == "agent_token" and e["ticker"] == "NVDA"
                and e["agent"] == "news" for e in events)
-    # Chunks arriving on a WORKER thread still forward (crewai runs parts of
-    # kickoff in executors; get_running_loop() raises there - the original bug).
+    # Chunks arriving on a WORKER thread still forward (the sink must not
+    # assume it runs on the loop thread; get_running_loop() raises there).
     import threading
 
     events.clear()

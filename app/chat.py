@@ -14,8 +14,10 @@ import logging
 import re
 import textwrap
 
+from app.agents import TaskSpec, agent_instructions
 from app.config import settings
 from app.models import PortfolioSummary, StockAnalysis
+from app.redact import redact
 from app.workflow import (
     _BACKOFF_SECONDS,
     _classify_failure,
@@ -32,32 +34,33 @@ _THINK_OPEN = re.compile(r"\\?<think\b[^>]*>", re.IGNORECASE)
 
 
 def build_agent(llm):
-    from crewai import Agent
+    from agents import Agent
 
     return Agent(
-        role="Portfolio Manager",
-        goal="Give the user a brief, natural, useful answer to their latest message.",
-        backstory=(
-            "You are a practical portfolio manager having a normal conversation. "
-            "Answer what the user just asked without narrating your research process. "
-            "Use the supplied context silently and treat the user's statements about "
-            "their own portfolio as current. This is an educational simulation, not "
-            "investment advice."
+        name="Portfolio Manager",
+        instructions=agent_instructions(
+            role="Portfolio Manager",
+            goal="Give the user a brief, natural, useful answer to their latest message.",
+            backstory=(
+                "You are a practical portfolio manager having a normal conversation. "
+                "Answer what the user just asked without narrating your research process. "
+                "Use the supplied context silently and treat the user's statements about "
+                "their own portfolio as current. This is an educational simulation, not "
+                "investment advice."
+            ),
         ),
-        llm=llm,
-        allow_delegation=False,
+        model=llm.model_obj,
+        model_settings=llm.model_settings,
     )
 
 
 def build_task(agent, ticker: str, dossier: dict, history: list[dict], question: str):
-    from crewai import Task
-
     transcript = "\n".join(
         f"{'User' if message['role'] == 'user' else 'Manager'}: "
         f"{message['content']}"
         for message in history
     ) or "(no earlier turns)"
-    return Task(
+    return TaskSpec(
         description=f"""Reply to this latest user message:
 {question}
 
@@ -75,7 +78,6 @@ Rules:
 - Use no more than 2 short sentences (about 50 words).
 - Output only the answer: no analysis, reasoning, transcript, markdown headings, or JSON.""",
         expected_output="A direct, natural answer of no more than two short sentences.",
-        agent=agent,
     )
 
 
@@ -169,13 +171,12 @@ def _dossier(
 
 
 async def _ask_once(agent, task) -> str:
-    from crewai import Crew
+    from agents import Runner
 
-    crew = Crew(agents=[agent], tasks=[task])
-    output = await asyncio.wait_for(
-        crew.kickoff_async(), timeout=settings.llm_timeout_seconds
+    result = await asyncio.wait_for(
+        Runner.run(agent, task.description), timeout=settings.llm_timeout_seconds
     )
-    answer = clean_answer(str(getattr(output, "raw", "")))
+    answer = clean_answer(str(result.final_output or ""))
     if not answer:
         raise ValueError("empty chat response")
     return answer
@@ -232,5 +233,7 @@ async def answer_question(
                 await asyncio.sleep(_BACKOFF_SECONDS[min(attempt - 1, 1)])
                 continue
             break
-    logger.warning("[chat] %s failed: %s", analysis.ticker, last_error)
-    raise RuntimeError(str(last_error)[:200])
+    # Redact at the source: this text becomes the HTTP 503 detail and the
+    # log line, and provider errors can carry key-bearing request URLs.
+    logger.warning("[chat] %s failed: %s", analysis.ticker, redact(str(last_error)))
+    raise RuntimeError(redact(str(last_error))[:200])

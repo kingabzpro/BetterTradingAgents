@@ -171,30 +171,18 @@ async def _newest_result(
     """Newest completed result for this ticker that is not the baseline run."""
     from app import run_history
 
-    runs = await run_history.list_runs(owner_id, limit=100)
-    baseline_run = baseline.run_id if baseline else None
-    baseline_at = baseline.analyzed_at if baseline else None
-    best: WatchlistCall | None = None
-    best_at = -1.0
-    for item in runs:
-        if item.status != "completed" or ticker not in item.tickers:
-            continue
-        if item.run_id == baseline_run:
-            continue
-        # Prefer strictly newer starts; a missing baseline accepts any run.
-        if baseline_at is not None and item.started_at <= baseline_at:
-            continue
-        status = await run_history.get(item.run_id)
-        if status is None:
-            continue
-        analysis = status.results.get(ticker)
-        if analysis is None or analysis.error:
-            continue
-        call = _call_from_analysis(analysis, item.run_id, item.started_at)
-        if item.started_at > best_at:
-            best = call
-            best_at = item.started_at
-    return best, (best_at if best is not None else None)
+    found = await run_history.newest_analysis(
+        owner_id,
+        ticker,
+        exclude_run_id=baseline.run_id if baseline else "",
+        after_at=baseline.analyzed_at if baseline else None,
+    )
+    if found is None:
+        return None, None
+    return (
+        _call_from_analysis(found.analysis, found.run_id, found.started_at),
+        found.started_at,
+    )
 
 
 def _age_hours(as_of: str) -> float | None:

@@ -21,6 +21,7 @@ os.environ["OLOSTEP_API_KEY"] = ""
 os.environ["FINNHUB_API_KEY"] = ""
 
 import app.workflow as workflow  # noqa: E402
+import app.tools.market_data as market_data  # noqa: E402
 from app.memory import init as memory_init  # noqa: E402
 from app.tools.market_data import MarketData  # noqa: E402
 
@@ -196,4 +197,27 @@ print(
     "regime cache OK: concurrent siblings share one call, failures retried, "
     "incognito isolated, content-keyed"
 )
+
+# P2.10: the concentration gate's close series reuse the TTL cache, so a
+# multi-holding run fetches each series once instead of per lookup.
+fetches = {"count": 0}
+
+
+def _counting_history(ticker):  # noqa: ARG001
+    fetches["count"] += 1
+    return {"closes": [1.0, 2.0, 3.0], "highs": [], "lows": [], "volumes": [], "price": 3.0}
+
+
+real_history = market_data._yf_history
+market_data._yf_history = _counting_history
+try:
+    first = asyncio.run(market_data.get_closes("NVDA"))
+    second = asyncio.run(market_data.get_closes("NVDA"))
+finally:
+    market_data._yf_history = real_history
+assert first == second == [1.0, 2.0, 3.0], first
+assert fetches["count"] == 1, f"second get_closes refetched: {fetches}"
+market_data._response_cache.clear()
+
+print("close-series TTL OK: one fetch serves repeated lookups")
 print("ALL CHECKS PASSED")

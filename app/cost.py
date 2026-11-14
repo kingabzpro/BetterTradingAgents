@@ -33,7 +33,7 @@ PRICES_AS_OF = "2026-10-21"
 # everything that is not a letter or digit dropped ("zai-org/GLM-5.3-Flash"
 # and "glm-5.3-flash" both match "glm53flash").
 MODEL_PRICES: dict[str, tuple[float, float]] = {
-    "deepseekv41flash": (0.30, 1.20),
+    "deepseekv41flash1017": (0.30, 1.20),
     "deepseekflash": (0.30, 1.20),
     "glm53": (1.40, 4.40),
     "glm53flash": (0.15, 0.50),

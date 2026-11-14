@@ -221,6 +221,19 @@ assert "revenue_growth_ttm_pct" not in early, early
 assert sec.fundamentals_as_of({}, "2025-03-01") == {}
 print("SEC EDGAR fundamentals_as_of OK: margins, growth, ROE, EPS, graceful gaps")
 
+# issue #18 shape: a filer abandons the contract-revenue tag while Revenues
+# stays live; the stale tag must not win just because it is tried first
+nvda_facts = dict(SEC_FACTS["facts"]["us-gaap"])
+nvda_facts["RevenueFromContractWithCustomerExcludingAssessedTax"] = {
+    "units": {"USD": [f for f in REVENUE_Q if f["end"] <= "2023-12-31"]},
+}
+NVDA_FACTS = {"entityName": "Test Co", "facts": {"us-gaap": nvda_facts}}
+stale = sec.fundamentals_as_of(NVDA_FACTS, "2025-03-01")
+assert stale["revenue_ttm_usd"] == 620.0, stale  # live Revenues, not the 2023 tag
+assert stale["revenue_growth_ttm_pct"] == 34.78, stale
+assert stale["gross_margin_pct"] == 60.0, stale
+print("SEC EDGAR stale-tag fallback OK: freshest tag wins over first tag")
+
 # ---- momentum baseline signal ------------------------------------------------------
 rising = [100.0 + i * 0.5 for i in range(130)]
 falling = [200.0 - i * 0.3 for i in range(130)]

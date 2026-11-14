@@ -8,33 +8,34 @@ dedicated source; the analyst notes that its read is data-driven.
 
 import json
 
-from app.agents import analyst_result
+from app.agents import analyst_result, TaskSpec, agent_instructions
 from app.models import AgentResult
 
 NAME = "market"
 
 
 def build_agent(llm):
-    from crewai import Agent
+    from agents import Agent
 
     return Agent(
-        role="Market Analyst",
-        goal="Judge the broader market regime from index, volatility and rate data.",
-        backstory=(
-            "You are a macro strategist. You read what the overall market is doing "
-            "- index trends, volatility, rates - before anyone looks at a single "
-            "stock, because even the best setup struggles against a hostile market. "
-            "All numbers are calculated by Python; you interpret, never invent."
+        name="Market Analyst",
+        instructions=agent_instructions(
+            role="Market Analyst",
+            goal="Judge the broader market regime from index, volatility and rate data.",
+            backstory=(
+                "You are a macro strategist. You read what the overall market is doing "
+                "- index trends, volatility, rates - before anyone looks at a single "
+                "stock, because even the best setup struggles against a hostile market. "
+                "All numbers are calculated by Python; you interpret, never invent."
+            ),
         ),
-        llm=llm,
-        allow_delegation=False,
+        model=llm.model_obj,
+        model_settings=llm.model_settings,
     )
 
 
 def build_task(agent, ticker: str, payload: dict):
-    from crewai import Task
-
-    return Task(
+    return TaskSpec(
         description=f"""Assess the overall market regime relevant to trading stock {ticker}.
 
 Market data (computed by Python from ~6 months of daily index closes; a null or missing section means that input is unavailable - do not invent it):
@@ -48,7 +49,6 @@ Respond with ONLY a JSON object, no markdown fences, no text outside the JSON:
             "A JSON object with keys: ticker, signal (bullish|bearish|neutral), "
             "confidence (0.0-1.0), summary (max 2 sentences)."
         ),
-        agent=agent,
     )
 
 

@@ -22,9 +22,9 @@ import logging
 from datetime import date, timedelta
 from math import isfinite
 
-import httpx
 
 from app.config import settings
+from app.tools.http_client import get_client
 
 logger = logging.getLogger("sec_edgar")
 
@@ -34,8 +34,9 @@ DEFAULT_USER_AGENT = (
     "BetterTradingAgents/0.1 (educational research; contact@example.com)"
 )
 
-# Concept candidates per metric: filers tag the same line differently, so try
-# each in order and take the first that carries data.
+# Concept candidates per metric: filers tag the same line differently and
+# sometimes abandon a tag while a sibling stays live, so pick the candidate
+# carrying the most recent data rather than the first one with any rows.
 REVENUE_TAGS = (
     "RevenueFromContractWithCustomerExcludingAssessedTax",
     "Revenues",
@@ -159,15 +160,25 @@ def _instant_value(rows: list[dict], as_of: str) -> float | None:
 
 
 def _unit_rows(facts: dict, tags: tuple[str, ...], unit: str, as_of: str) -> list[dict]:
+    """Rows of the candidate tag carrying the most recent data.
+
+    Filers abandon tags: NVDA stopped tagging
+    RevenueFromContractWithCustomerExcludingAssessedTax after FY2022 while
+    Revenues stayed live, so "first tag with rows" serves years-stale data
+    (and looks correct on the many filers that never switched). The tag whose
+    latest period ends last wins; ties keep the earlier candidate's order.
+    """
+    best: list[dict] = []
+    best_end = ""
     for tag in tags:
         node = facts.get(tag)
         if not isinstance(node, dict):
             continue
-        units = node.get("units", {})
-        rows = select_as_filed(units.get(unit, []), as_of)
-        if rows:
-            return rows
-    return []
+        rows = select_as_filed(node.get("units", {}).get(unit, []), as_of)
+        latest = max((r["end"] for r in rows), default="")
+        if latest > best_end:  # ISO dates sort lexicographically
+            best, best_end = rows, latest
+    return best
 
 
 def fundamentals_as_of(companyfacts: dict, as_of: str) -> dict:
@@ -223,10 +234,10 @@ def fundamentals_as_of(companyfacts: dict, as_of: str) -> dict:
 
 
 async def _get_json(url: str) -> dict:
-    async with httpx.AsyncClient(timeout=30, headers=_headers()) as client:
-        response = await client.get(url)
-        response.raise_for_status()
-        return response.json()
+    client = get_client()
+    response = await client.get(url, headers=_headers(), timeout=30)
+    response.raise_for_status()
+    return response.json()
 
 
 async def _cik_for(ticker: str) -> int | None:

@@ -448,7 +448,7 @@ export function renderResultCard(analysis) {
     : "";
   const tradeNote = state.runIncognito
     ? '<span class="muted">Incognito run: trading, saving, and history are off.</span>'
-    : (analysis.decision === "BUY" && analysis.price ? "" : '<span class="muted">Paper orders are offered on BUY calls with a live price.</span>');
+    : (analysis.decision === "BUY" && analysis.price ? "" : '<span class="muted">Paper orders are offered on BUY calls and on SELLs of held positions.</span>');
   const printBtn = '<button class="secondary-btn print-btn" type="button">Print brief</button>';
 
   card.innerHTML = `

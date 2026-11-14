@@ -530,6 +530,9 @@ class BrokerPosition(BaseModel):
 
     symbol: str
     quantity: float
+    # Shares actually tradable right now (excludes shares locked in open
+    # orders); None when the broker does not break it out.
+    available: float | None = None
     avg_entry_price: float
     current_price: float | None = None
     market_value: float | None = None
@@ -545,11 +548,17 @@ class BrokerOrder(BaseModel):
     run_id: str
     ticker: str
     side: Literal["buy", "sell"]
+    # Orders are sized in shares; notional keeps the USD estimate the row was
+    # submitted with (qty x reference price) for exposure and budget math.
+    qty: float | None = None
     notional: float
     status: str  # pending_submit | unknown | an Alpaca order status
     decision: str | None = None
     confidence: float | None = None
     decision_as_of: str | None = None
+    # Why an order exists when no research run does: the auto-exit rule that
+    # fired (stop-loss, take-profit, max-hold); None for decision-backed orders.
+    note: str | None = None
     filled_qty: float | None = None
     filled_avg_price: float | None = None
     error: str | None = None
@@ -563,7 +572,7 @@ class BrokerOrderRequest(BaseModel):
     run_id: str = Field(min_length=1, max_length=64)
     ticker: str = Field(min_length=1, max_length=12)
     side: Literal["buy", "sell"]
-    notional: float = Field(gt=0, le=1_000_000)
+    qty: float = Field(gt=0, le=1_000_000)
     confirm: bool = False
 
 
@@ -593,6 +602,19 @@ class AutomationSession(BaseModel):
     error: str | None = None
 
 
+class AutomationExitAttempt(BaseModel):
+    """One price-only auto-exit attempt: one per position and reason per day."""
+
+    ticker: str
+    reason: str  # stop-loss | take-profit | max-hold
+    status: str  # submitted (or an Alpaca status) | rejected | skipped
+    qty: float | None = None
+    price: float | None = None
+    client_order_id: str | None = None
+    error: str | None = None
+    created_at: str = ""
+
+
 class AutomationStatus(BaseModel):
     """Current autopilot state for the portfolio page card."""
 
@@ -609,12 +631,23 @@ class AutomationStatus(BaseModel):
     allow_sells: bool = True
     next_check_at: float | None = None
     sessions: list[AutomationSession] = Field(default_factory=list)
+    exit_enabled: bool = False
+    exit_stop_loss_pct: float = 0.0
+    exit_take_profit_pct: float = 0.0
+    exit_max_hold_days: int = 0
+    exit_attempts: list[AutomationExitAttempt] = Field(default_factory=list)
 
 
 class AutomationUpdateRequest(BaseModel):
     """Body of POST /api/automation; flips the persisted on/off toggle."""
 
     enabled: bool
+
+
+class OwnerLoginRequest(BaseModel):
+    """Body of POST /api/owner/login: the shared-deployment owner token (P2.2)."""
+
+    token: str = Field(min_length=1, max_length=256)
 
 
 class SettingsUpdateRequest(BaseModel):

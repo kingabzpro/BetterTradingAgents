@@ -9,6 +9,7 @@ const esc = window.BTA_UI.escapeHtml;
 const showToast = window.BTA_UI.showToast;
 const fmt = (value) => (value == null ? "n/a" : `$${Number(value).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`);
 const fmtUsd0 = (value) => (value == null ? "n/a" : `$${Number(value).toLocaleString(undefined, { maximumFractionDigits: 0 })}`);
+const fmtSh = (value) => (value == null ? "n/a" : Number(value).toLocaleString(undefined, { maximumFractionDigits: 6 }));
 
 // Filled, canceled, expired, rejected: no longer move, cannot be canceled.
 const PAPER_TERMINAL = new Set(["filled", "canceled", "expired", "rejected"]);
@@ -73,7 +74,7 @@ async function renderSyncState() {
     }
     if (sync.drift && sync.drift.length) {
       const parts = sync.drift.slice(0, 3).map((d) =>
-        `${esc(d.symbol || "order")} ${esc(d.side || "")}${d.notional != null ? ` $${Number(d.notional).toFixed(2)}` : ""}`);
+        `${esc(d.symbol || "order")} ${esc(d.side || "")}${d.qty != null ? ` ${fmtSh(d.qty)} sh` : d.notional != null ? ` $${Number(d.notional).toFixed(2)}` : ""}`);
       el.innerHTML = `Out of sync with the paper broker: ${sync.drift.length} open order(s) this app did not place (${parts.join(", ")}${sync.drift.length > 3 ? ", …" : ""}).`;
     } else {
       el.textContent = "Broker sync check failed; order state may be stale.";
@@ -208,14 +209,20 @@ function renderOrders(orders) {
   for (const order of orders) {
     const terminal = PAPER_TERMINAL.has(order.status);
     const filled = order.filled_avg_price != null ? fmt(order.filled_avg_price) : "n/a";
-    const decision = order.run_id
-      ? `<a href="/?run=${encodeURIComponent(order.run_id)}">View decision</a>`
-      : "n/a";
+    // Orders with no research run behind them (auto-exit rules, dust
+    // cleanup) have no decision to link to; the note (the rule, or the
+    // cleanup reason) is the useful label instead (P2.4).
+    const decision = ["auto-exit", "dust-cleanup"].includes(order.run_id)
+      ? esc(order.note || order.run_id)
+      : order.run_id
+        ? `<a href="/?run=${encodeURIComponent(order.run_id)}">View decision</a>`
+        : "n/a";
     const row = document.createElement("tr");
     row.innerHTML = `
       <td data-label="Placed">${esc(order.created_at || "")}</td>
       <td data-label="Ticker"><strong>${esc(order.ticker)}</strong></td>
       <td data-label="Side"><span class="side-chip ${esc(order.side)}">${esc(order.side)}</span></td>
+      <td class="num" data-label="Shares">${fmtSh(order.qty)}</td>
       <td class="num" data-label="Notional">${fmtUsd0(order.notional)}</td>
       <td data-label="Status">${statusChip(order.status)}${order.error ? `<small class="order-error">${esc(order.error)}</small>` : ""}</td>
       <td class="num" data-label="Filled avg price">${filled}</td>
@@ -466,7 +473,8 @@ function orderText(order) {
   if (order.status === "skipped" || order.status === "rejected" || order.status === "braked") {
     return `${order.side} ${order.ticker}: ${order.error || order.status}`;
   }
-  return `${order.side === "buy" ? "Bought" : "Sold"} ${order.ticker} ${fmtUsd0(order.notional)} (${order.status})`;
+  const shares = order.qty != null ? ` ${fmtSh(order.qty)} sh` : "";
+  return `${order.side === "buy" ? "Bought" : "Sold"} ${order.ticker}${shares} (${fmtUsd0(order.notional)}) (${order.status})`;
 }
 
 function renderAutomation(status) {
@@ -488,9 +496,15 @@ function renderAutomation(status) {
   const next = status.enabled && status.next_check_at && !status.session_active
     ? ` Next check ${fmtWhen(status.next_check_at)}.`
     : "";
+  const rule = (value, unit) => (value > 0 ? `${Math.round(value * 100)}%${unit}` : "off");
+  const exits = status.exit_enabled
+    ? ` Auto-exit rules on: stop-loss ${rule(status.exit_stop_loss_pct, "")}, ` +
+      `take-profit ${rule(status.exit_take_profit_pct, "")}, ` +
+      `max-hold ${status.exit_max_hold_days > 0 ? status.exit_max_hold_days + "d" : "off"}.`
+    : "";
   $("automation-config").textContent =
     `Every ${every} while the market is open: scans the market for the top ${status.candidates} candidates, adds held tickers, runs the full agent crew ` +
-    `(${status.depth} depth, ${status.outlook}), then submits BUYs at ${Math.round(status.min_confidence * 100)}%+ confidence and SELLs that exit held positions, through the guarded paper broker.${next}`;
+    `(${status.depth} depth, ${status.outlook}), then submits BUYs at ${Math.round(status.min_confidence * 100)}%+ confidence and SELLs that exit held positions, through the guarded paper broker.${exits}${next}`;
 
   const warn = $("automation-warn");
   if (status.enabled && !status.trading_enabled) {

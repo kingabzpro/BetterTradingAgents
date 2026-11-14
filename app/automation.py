@@ -28,6 +28,12 @@ equity or would take cash below AUTOMATION_CASH_FLOOR_PCT; while SPY sits
 below its 200-day average BUYs are recorded as braked (research and exits
 continue); and WEBHOOK_URL, when set, receives one plain-text POST per
 finished session.
+
+Between sessions a price-only exit sweep (the last P2.4 slice, no LLM)
+checks every open position against stop-loss, take-profit, and max-hold
+rules and submits full exits through broker.submit_exit_order - the guarded
+path that skips only the decision-match checks - one attempt per position
+and reason per UTC day, each attempt recorded before the order goes out.
 """
 
 from __future__ import annotations
@@ -36,19 +42,21 @@ import asyncio
 import json
 import logging
 import time
-from datetime import date, timedelta
-
-import httpx
+from datetime import date, datetime, timedelta, timezone
 
 from app.config import settings
 from app.depth import normalize_depth
 from app.models import (
+    AutomationExitAttempt,
     AutomationOrderOutcome,
     AutomationSession,
     AutomationStatus,
+    BrokerPosition,
     StockAnalysis,
 )
 from app.outlook import normalize_outlook
+from app.redact import redact
+from app.tools.http_client import get_client
 from app.db import connect as _connect
 
 logger = logging.getLogger("automation")
@@ -56,6 +64,9 @@ logger = logging.getLogger("automation")
 SESSIONS_KEPT = 200  # prune the local history; orders and runs live forever
 MAX_SESSION_TICKERS = 10  # cost brake: candidates + held, truncated with a note
 POLL_SECONDS = 15.0  # loop granularity; makes the toggle responsive
+# Auto-exit cadence (P2.4): the price-only check between sessions. The
+# per-position-and-reason daily cap bounds what any single rule can do.
+EXIT_SWEEP_SECONDS = 900.0
 
 _loop_task: asyncio.Task | None = None
 _session_task: asyncio.Task | None = None
@@ -65,6 +76,7 @@ _session_task: asyncio.Task | None = None
 # session; check .locked() instead of reading a flag.
 _session_lock = asyncio.Lock()
 _next_check_at: float | None = None
+_next_exit_check_at: float = 0.0
 
 
 # ---- local tables -----------------------------------------------------------
@@ -111,6 +123,28 @@ def _init_db() -> None:
             "error = COALESCE(error, 'server restarted mid-session') "
             "WHERE status = 'running'",
             (now,),
+        )
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS automation_exit_attempts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                day TEXT NOT NULL,
+                ticker TEXT NOT NULL,
+                reason TEXT NOT NULL,
+                status TEXT NOT NULL,
+                qty REAL,
+                price REAL,
+                client_order_id TEXT,
+                error TEXT,
+                created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            )
+            """
+        )
+        # One attempt per position and reason per UTC day (P2.4); the index
+        # is the backstop behind the pre-check in the sweep.
+        connection.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_exit_attempts_unique "
+            "ON automation_exit_attempts(day, ticker, reason)"
         )
 
 
@@ -270,6 +304,11 @@ async def status_snapshot() -> AutomationStatus:
         allow_sells=settings.automation_allow_sells,
         next_check_at=_next_check_at,
         sessions=await asyncio.to_thread(_list_sessions),
+        exit_enabled=settings.automation_exit_enabled,
+        exit_stop_loss_pct=settings.automation_exit_stop_loss_pct,
+        exit_take_profit_pct=settings.automation_exit_take_profit_pct,
+        exit_max_hold_days=settings.automation_exit_max_hold_days,
+        exit_attempts=await asyncio.to_thread(_todays_exit_attempts),
     )
 
 
@@ -345,13 +384,28 @@ async def _bear_market() -> bool | None:
     return window[-1] < sum(window) / len(window)
 
 
+async def _post_lines(lines: list[str]) -> None:
+    """One plain-text webhook POST; best-effort, never raises."""
+    url = settings.webhook_url
+    if not url:
+        return
+    try:
+        client = get_client()
+        await client.post(
+            url,
+            content="\n".join(lines),
+            headers={"Content-Type": "text/plain"},
+            timeout=10.0,
+        )
+    except Exception as exc:  # noqa: BLE001
+        # The webhook URL itself is a secret; httpx errors can echo it whole.
+        logger.warning("[automation] webhook POST failed: %s", redact(str(exc)))
+
+
 async def _post_webhook(session_outcome: "AutomationSession") -> None:
     """One plain-text POST per finished session (completed or failed; wiki
     Roadmap P2.4). Best-effort: a webhook failure logs and never touches the
     session's own status."""
-    url = settings.webhook_url
-    if not url:
-        return
     lines = [
         f"BetterTradingAgents autopilot session #{session_outcome.id} "
         f"{session_outcome.status} ({session_outcome.trigger})"
@@ -376,13 +430,234 @@ async def _post_webhook(session_outcome: "AutomationSession") -> None:
         lines.append(entry)
     if session_outcome.error:
         lines.append(f"Error: {session_outcome.error}")
+    await _post_lines(lines)
+
+
+# ---- auto-exit rules (wiki Roadmap P2.4, no LLM) ----------------------------
+
+
+def _utc_day() -> str:
+    """The UTC day key, matching the date('now') semantics broker_orders
+    uses for its own per-day caps."""
+    return datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+
+def _record_exit_attempt(ticker: str, reason: str, qty: float | None, price: float | None) -> int | None:
+    """Claim today's single attempt slot for (ticker, reason); None = taken."""
+    with _connect() as connection:
+        cursor = connection.execute(
+            "INSERT OR IGNORE INTO automation_exit_attempts "
+            "(day, ticker, reason, status, qty, price) VALUES (?, ?, ?, 'pending', ?, ?)",
+            (_utc_day(), ticker, reason, qty, price),
+        )
+        return int(cursor.lastrowid) if cursor.rowcount == 1 else None
+
+
+def _finish_exit_attempt(
+    attempt_id: int, status: str, client_order_id: str | None = None, error: str | None = None
+) -> None:
+    with _connect() as connection:
+        connection.execute(
+            "UPDATE automation_exit_attempts SET status = ?, client_order_id = ?, "
+            "error = ? WHERE id = ?",
+            (status, client_order_id, error, attempt_id),
+        )
+
+
+def _todays_exit_attempts(limit: int = 20) -> list[AutomationExitAttempt]:
+    with _connect() as connection:
+        rows = connection.execute(
+            "SELECT * FROM automation_exit_attempts WHERE day = ? "
+            "ORDER BY id DESC LIMIT ?",
+            (_utc_day(), limit),
+        ).fetchall()
+    return [
+        AutomationExitAttempt(
+            ticker=row["ticker"],
+            reason=row["reason"],
+            status=row["status"],
+            qty=row["qty"],
+            price=row["price"],
+            client_order_id=row["client_order_id"],
+            error=row["error"],
+            created_at=row["created_at"] or "",
+        )
+        for row in rows
+    ]
+
+
+def _held_days(ticker: str) -> float | None:
+    """How long the current position has been held, from local fills: the
+    first filled BUY after the last filled SELL. None when the fills do not
+    tell (the position predates this table or came from elsewhere), and the
+    max-hold rule then fails open instead of exiting blind."""
+    with _connect() as connection:
+        row = connection.execute(
+            "SELECT MAX(created_at) AS stamp FROM broker_orders "
+            "WHERE ticker = ? AND side = 'sell' AND status = 'filled'",
+            (ticker,),
+        ).fetchone()
+        last_sell = row["stamp"] if row else None
+        if last_sell:
+            row = connection.execute(
+                "SELECT MIN(created_at) AS stamp FROM broker_orders "
+                "WHERE ticker = ? AND side = 'buy' AND status = 'filled' "
+                "AND created_at > ?",
+                (ticker, last_sell),
+            ).fetchone()
+        else:
+            row = connection.execute(
+                "SELECT MIN(created_at) AS stamp FROM broker_orders "
+                "WHERE ticker = ? AND side = 'buy' AND status = 'filled'",
+                (ticker,),
+            ).fetchone()
+        opened = row["stamp"] if row else None
+    if not opened:
+        return None
     try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            await client.post(
-                url, content="\n".join(lines), headers={"Content-Type": "text/plain"}
-            )
+        opened_at = datetime.fromisoformat(opened)
+    except ValueError:
+        return None
+    return max(0.0, (datetime.now(timezone.utc).replace(tzinfo=None) - opened_at).total_seconds() / 86400.0)
+
+
+def _exit_reason(position: BrokerPosition) -> tuple[str | None, float | None]:
+    """The first auto-exit rule this position trips, in priority order
+    (stop-loss, then take-profit, then max-hold), or None. One exit per
+    position per sweep: the first rule to fire speaks for the position."""
+    entry = position.avg_entry_price or 0.0
+    price = position.current_price or 0.0
+    plpc = (price / entry - 1.0) if entry > 0 and price else position.unrealized_plpc
+    stop = settings.automation_exit_stop_loss_pct
+    if stop > 0 and plpc is not None and plpc <= -stop:
+        return "stop-loss", price or None
+    take = settings.automation_exit_take_profit_pct
+    if take > 0 and plpc is not None and plpc >= take:
+        return "take-profit", price or None
+    days = settings.automation_exit_max_hold_days
+    if days > 0:
+        held = _held_days(position.symbol)
+        if held is not None and held >= days:
+            return "max-hold", price or None
+    return None, price or None
+
+
+async def run_exit_sweep() -> list[AutomationExitAttempt]:
+    """One price-only pass over the open positions (P2.4 auto-exit).
+
+    Every position is checked against stop-loss, take-profit, and max-hold;
+    the first rule a position trips gets one full-exit attempt through
+    broker.submit_exit_order, and each (position, reason) gets one attempt
+    per UTC day: the attempt row is claimed before the order is submitted,
+    so a crash, a rejection, or a busy sweep cannot multiply attempts. The
+    sweep only runs while the market is open and the kill switch is up;
+    anything unavailable skips the pass rather than exiting blind.
+    """
+    if not settings.automation_exit_enabled:
+        return []
+    if not (
+        settings.automation_exit_stop_loss_pct > 0
+        or settings.automation_exit_take_profit_pct > 0
+        or settings.automation_exit_max_hold_days > 0
+    ):
+        return []
+    if not settings.alpaca_configured or not settings.alpaca_trading_enabled:
+        return []
+
+    from app import broker
+
+    try:
+        clock = await broker.clock()
     except Exception as exc:  # noqa: BLE001
-        logger.warning("[automation] webhook POST failed: %s", exc)
+        logger.warning("[automation] exit sweep skipped, market clock unavailable: %s", exc)
+        return []
+    if not clock["is_open"]:
+        return []
+    try:
+        held = await broker.positions()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("[automation] exit sweep skipped, positions unavailable: %s", exc)
+        return []
+
+    attempted: list[AutomationExitAttempt] = []
+    for position in held:
+        reason, price = _exit_reason(position)
+        if reason is None:
+            continue
+        sellable = (
+            position.available if position.available is not None else position.quantity
+        )
+        qty = broker.floor_qty(sellable)
+        attempt_id = _record_exit_attempt(position.symbol, reason, qty, price)
+        if attempt_id is None:
+            continue  # already attempted today; the row speaks for the day
+        if qty <= 0:
+            error = "no sellable shares in the held position"
+            _finish_exit_attempt(attempt_id, "skipped", error=error)
+            logger.info("[automation] auto-exit %s %s skipped: %s", reason, position.symbol, error)
+            attempted.append(
+                AutomationExitAttempt(
+                    ticker=position.symbol, reason=reason, status="skipped",
+                    qty=qty, price=price, error=error,
+                )
+            )
+            continue
+        try:
+            order = await broker.submit_exit_order(position.symbol, qty, reason)
+        except Exception as exc:  # noqa: BLE001 - one rejection must not stop the sweep
+            logger.warning(
+                "[automation] auto-exit %s %s rejected: %s", reason, position.symbol, exc
+            )
+            error = str(exc)[:300]
+            _finish_exit_attempt(attempt_id, "rejected", error=error)
+            attempted.append(
+                AutomationExitAttempt(
+                    ticker=position.symbol, reason=reason, status="rejected",
+                    qty=qty, price=price, error=error,
+                )
+            )
+            continue
+        _finish_exit_attempt(attempt_id, order.status, client_order_id=order.client_order_id)
+        logger.info(
+            "[automation] auto-exit %s %s %g sh (~$%.2f) -> %s",
+            reason, position.symbol, qty, order.notional, order.status,
+        )
+        attempted.append(
+            AutomationExitAttempt(
+                ticker=position.symbol,
+                reason=reason,
+                status=order.status,
+                qty=qty,
+                price=price,
+                client_order_id=order.client_order_id,
+            )
+        )
+    if attempted:
+        await _post_lines(_exit_webhook_lines(attempted))
+    return attempted
+
+
+def _exit_webhook_lines(attempts: list[AutomationExitAttempt]) -> list[str]:
+    lines = [f"BetterTradingAgents auto-exit: {len(attempts)} exit attempt(s) today"]
+    for attempt in attempts:
+        entry = f"Exit: {attempt.ticker} ({attempt.reason}) -> {attempt.status}"
+        if attempt.error:
+            entry += f" ({attempt.error})"
+        lines.append(entry)
+    return lines
+
+
+async def _maybe_run_exit_sweep() -> None:
+    """Run the exit sweep when its cadence is due; never raises."""
+    global _next_exit_check_at
+    now = time.time()
+    if now < _next_exit_check_at:
+        return
+    _next_exit_check_at = now + EXIT_SWEEP_SECONDS
+    try:
+        await run_exit_sweep()
+    except Exception as exc:  # noqa: BLE001 - the loop outlives any bug
+        logger.error("[automation] exit sweep failed: %s", exc)
 
 
 async def run_session(trigger: str = "schedule") -> AutomationSession:
@@ -633,22 +908,45 @@ async def _act_on_decision(
                         f"{settings.automation_cash_floor_pct:.0%} of equity"
                     ),
                 )
+        # Shares, not dollars: the budget stays a USD estimate, but the order
+        # itself is a share count fixed at the decision's reference price.
+        # Sizes land on half-share steps (26 or 26.5, never 26.7389), so the
+        # proposal a person confirms is the order that gets placed.
+        if not analysis.price or analysis.price <= 0:
+            return AutomationOrderOutcome(
+                ticker=ticker, side="buy", notional=notional, status="skipped",
+                error="decision has no reference price to size shares from",
+            )
+        qty = broker.clean_qty(notional / analysis.price)
+        if qty <= 0:
+            return AutomationOrderOutcome(
+                ticker=ticker, side="buy", notional=notional, status="skipped",
+                error="budget is under half a share at the reference price",
+            )
     elif analysis.decision == "SELL" and settings.automation_allow_sells:
         position = held_map.get(ticker)
         if position is None:
             return None  # the broker would reject a short; nothing to exit
-        notional = position.market_value
-        if notional is None or notional <= 0:
+        # Full exit in shares: selling the USD value lets the broker's own
+        # price conversion overshoot the holding (the CMBT rejection).
+        sellable = (
+            position.available
+            if position.available is not None
+            else position.quantity
+        )
+        qty = broker.floor_qty(sellable)
+        if qty <= 0:
             return AutomationOrderOutcome(
                 ticker=ticker, side="sell", status="skipped",
-                error="held position has no market value to sell",
+                error="no sellable shares in the held position",
             )
+        notional = round(qty * (analysis.price or position.current_price or 0.0), 2)
         side = "sell"
     else:
         return None
 
     try:
-        order = await broker.submit_order(run_id, ticker, side, notional)
+        order = await broker.submit_order(run_id, ticker, side, qty)
     except Exception as exc:  # noqa: BLE001 - one rejected order must not kill the session
         logger.warning("[automation] %s %s rejected: %s", side, ticker, exc)
         return AutomationOrderOutcome(
@@ -656,7 +954,8 @@ async def _act_on_decision(
             error=str(exc)[:300],
         )
     logger.info(
-        "[automation] %s %s $%.2f -> %s", side, ticker, notional, order.status
+        "[automation] %s %s %g sh (~$%.2f) -> %s",
+        side, ticker, qty, notional, order.status,
     )
     return AutomationOrderOutcome(
         ticker=ticker,
@@ -681,6 +980,15 @@ async def _loop() -> None:
             _next_check_at = time.time() + settings.automation_interval_minutes * 60
             deadline = _next_check_at
             while (remaining := deadline - time.time()) > 0:
+                # Between sessions the price-only exit sweep runs on its own
+                # shorter cadence (P2.4); the enabled() read happens only
+                # when the sweep is actually due, not every poll tick.
+                if (
+                    time.time() >= _next_exit_check_at
+                    and await enabled()
+                    and not _session_lock.locked()
+                ):
+                    await _maybe_run_exit_sweep()
                 await asyncio.sleep(min(POLL_SECONDS, remaining))
         except asyncio.CancelledError:
             raise

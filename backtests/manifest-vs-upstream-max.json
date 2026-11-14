@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-10-28T07:11:59+00:00",
+  "code": {
+    "revision": "8ecebf7",
+    "dirty": true
+  },
+  "decision_policy_version": "2026-10-e",
+  "config": {
+    "mode": "llm",
+    "name": "vs-upstream-max",
+    "model": "deepseek-ai/DeepSeek-V4.1-Flash",
+    "tickers": [
+      "NVDA",
+      "AMD",
+      "MSFT"
+    ],
+    "start": "2026-09-03",
+    "end": "2026-09-25",
+    "step_days": 22,
+    "horizon_days": 21,
+    "depth": "max",
+    "outlook": "short_term",
+    "cost_pct": 0.1,
+    "short": false,
+    "fundamentals": "excluded",
+    "holdout": null,
+    "seed": 7,
+    "excluded_analysts": [
+      "market",
+      "fundamental"
+    ],
+    "policy_version": "2026-10-e",
+    "debate_rounds": 2
+  },
+  "data": {
+    "snapshot_hashes": {
+      "AMD@2026-09-03": "sha256:096bad77b2c0c922",
+      "AMD@2026-09-25": "sha256:7da0ab6c2798dcbc",
+      "MSFT@2026-09-03": "sha256:5cdd2f7b28a0323e",
+      "MSFT@2026-09-25": "sha256:affdd6ca393893a1",
+      "NVDA@2026-09-03": "sha256:6cfb4be86f1ec68e",
+      "NVDA@2026-09-25": "sha256:724024867afd9b67"
+    }
+  },
+  "random_seeds": {
+    "bootstrap": 7,
+    "bootstrap_reps": 2000,
+    "pipeline": "LLM sampling: not reproducible run-to-run"
+  }
+}

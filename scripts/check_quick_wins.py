@@ -274,11 +274,11 @@ assert _busy_port < _chosen <= _busy_port + 20, (_busy_port, _chosen)
 assert app_url(_chosen).endswith(str(_chosen))
 print(f"port pick OK (busy {_busy_port} -> {_chosen})")
 
-# The crewai per-call token-estimate warning stays silenced (importing
-# app.main pulls in workflow, which sets the level).
-import logging as _logging  # noqa: E402
+# The Agents SDK tracer stays disabled (config.py sets the env before any SDK
+# import), so no trace-export warnings or API calls ever happen.
+import os as _os  # noqa: E402
 
-assert _logging.getLogger("crewai.llms.base_llm").level >= _logging.ERROR
-print("crewai token-estimate noise silenced OK")
+assert _os.environ.get("OPENAI_AGENTS_DISABLE_TRACING") == "1"
+print("agents sdk tracing disabled OK")
 
 print("ALL CHECKS PASSED")

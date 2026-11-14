@@ -1,7 +1,7 @@
 """Console entry points for the three everyday commands (pyproject.toml).
 
     uv run setup              interactive first-run wizard
-    uv run app                start the FastAPI app with autoreload
+    uv run app                start the FastAPI app
     uv run test               offline check suite; add names for specific
                               checks (uv run test chat), "all" for every
                               scripts/check_*.py, or "offline" for everything
@@ -17,8 +17,9 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
 # Fast, fully offline checks that exercise the core: indicators and
-# accounting, the cost estimate, durable history, and the setup wizard.
-FAST_CHECKS = ("quick_wins", "cost", "run_history", "changes", "ui", "accuracy", "watchlist", "search_export", "paper_trading", "setup_wizard")
+# accounting, the cost estimate, durable history, the setup wizard, and
+# the P2.23 security guarantees (rebinding, headers, rate limits, secrets).
+FAST_CHECKS = ("quick_wins", "cost", "run_history", "changes", "ui", "accuracy", "watchlist", "search_export", "paper_trading", "setup_wizard", "security")
 
 APP_URL = "http://127.0.0.1:8000"
 WIKI_URL = "https://github.com/kingabzpro/BetterTradingAgents/wiki"
@@ -63,7 +64,16 @@ def startup_banner(port: int = 8000) -> str:
         reset = "\033[0m"
     else:
         green = bold = dim = label = link = rule = reset = ""
-    rule_bar = "─" * 68
+    frozen = getattr(sys, "frozen", False)
+    rule_bar = ("-" if frozen else "─") * 68
+    commands = (
+        f"{label}  Setup {reset}  {dim}Open Settings in the web app{reset}\n"
+        if frozen
+        else (
+            f"{label}  Setup {reset}  {dim}uv run setup{reset}\n"
+            f"{label}     Tests {reset}  {dim}uv run test{reset}\n"
+        )
+    )
     return (
         f"\n{rule}  {rule_bar}{reset}\n"
         f"{green}{bold}  BetterTradingAgents{reset}"
@@ -71,8 +81,7 @@ def startup_banner(port: int = 8000) -> str:
         f"{rule}  {rule_bar}{reset}\n\n"
         f"{label}  App   {reset}  {link}{app_url(port)}{reset}\n"
         f"{label}  Docs  {reset}  {link}{WIKI_URL}{reset}\n"
-        f"{label}  Setup {reset}  {dim}uv run setup{reset}"
-        f"{label}     Tests {reset}  {dim}uv run test{reset}\n\n"
+        f"{commands}\n"
         f"{dim}  Ctrl+C stops the server.{reset}\n"
         f"{dim}  Set TERMINAL_LOGGING=1 in .env for the full log trail.{reset}\n"
     )
@@ -90,9 +99,10 @@ def serve() -> int:
     import uvicorn
 
     from app.config import settings
+    from app.main import app
 
     port = pick_port(settings.app_port)
-    print(startup_banner(port))
+    print(startup_banner(port), flush=True)
     if port != settings.app_port:
         print(
             f"  \033[33mPort {settings.app_port} is busy; serving on {port} instead.\033[0m"
@@ -102,7 +112,7 @@ def serve() -> int:
     # Terminal stays quiet by default (TERMINAL_LOGGING=1 in .env for the
     # INFO trail and per-request access lines).
     uvicorn.run(
-        "app.main:app",
+        app,
         host="127.0.0.1",
         port=port,
         log_level="info" if settings.terminal_logging else "warning",
@@ -138,7 +148,8 @@ def test() -> int:
         )
     else:
         names = requested or list(FAST_CHECKS)
-    env = {**os.environ, "PYTHONPATH": str(REPO_ROOT)}
+    # Developer .env values must never override a check's scratch DB or keys.
+    env = {**os.environ, "PYTHONPATH": str(REPO_ROOT), "PYTHON_DOTENV_DISABLED": "1"}
     failed: list[str] = []
     for name in names:
         script = _check_path(name)

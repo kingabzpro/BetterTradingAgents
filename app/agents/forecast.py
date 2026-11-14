@@ -2,26 +2,29 @@
 
 import json
 
-from app.agents import analyst_result
+from app.agents import analyst_result, TaskSpec, agent_instructions
 from app.models import AgentResult
 
 NAME = "forecast"
 
 
 def build_agent(llm):
-    from crewai import Agent
+    from agents import Agent
 
     return Agent(
-        role="Forecast Analyst",
-        goal="Judge what the statistical price projections actually imply for direction.",
-        backstory=(
-            "You are a quantitative forecaster. You know statistical projections "
-            "are baselines, not guarantees: you weigh them against volatility, "
-            "model agreement and the recent trend. All numbers are produced by "
-            "Python - you never compute anything yourself, you only interpret."
+        name="Forecast Analyst",
+        instructions=agent_instructions(
+            role="Forecast Analyst",
+            goal="Judge what the statistical price projections actually imply for direction.",
+            backstory=(
+                "You are a quantitative forecaster. You know statistical projections "
+                "are baselines, not guarantees: you weigh them against volatility, "
+                "model agreement and the recent trend. All numbers are produced by "
+                "Python - you never compute anything yourself, you only interpret."
+            ),
         ),
-        llm=llm,
-        allow_delegation=False,
+        model=llm.model_obj,
+        model_settings=llm.model_settings,
     )
 
 
@@ -37,11 +40,9 @@ def _hosted_provider(payload: dict) -> str:
 
 
 def build_task(agent, ticker: str, payload: dict):
-    from crewai import Task
-
     horizon = int(payload.get("horizon_days") or 5)
     session_word = "trading day" if horizon == 1 else "trading days"
-    return Task(
+    return TaskSpec(
         description=f"""Interpret the {horizon}-day price projection for stock ticker {ticker}.
 
 Precomputed forecast data (statistical model outputs calculated by Python - do NOT recalculate or invent numbers; a value of null means that model produced no forecast):
@@ -59,7 +60,6 @@ Respond with ONLY a JSON object, no markdown fences, no text outside the JSON:
             "A JSON object with keys: ticker, signal (bullish|bearish|neutral), "
             "confidence (0.0-1.0), summary (max 2 sentences)."
         ),
-        agent=agent,
     )
 
 

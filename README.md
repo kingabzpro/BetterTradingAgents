@@ -2,15 +2,15 @@
 
 <img src="static/logo-full.png" width="700" alt="BetterTradingAgents multi-agent market intelligence"/>
 
-**Real-time, multi-agent AI stock research and paper trading, powered by CrewAI.**
+**Real-time, multi-agent AI stock research and paper trading, on the OpenAI Agents SDK.**
 
 [![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-3776ab?logo=python&logoColor=white)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
-[![CrewAI](https://img.shields.io/badge/CrewAI-multi--agent-ff6b35)](https://www.crewai.com/)
+![OpenAI Agents SDK](https://custom-icon-badges.demolab.com/badge/OpenAI_Agents_SDK-412991?logo=openai&logoColor=white)
 [![uv](https://img.shields.io/badge/uv-managed-de5fe9?logo=uv&logoColor=white)](https://docs.astral.sh/uv/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](#disclaimer)
 
-[Highlights](#highlights) · [Quick start](#quick-start) · [Using the app](#using-the-app) · [Configuration](#configuration) · [API](#api) · [Backtesting](#backtesting) · [Wiki](https://github.com/kingabzpro/BetterTradingAgents/wiki)
+[Highlights](#highlights) · [Head-to-head](#head-to-head-with-tradingagents) · [Quick start](#quick-start) · [Using the app](#using-the-app) · [Configuration](#configuration) · [API](#api) · [Backtesting](#backtesting) · [Wiki](https://github.com/kingabzpro/BetterTradingAgents/wiki)
 
 </div>
 
@@ -46,6 +46,29 @@ Paper trading only. Research base: the
 | 🛡️ | **Autopilot with guard rails** | Scheduled paper sessions through the same risk gate and caps, plus a deployment budget, bear-market brake, and session webhook. |
 | 🪶 | **No frontend build step** | Vanilla HTML, CSS, and JavaScript served by FastAPI. |
 
+## Head-to-head with TradingAgents
+
+Six shared NVDA / AMD / MSFT calls, same model, same endpoint, same grading. Measured 2026-10-28.
+
+| | BetterTradingAgents (pro) | TradingAgents |
+|---|---|---|
+| Cost per decision | ~$0.011 | ~$0.069 |
+| Time per decision | ~9 s | ~3 min |
+| LLM calls per decision | 7 | ~16 |
+| Net P&L, $10k per BUY | Same (-$633) | -$633 |
+| Paper orders + risk caps | Yes | No ¹ |
+| Backtest A/B, holdout, baselines | Yes | Grid scoring |
+| Web app + guarded autopilot | Yes | - |
+| Local-only guard, OS-keychain keys | Yes | - |
+| LLM providers | OpenAI-compatible | Wider (native Anthropic, Google, Azure, Bedrock) |
+| Crash-resume | No | Yes |
+
+Call quality is a wash: both net -$633 on the same card, and a plain momentum baseline beats both. Around the model, this project pulls ahead: paper orders behind risk caps, backtest controls, web app, autopilot; upstream counters with a wider provider list and crash-resume.
+
+Full report: `backtests/report-vs-upstream-benchmark.md`.
+
+¹ Upstream's own backtest docs: "not a portfolio simulator, and must not grow one" - orders do not exist there.
+
 ## How it works
 
 ```mermaid
@@ -64,6 +87,23 @@ flowchart LR
 ```
 
 ## Quick start
+
+Choose the portable archive for your platform under **Assets** on [GitHub Releases](https://github.com/kingabzpro/BetterTradingAgents/releases).
+Extract it, open a terminal in the extracted `bettertradingagents` folder, and run
+the command for your platform. The archive bundles Python and the app.
+
+| Platform | Archive | Command |
+|---|---|---|
+| Windows x64 | `bettertradingagents-windows-x64.zip` | `.\bettertradingagents.exe` |
+| Linux x64 (Ubuntu 22.04 or newer) | `bettertradingagents-linux-x64.tar.gz` | `./bettertradingagents` |
+
+Open the local address printed in the terminal and use **Settings** to add
+provider keys. The app stores its SQLite database beside the executable and
+looks for an optional `.env` file in the same folder. Keep the extracted
+`_internal` folder alongside the executable. GitHub Actions attaches binaries
+to new releases after the archive smoke tests pass.
+
+### Run from source
 
 You need [Python 3.12+](https://www.python.org/) and [uv](https://docs.astral.sh/uv/).
 
@@ -103,7 +143,10 @@ Screen-by-screen walkthrough with screenshots: wiki [Usage](https://github.com/k
 
 ## Configuration
 
-Everything is editable in the app (Settings page); `.env` is the default layer. Key
+Configuration priority per configured field is `.env` → process environment →
+saved Settings (OS keychain for keys) → defaults. Empty values allow saved fallbacks.
+Fields set in `.env` or the environment are locked in Settings; edit them at their
+source and restart, or remove/comment them to use Settings. Other changes apply live. Key
 sign-up links and what is optional: wiki [Providers](https://github.com/kingabzpro/BetterTradingAgents/wiki/Providers).
 
 | Variable | Default | Purpose |
@@ -151,29 +194,38 @@ Full schema and SSE catalog: wiki [API](https://github.com/kingabzpro/BetterTrad
 
 ## Backtesting
 
-Walk-forward replays: point-in-time data only, graded vs SPY after costs, untouched
-holdout. Sweep of 2026-10-21, 6 tickers, 23 dates, 138 decisions per arm:
-
-| Configuration | Test return | Mean alpha |
-|---|---:|---:|
-| Fast (3 agents) | -9.19% | -0.71% |
-| SPY (buy & hold) | +12.41% | - |
-| Pro (7 agents) | +45.04% | +0.37% |
-| Max (10 agents + judge) | +94.87% | +1.80% |
-
-- Full grid: Max +214.6% vs momentum +132.2% vs SPY +31.3%
-- Paired: Max +1.28% net per decision over Fast, 95% CI excludes zero
-- Judge halves worst drawdown; mock agents, real-LLM replays cost-gated
-- Validated 2026-10-22, re-validated 2026-10-23 after the simplify pass: sweep
-  re-run reproduced every number and all 138 decisions per arm identically
+Replay past stock decisions and grade them against SPY after trading costs.
+Mock mode is free and deterministic; add `--llm` for real agents with a cost
+confirmation. No paper account is required.
 
 ```bash
-uv run python -m app.backtest --tickers NVDA,AMD,META --start 2026-03-01 --end 2026-06-30
-uv run python scripts/backtest_sweep.py
+uv run python -m app.backtest --tickers NVDA,AMD --start 2026-03-01 --end 2026-06-30
 ```
 
-[report-sweep.md](backtests/report-sweep.md) · [report-paired-depth.md](backtests/report-paired-depth.md) ·
-wiki [Backtesting](https://github.com/kingabzpro/BetterTradingAgents/wiki/Backtesting)
+**Backtest snapshot** (reproducible mock replay: 6 tickers, 2025-06 to
+2026-09, equal-weight accounting): the Fast profile compounded **+60.73%**
+vs a momentum baseline's **+19.46%** on identical dates and costs; holdout
+mean alpha **+3.45% per decision** (95% CI +0.7 to +6.6, the only tier
+whose interval excludes zero).
+
+**Every depth adds context:** Fast = 3 agents (price + forecast) · Pro = 7
+(+ news, debate) · Max = 10 (+ sentiment, debate judge; in live replay the
+judge cut drawdown by about a third). Returns do not separate the tiers at
+honest sample sizes; full tables, intervals, and repro commands live in
+the [Backtesting wiki](https://github.com/kingabzpro/BetterTradingAgents/wiki/Backtesting).
+
+> [!NOTE]
+> When does Max return worse results? In our paired mock replay, Max cost
+> **-2.08% per matched decision** vs Fast (95% CI -3.91 to -0.63, excludes
+> zero); in live replay its mean alpha was lowest of the three tiers but
+> statistically indistinguishable. This tracks independent research: a
+> 20-year study across 100+ stocks found LLM investing strategies
+> [statistically underperform the market](https://arxiv.org/abs/2505.07078),
+> and a contamination-free benchmark found
+> [most agents don't beat buy-and-hold](https://arxiv.org/abs/2510.02209):
+> more agents buy context and risk control, not alpha.
+
+Reports and reproducibility manifests go to `backtests/`.
 
 ## Development
 

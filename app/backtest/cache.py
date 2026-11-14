@@ -32,8 +32,13 @@ class SnapshotCache:
         self._init_db()
 
     def _connect(self) -> sqlite3.Connection:
-        connection = sqlite3.connect(self.path)
+        connection = sqlite3.connect(self.path, timeout=10.0)
         connection.row_factory = sqlite3.Row
+        # Same reasoning as app/db.py: WAL plus a busy timeout so a live run
+        # writing the portfolio DB and a backtest filling this cache never
+        # lose rows to "database is locked" (P2.10).
+        connection.execute("PRAGMA journal_mode=WAL")
+        connection.execute("PRAGMA busy_timeout=10000")
         return connection
 
     def _init_db(self) -> None:

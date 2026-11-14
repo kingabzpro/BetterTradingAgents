@@ -2,32 +2,33 @@
 
 import json
 
-from app.agents import analyst_result
+from app.agents import analyst_result, TaskSpec, agent_instructions
 from app.models import AgentResult
 
 NAME = "technical"
 
 
 def build_agent(llm):
-    from crewai import Agent
+    from agents import Agent
 
     return Agent(
-        role="Technical Analyst",
-        goal="Judge the short-term price direction of a stock from precomputed technical indicators.",
-        backstory=(
-            "You are an experienced market technician. You trust price action, moving "
-            "averages, momentum and volatility. All numbers are calculated by Python - "
-            "you never compute anything yourself, you only interpret what the data says."
+        name="Technical Analyst",
+        instructions=agent_instructions(
+            role="Technical Analyst",
+            goal="Judge the short-term price direction of a stock from precomputed technical indicators.",
+            backstory=(
+                "You are an experienced market technician. You trust price action, moving "
+                "averages, momentum and volatility. All numbers are calculated by Python - "
+                "you never compute anything yourself, you only interpret what the data says."
+            ),
         ),
-        llm=llm,
-        allow_delegation=False,
+        model=llm.model_obj,
+        model_settings=llm.model_settings,
     )
 
 
 def build_task(agent, ticker: str, payload: dict):
-    from crewai import Task
-
-    return Task(
+    return TaskSpec(
         description=f"""Analyze the technical picture of stock ticker {ticker}.
 
 Precomputed indicators (calculated by Python from 6 months of daily closes - do NOT recalculate or invent numbers):
@@ -41,7 +42,6 @@ Respond with ONLY a JSON object, no markdown fences, no text outside the JSON:
             "A JSON object with keys: ticker, signal (bullish|bearish|neutral), "
             "confidence (0.0-1.0), summary (max 2 sentences)."
         ),
-        agent=agent,
     )
 
 

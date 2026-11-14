@@ -1,23 +1,35 @@
-"""Smoke test: CrewAI LLM against the configured OpenAI-compatible endpoint."""
+"""Smoke test: one live agent call against the configured OpenAI-compatible endpoint."""
 
+import asyncio
+
+from app import workflow
 from app.config import settings
 
-model = settings.llm_model
-if not model.startswith("openai/"):
-    model = f"openai/{model}"
+conf = settings.llm_for("analysts")
+print("endpoint:", conf["base_url"], "| model:", conf["model"])
 
-from crewai import LLM  # noqa: E402
 
-print("methods:", [m for m in dir(LLM) if not m.startswith("_") and "call" in m.lower()])
+async def _run() -> None:
+    from agents import Agent, Runner
 
-llm = LLM(
-    model=model,
-    base_url=settings.llm_base_url,
-    api_key=settings.llm_api_key,
-    temperature=0.2,
-    timeout=60,
-)
-response = llm.call(
-    messages=[{"role": "user", "content": 'Reply with only this JSON: {"ok": true}'}]
-)
-print("response:", str(response)[:300])
+    llm = workflow.get_llm("analysts")
+    if llm is None:
+        raise SystemExit("no LLM configured (LLM_API_KEY empty?) - run uv run setup")
+    agent = Agent(
+        name="Connectivity Probe",
+        instructions=(
+            "You are a connectivity probe. Reply with only what the user asks for."
+        ),
+        model=llm.model_obj,
+        model_settings=llm.model_settings,
+    )
+    result = await Runner.run(agent, 'Reply with only this JSON: {"ok": true}')
+    usage = result.context_wrapper.usage
+    print("response:", str(result.final_output or "")[:300])
+    print(
+        "usage: prompt=%d completion=%d total=%d"
+        % (usage.input_tokens, usage.output_tokens, usage.total_tokens)
+    )
+
+
+asyncio.run(_run())

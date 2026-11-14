@@ -334,25 +334,16 @@ def deterministic_reflection(row: dict, outcome: dict | None) -> str:
 
 
 async def _llm_reflection(row: dict, outcome: dict) -> str | None:
-    """Optional crew-written lesson; deterministic text stays the fallback."""
+    """Optional LLM-written lesson; deterministic text stays the fallback."""
     try:
-        from crewai import Agent, Crew, Task
+        from agents import Agent, Runner
 
+        from app.agents import agent_instructions
         from app.workflow import get_llm
 
         llm = get_llm("analysts")  # reflection lessons are analyst-grade work
         if llm is None:
             return None
-        agent = Agent(
-            role="Trading Reflection Analyst",
-            goal="Turn one graded past decision into a short, honest lesson.",
-            backstory=(
-                "You review a trading system's past calls. You are blunt about "
-                "mistakes, do not cherry-pick, and never generalize from one outcome."
-            ),
-            llm=llm,
-            allow_delegation=False,
-        )
         payload = json.dumps(
             {
                 "ticker": row["ticker"],
@@ -364,20 +355,31 @@ async def _llm_reflection(row: dict, outcome: dict) -> str | None:
             },
             default=str,
         )
-        task = Task(
-            description=f"""Past decision with its realized outcome:
+        agent = Agent(
+            name="Trading Reflection Analyst",
+            instructions=agent_instructions(
+                role="Trading Reflection Analyst",
+                goal="Turn one graded past decision into a short, honest lesson.",
+                backstory=(
+                    "You review a trading system's past calls. You are blunt about "
+                    "mistakes, do not cherry-pick, and never generalize from one outcome."
+                ),
+            ),
+            model=llm.model_obj,
+            model_settings=llm.model_settings,
+        )
+        result = await asyncio.wait_for(
+            Runner.run(
+                agent,
+                f"""Past decision with its realized outcome:
 {payload}
 
 Write exactly 2 sentences: (1) what the call got right or wrong versus SPY,
 (2) one concrete lesson for the next decision on this ticker. Plain text only.""",
-            expected_output="Two plain sentences, no JSON, no markdown.",
-            agent=agent,
-        )
-        output = await asyncio.wait_for(
-            Crew(agents=[agent], tasks=[task]).kickoff_async(),
+            ),
             timeout=settings.llm_timeout_seconds,
         )
-        text = str(getattr(output, "raw", "")).strip()
+        text = str(result.final_output or "").strip()
         return text[:400] or None
     except Exception as exc:  # noqa: BLE001 - LLM reflection is best-effort
         logger.warning("[memory] LLM reflection failed: %s", exc)

@@ -322,7 +322,7 @@ async def checks() -> None:
     fake.submit_order = _slow_submit
     _use(fake)
     attempts = [
-        broker.submit_order("liferun01", "NVDA", "buy", 1000.0) for _ in range(5)
+        broker.submit_order("liferun01", "NVDA", "buy", 10.0) for _ in range(5)
     ]
     outcomes = await asyncio.gather(*attempts, return_exceptions=True)
     ok = [o for o in outcomes if not isinstance(o, Exception)]

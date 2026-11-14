@@ -9,8 +9,9 @@ Secrets (API keys) never touch the database: they go to the OS credential
 vault via keyring (Windows Credential Manager, macOS Keychain, Linux
 Secret Service) under the service name below. If no usable keychain
 exists, they fall back to the local DB unencrypted and the UI says so.
-Precedence per field: keychain/DB override > .env default. Reset drops
-every override and restores the .env values captured at import.
+Precedence per configured field: .env > process environment > keychain/DB
+> defaults. Empty values allow saved fallbacks. Reset drops saved values
+and restores the file/environment baseline captured at import.
 """
 
 import logging
@@ -86,6 +87,7 @@ FIELD_GROUPS: list[dict[str, Any]] = [
             _field("llm_timeout_seconds", "LLM_TIMEOUT_SECONDS", "Timeout (seconds)", "float", lo=5, hi=600, hint="Per-request cap", example="90"),
             _field("llm_max_tokens", "MAX_TOKENS", "Max tokens", "int", lo=0, hi=1000000, hint="Caps a runaway response; 0 = provider default", example="4000"),
             _field("llm_max_retries", "LLM_MAX_RETRIES", "Retries", "int", lo=0, hi=10, hint="Waits and retries rate limits, server errors, malformed output; 0 = fail fast", example="2"),
+            _field("llm_concurrency", "LLM_CONCURRENCY", "Max parallel LLM calls", "int", lo=0, hi=64, hint="Caps in-flight agent calls app-wide so bursts stay under shared-endpoint limits (e.g. Modal's 16 per workspace); 0 = unlimited", example="12"),
             _field("llm_reasoning_effort", "LLM_REASONING_EFFORT", "Reasoning effort", hint="Provider-specific: none, low, medium, high (GLM uses none/low)", example="none"),
             _field("llm_price_in", "LLM_PRICE_IN", "Price in ($/1M tokens)", "float", lo=0, hi=10000, hint="0 = use the built-in list-price table", example="1.5"),
             _field("llm_price_out", "LLM_PRICE_OUT", "Price out ($/1M tokens)", "float", lo=0, hi=10000, hint="0 = use the built-in list-price table", example="6"),
@@ -184,6 +186,20 @@ FIELD_GROUPS: list[dict[str, Any]] = [
             _field("automation_outlook", "AUTOMATION_OUTLOOK", "Outlook", section="Trading rules", choices=("day_trade", "short_term", "long_term")),
             _field("automation_depth", "AUTOMATION_DEPTH", "Depth", section="Trading rules", choices=("fast", "pro", "max")),
             _field("automation_allow_sells", "AUTOMATION_ALLOW_SELLS", "Allow SELLs", "bool", section="Trading rules", hint="A SELL decision exits the held position"),
+            _field("automation_exit_enabled", "AUTOMATION_EXIT_ENABLED", "Auto-exit rules", "bool", section="Trading rules", hint="Price-only exits between sessions: stop-loss, take-profit, max-hold; no LLM"),
+            _field("automation_exit_stop_loss_pct", "AUTOMATION_EXIT_STOP_LOSS_PCT", "Stop-loss (share of cost)", "float", lo=0, hi=1, section="Trading rules", hint="Exit when a position is down this share of its cost; 0 = off", example="0.2 (= -20%)"),
+            _field("automation_exit_take_profit_pct", "AUTOMATION_EXIT_TAKE_PROFIT_PCT", "Take-profit (share of cost)", "float", lo=0, hi=1, section="Trading rules", hint="Exit when a position is up this share of its cost; 0 = off", example="0.5 (= +50%)"),
+            _field("automation_exit_max_hold_days", "AUTOMATION_EXIT_MAX_HOLD_DAYS", "Max hold (days)", "int", lo=0, hi=3650, section="Trading rules", hint="Exit a position held longer than this many days; 0 = off", example="30"),
+        ],
+    },
+    {
+        "key": "ops",
+        "tab": "Operations",
+        "label": "Operations",
+        "fields": [
+            _field("backup_interval_hours", "BACKUP_INTERVAL_HOURS", "Backup interval (hours)", "int", lo=0, hi=168, section="Backups", hint="One consistent snapshot per interval; 0 = only at startup and on demand", example="24"),
+            _field("backup_keep", "BACKUP_KEEP", "Backups kept", "int", lo=1, hi=100, section="Backups", hint="Newest portfolio-*.db files kept; older ones are deleted", example="7"),
+            _field("backup_dir", "BACKUP_DIR", "Backup directory", section="Backups", hint="Empty = a backups folder next to the database", example="D:\\bta-backups"),
         ],
     },
     {
@@ -209,6 +225,18 @@ SECRET_NAMES = [f["name"] for f in FIELDS.values() if f["secret"]]
 
 # The .env baseline, captured once at import before any override is applied.
 ENV_DEFAULTS: dict[str, Any] = {name: getattr(settings, name) for name in FIELDS}
+# Config has already loaded .env over the shell. Only explicit, nonempty
+# values take priority; defaults and blank credentials allow saved settings.
+ENV_FIELDS = {
+    name for name, field in FIELDS.items() if os.environ.get(field["env"], "").strip()
+}
+# Accept the same Alpaca aliases as config when deciding source precedence.
+for _name, _alias in (
+    ("alpaca_api_key_id", "ALPACA_API_KEY"),
+    ("alpaca_api_secret_key", "ALPACA_SECRET_KEY"),
+):
+    if os.environ.get(_alias, "").strip():
+        ENV_FIELDS.add(_name)
 
 
 # ---- keychain ---------------------------------------------------------------
@@ -364,6 +392,8 @@ def _clamp(field: dict[str, Any], number: float, name: str) -> float:
 
 
 def _secret_source(name: str, db_secrets: dict[str, str]) -> str:
+    if name in ENV_FIELDS:
+        return "env"
     if keychain_get(name):
         return "keychain"
     if name in db_secrets:
@@ -390,13 +420,15 @@ def apply_overrides() -> None:
     _init_db()
     db_secrets = _db_secrets()
     for name in SECRET_NAMES:
+        if name in ENV_FIELDS:
+            continue
         stored = keychain_get(name) or db_secrets.get(name)
         if stored:
             setattr(settings, name, stored)
     overrides = _db_overrides()
     for name, raw in overrides.items():
         field = FIELDS.get(name)
-        if field is not None:
+        if field is not None and name not in ENV_FIELDS:
             setattr(settings, name, _coerce(field, raw))
     logger.info(
         "[settings] overrides applied (%d keys, keychain=%s)",
@@ -418,6 +450,9 @@ def save(values: dict[str, Any], clear_secrets: list[str]) -> None:
             continue
         if field["secret"] and (value is None or str(value).strip() == ""):
             continue  # blank = unchanged
+        if name in ENV_FIELDS:
+            errors.append(f"{name} is controlled by .env or the process environment; edit it there and restart")
+            continue
         try:
             coerced = _coerce(field, value)
         except ValueError as exc:
@@ -439,6 +474,8 @@ def save(values: dict[str, Any], clear_secrets: list[str]) -> None:
     for name in clear_secrets:
         if FIELDS.get(name, {}).get("secret") is not True:
             errors.append(f"{name} is not a secret setting")
+        elif name in ENV_FIELDS:
+            errors.append(f"{name} is controlled by .env or the process environment; remove it there and restart")
     if errors:
         raise ValueError("; ".join(errors))
 
@@ -479,6 +516,7 @@ def snapshot() -> dict[str, Any]:
                 "label": field["label"],
                 "type": field["type"],
                 "secret": field["secret"],
+                "locked": name in ENV_FIELDS,
                 "choices": list(field["choices"] or []),
                 "hint": field.get("hint", ""),
                 "section": field.get("section", ""),

@@ -262,8 +262,8 @@ def provider_label(base_url: str) -> str:
 
 
 def key_from(name: str) -> str:
-    """A secret from the keychain (the app's preferred store) or .env."""
-    return settings_store.keychain_get(name) or str(getattr(settings, name) or "")
+    """Use the resolved file/environment value before a keychain fallback."""
+    return str(getattr(settings, name) or "") or settings_store.keychain_get(name) or ""
 
 
 # Defaults come straight from config so "already configured" is claimed

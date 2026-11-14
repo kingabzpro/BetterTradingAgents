@@ -1,14 +1,15 @@
 """Analysis workflow: 5 parallel research agents -> bull+bear in parallel -> manager.
 
-Every agent run is one single-agent CrewAI crew. One agent failing never kills
-the run - its slot becomes None and downstream agents are told the input is
-missing. Tasks set no output_pydantic on purpose: crewai's structured-output
-path silently replaces our json_object mode with a strict json_schema request
-that some OpenAI-compatible providers (e.g. api.deepseek.com) reject with a
-400 on every call, so JSON stays a prompt contract and every reply is parsed
-by extract_json. With STREAM_REASONING on, each agent's tokens stream to the
-UI as agent_token events (ROADMAP 3.2); mock mode streams the deterministic
-text word-by-word so the UI path is always testable.
+Every agent run is one single completion through the OpenAI Agents SDK against
+an OpenAI-compatible endpoint. One agent failing never kills the run - its
+slot becomes None and downstream agents are told the input is missing. Agents
+get no output_type on purpose: the SDK's structured-output path forces a
+strict json_schema request that some OpenAI-compatible providers (e.g.
+api.deepseek.com) reject with a 400 on every call, so JSON stays a prompt
+contract and every reply is parsed by extract_json. With STREAM_REASONING on,
+each agent's tokens stream to the UI as agent_token events (ROADMAP 3.2);
+mock mode streams the deterministic text word-by-word so the UI path is
+always testable.
 """
 
 import asyncio
@@ -18,9 +19,12 @@ import logging
 import re
 import time
 from collections import OrderedDict
+from dataclasses import dataclass
+from types import SimpleNamespace
 from typing import Any, Awaitable, Callable
 
 from app import changes, cost, quality, risk
+from app.redact import redact
 from app.agents import (
     bear,
     bull,
@@ -54,12 +58,6 @@ from app.tools.market_data import (
 
 logger = logging.getLogger("analysis")
 
-# crewai's LLM base warns on EVERY call when a model id has no native
-# tokenizer (custom/proxied names like ours): it falls back to a harmless
-# characters/4 estimate and announces it each time. Silence just that
-# channel; every other crewai warning still surfaces.
-logging.getLogger("crewai.llms.base_llm").setLevel(logging.ERROR)
-
 Emit = Callable[[str, dict], Awaitable[None]]
 
 # Live reasoning stream (ROADMAP 3.2). The UI pane keeps a sliding window per
@@ -73,14 +71,32 @@ _MOCK_STREAM_DELAY = 0.025  # seconds between chunks
 # - cheap fast models for the researchers, a stronger one for the call - and
 # per-agent overrides (settings.llm_key_for) layer on top of the role.
 
-_llms: dict[str, Any] = {}  # role -> CrewAI LLM (None in mock mode)
+_llms: dict[str, Any] = {}  # role -> AppLLM wrapper (None in mock mode)
 _llm_roles_initialized: set[str] = set()
 _THINK_BLOCK = re.compile(r"<think>.*?</think>", re.DOTALL)
 _BACKOFF_SECONDS = (1.0, 4.0, 16.0, 60.0)  # HTTP 429/5xx: wait, retry, wait longer
 
+# LLM_CONCURRENCY: shared endpoints cap concurrent requests per workspace
+# (e.g. Modal's shared DeepSeek endpoints at 16), and a multi-ticker run can
+# burst past that. One app-wide gate rebuilds live when the setting changes,
+# like the per-role LLM cache does.
+_llm_gate: asyncio.Semaphore | None = None
+_llm_gate_limit = -1
 
-# Model prefixes crewai routes itself; anything else (bare names and org/model
-# forms like zai-org/GLM-5.3) must go through the OpenAI-compatible client.
+
+def _gate() -> asyncio.Semaphore | None:
+    global _llm_gate, _llm_gate_limit
+    limit = max(0, int(settings.llm_concurrency or 0))
+    if limit != _llm_gate_limit:
+        _llm_gate = asyncio.Semaphore(limit) if limit else None
+        _llm_gate_limit = limit
+    return _llm_gate
+
+
+# Provider prefixes that only ever existed for litellm routing. The SDK client
+# is pointed at one OpenAI-compatible base_url, so the prefix must be stripped
+# from the wire model name ("openai/gpt-x" -> "gpt-x"); anything else
+# (bare names and org/model forms like zai-org/GLM-5.3) goes through verbatim.
 _KNOWN_PROVIDER_PREFIXES = (
     "openai/",
     "openrouter/",
@@ -98,25 +114,83 @@ _KNOWN_PROVIDER_PREFIXES = (
 )
 
 
-def _route_model(model: str) -> str:
-    if model.startswith(_KNOWN_PROVIDER_PREFIXES):
-        return model
-    return f"openai/{model}"
+def _api_model_name(model: str) -> str:
+    for prefix in _KNOWN_PROVIDER_PREFIXES:
+        if model.startswith(prefix):
+            return model[len(prefix):]
+    return model
+
+
+@dataclass
+class AppLLM:
+    """One role's LLM: an AsyncOpenAI client pinned to the role's endpoint plus
+    the SDK model and request settings built from it. Plain attributes on
+    purpose: the offline checks assert model/base_url/max_tokens/stream and
+    the retry loop rebuilds roles by swapping this object in the cache."""
+
+    model: str  # wire model name (provider prefix stripped)
+    base_url: str
+    max_tokens: int | None
+    stream: bool
+    additional_params: dict  # reasoning_effort / response_format mirror
+    model_obj: Any  # OpenAIChatCompletionsModel
+    model_settings: Any  # agents.ModelSettings
+
+
+def _make_llm(
+    model: str,
+    base_url: str,
+    api_key: str,
+    temperature: float,
+    timeout: float,
+    max_tokens: int | None,
+    reasoning_effort: str | None,
+    stream: bool,
+    additional_params: dict,
+) -> AppLLM:
+    """Construct the SDK stack for one role. Own function so the offline
+    checks can patch it and assert on the exact request kwargs."""
+    from agents import ModelSettings
+    from agents.models.openai_chatcompletions import OpenAIChatCompletionsModel
+    from openai import AsyncOpenAI
+
+    client = AsyncOpenAI(
+        base_url=base_url,
+        api_key=api_key,
+        timeout=timeout,
+        max_retries=0,  # the app's own retry loop owns backoff + classification
+    )
+    model_obj = OpenAIChatCompletionsModel(model=model, openai_client=client)
+    # include_usage matters on custom base_urls: without it a streamed call
+    # reports requests=1 and zero tokens (the SDK only adds stream_options for
+    # the official OpenAI endpoint).
+    model_settings = ModelSettings(
+        temperature=temperature,
+        max_tokens=max_tokens,
+        include_usage=True,
+        extra_args=additional_params,
+    )
+    return AppLLM(
+        model=model,
+        base_url=base_url,
+        max_tokens=max_tokens,
+        stream=stream,
+        additional_params=additional_params,
+        model_obj=model_obj,
+        model_settings=model_settings,
+    )
 
 
 def _build_llm(
     role: str, json_mode: bool = True, stream: bool | None = None,
     reasoning_effort: str | None = None,
-) -> Any:
-    """Construct the CrewAI LLM for one role from settings.llm_for(role).
+) -> AppLLM:
+    """Construct the LLM wrapper for one role from settings.llm_for(role).
 
     json_mode asks the provider for guaranteed JSON output; reasoning_effort
-    is also sent verbatim in the request body because the crewai field alone
-    only reaches o1-style models on /chat/completions. stream=None follows
+    is sent verbatim in the request body. stream=None follows
     settings.stream_reasoning (ROADMAP 3.2 live token events).
     """
-    from crewai import LLM
-
     conf = settings.llm_for(role)
     # P2.11: enforce at the client too, not only in Settings: a hand-edited
     # .env must not quietly point the API key at a cleartext remote host.
@@ -135,8 +209,8 @@ def _build_llm(
         extra["response_format"] = {"type": "json_object"}
     if stream is None:
         stream = settings.stream_reasoning
-    return LLM(
-        model=_route_model(conf["model"]),
+    return _make_llm(
+        model=_api_model_name(conf["model"]),
         base_url=conf["base_url"],
         api_key=conf["api_key"],
         temperature=settings.llm_temperature,
@@ -149,7 +223,7 @@ def _build_llm(
 
 
 def get_llm(key: str = "analysts") -> Any:
-    """Build (once) and cache the CrewAI LLM for one key: a role, or an
+    """Build (once) and cache the LLM wrapper for one key: a role, or an
     agent name when that agent overrides its role's endpoint config.
 
     Roles: manager / analysts / debate, resolved via settings.llm_for -
@@ -275,14 +349,15 @@ def extract_json(text: str) -> dict:
     raise ValueError(f"no JSON object in model output: {text[:200]!r}")
 
 
-def _usage_snapshot(output: Any) -> dict:
-    """Token usage of one crew run, tolerating missing provider metrics."""
-    usage = getattr(output, "token_usage", None)
+def _usage_snapshot(usage: Any) -> dict:
+    """Token usage of one SDK run, tolerating missing provider metrics."""
     if usage is None:
         return {}
-    prompt = int(getattr(usage, "prompt_tokens", 0) or 0)
-    completion = int(getattr(usage, "completion_tokens", 0) or 0)
-    reasoning = int(getattr(usage, "reasoning_tokens", 0) or 0)
+    prompt = int(getattr(usage, "input_tokens", 0) or 0)
+    completion = int(getattr(usage, "output_tokens", 0) or 0)
+    reasoning = int(
+        getattr(getattr(usage, "output_tokens_details", None), "reasoning_tokens", 0) or 0
+    )
     total = int(getattr(usage, "total_tokens", 0) or 0)
     total = total or (prompt + completion)
     if not (prompt or completion or total):
@@ -296,33 +371,55 @@ def _usage_snapshot(output: Any) -> dict:
 
 
 async def _kick_once(agent, task) -> tuple[dict, dict]:
-    from crewai import Crew
+    """One agent call: a single completion, no tools, so the SDK terminates
+    after exactly one model request. Returns (parsed_json_dict, usage)."""
+    from agents import Runner
 
-    crew = Crew(agents=[agent], tasks=[task])
-    output = await asyncio.wait_for(
-        crew.kickoff_async(), timeout=settings.llm_timeout_seconds
+    result = await asyncio.wait_for(
+        Runner.run(agent, task.description), timeout=settings.llm_timeout_seconds
     )
-    usage = _usage_snapshot(output)
-    # Prefer CrewAI's pydantic conversion when it produced real content.
-    pydantic = getattr(output, "pydantic", None)
-    if pydantic is not None and getattr(pydantic, "summary", ""):
-        return pydantic.model_dump(), usage
-    json_dict = getattr(output, "json_dict", None)
-    if isinstance(json_dict, dict) and json_dict:
-        return json_dict, usage
-    return extract_json(str(getattr(output, "raw", ""))), usage
+    usage = _usage_snapshot(result.context_wrapper.usage)
+    return extract_json(str(result.final_output or "")), usage
+
+
+async def _kick_streamed(
+    agent, task, ticker: str, agent_name: str, emit: Emit,
+) -> tuple[dict, dict]:
+    """Streaming variant of _kick_once: text deltas are forwarded through the
+    app's token sink, and usage is read from the run context after the stream
+    drains."""
+    from agents import Runner
+    from agents.stream_events import RawResponsesStreamEvent
+    from openai.types.responses.response_text_delta_event import (
+        ResponseTextDeltaEvent,
+    )
+
+    sink = _token_sink(ticker, agent_name, emit)
+    streamed = Runner.run_streamed(agent, task.description)
+
+    async def _drain() -> None:
+        async for event in streamed.stream_events():
+            if (
+                isinstance(event, RawResponsesStreamEvent)
+                and isinstance(event.data, ResponseTextDeltaEvent)
+                and event.data.delta
+            ):
+                sink(None, SimpleNamespace(type="llm_stream_chunk", chunk=event.data.delta))
+
+    await asyncio.wait_for(_drain(), timeout=settings.llm_timeout_seconds)
+    usage = _usage_snapshot(streamed.context_wrapper.usage)
+    return extract_json(str(streamed.final_output or "")), usage
 
 
 def _token_sink(ticker: str, agent_name: str, emit: Emit) -> Callable[[Any, Any], None]:
-    """CrewAI stream sink that forwards one agent's tokens as agent_token events.
+    """Token sink that forwards one agent's streamed deltas as agent_token events.
 
-    Attached per agent run via crewai's scoped stream sinks, so concurrent
-    agents never receive each other's tokens. Only content chunks are
-    forwarded (thinking deltas stay private), a sliding window is kept for
-    debugging, and STREAM_MAX_CHARS caps the total so a runaway stream cannot
-    flood the event queues. Chunks can arrive on a worker thread (crewai runs
-    parts of kickoff in executors, with the sink context copied along), so
-    forwarding goes through the loop captured here + call_soon_threadsafe.
+    One sink per agent run, so concurrent agents never receive each other's
+    tokens. Only content chunks are forwarded (thinking deltas stay private),
+    a sliding window is kept for debugging, and STREAM_MAX_CHARS caps the
+    total so a runaway stream cannot flood the event queues. Chunks may in
+    principle arrive off the loop thread, so forwarding goes through the loop
+    captured here + call_soon_threadsafe.
     """
     try:
         loop = asyncio.get_running_loop()
@@ -333,7 +430,7 @@ def _token_sink(ticker: str, agent_name: str, emit: Emit) -> Callable[[Any, Any]
     def _forward(payload: dict) -> None:
         loop.create_task(emit("agent_token", payload))
 
-    def sink(source: Any, event: Any) -> None:  # noqa: ARG001 - crewai contract
+    def sink(source: Any, event: Any) -> None:  # noqa: ARG001 - sink contract
         if loop is None or getattr(event, "type", "") != "llm_stream_chunk":
             return
         chunk = str(getattr(event, "chunk", "") or "")
@@ -460,22 +557,21 @@ async def _run_agent(
                     task = mod.build_task(agent, ticker, **task_payload)
                     if correction is not None:
                         task.description = correction + task.description
-                    if getattr(llm, "stream", False):
-                        # Scoped per agent run: concurrent agents of the same
-                        # role never see each other's tokens (ROADMAP 3.2).
-                        from crewai.events.stream_context import (
-                            add_stream_sink,
-                            reset_stream_sinks,
-                        )
+                    async def _kick() -> tuple[dict, dict]:
+                        if getattr(llm, "stream", False):
+                            # One sink per agent run: concurrent agents of the
+                            # same role never see each other's tokens (ROADMAP 3.2).
+                            return await _kick_streamed(
+                                agent, task, ticker, agent_name, emit
+                            )
+                        return await _kick_once(agent, task)
 
-                        sink = _token_sink(ticker, agent_name, emit)
-                        sink_token = add_stream_sink(sink)
-                        try:
-                            data, usage = await _kick_once(agent, task)
-                        finally:
-                            reset_stream_sinks(sink_token)
+                    gate = _gate()
+                    if gate is None:
+                        data, usage = await _kick()
                     else:
-                        data, usage = await _kick_once(agent, task)
+                        async with gate:
+                            data, usage = await _kick()
                     # Let token-forward tasks scheduled by the sink reach the
                     # queues before agent_completed closes the pane's stream.
                     await asyncio.sleep(0)
@@ -483,7 +579,7 @@ async def _run_agent(
                 except Exception as exc:  # noqa: BLE001 - classify, maybe retry
                     last_error = exc
                     kind = _classify_failure(exc)
-                    detail = str(exc)[:120]
+                    detail = redact(str(exc))[:120]
                     if kind == "stream":
                         replacement = _drop_stream_mode(llm_key)
                         if replacement is None:
@@ -524,7 +620,7 @@ async def _run_agent(
                             detail,
                         )
                         correction = (
-                            f"Your previous response was rejected: {str(exc)[:300]} "
+                            f"Your previous response was rejected: {redact(str(exc))[:300]} "
                             "Respond with ONLY a corrected JSON object matching the "
                             "requested schema - no markdown fences, no text outside "
                             "the JSON.\n\n"
@@ -558,10 +654,10 @@ async def _run_agent(
         )
         return data
     except Exception as exc:  # noqa: BLE001 - one agent failing must not kill the run
-        logger.warning("[%s] failed: %s", agent_name, exc)
+        logger.warning("[%s] failed: %s", agent_name, redact(str(exc)))
         await emit(
             "agent_failed",
-            {"ticker": ticker, "agent": agent_name, "error": str(exc)[:200]},
+            {"ticker": ticker, "agent": agent_name, "error": redact(str(exc))[:200]},
         )
         return None
 
@@ -653,6 +749,28 @@ async def fetch_past_decisions(ticker: str) -> dict | None:
     except Exception as exc:  # noqa: BLE001 - memory context is best-effort
         logger.warning("[memory] reflections failed: %s", exc)
         return None
+
+
+def _trim_news_items(items: list[dict]) -> list[dict]:
+    """Bound the news payload a researcher reads (release batch 2, item 8).
+
+    Caps the item count and truncates summary/content fields for the prompt
+    only; the UI provenance (source_references) still carries the fuller
+    list. PROMPT_TRIM=0 restores the untrimmed payload for A/B runs.
+    """
+    if not settings.prompt_trim:
+        return items
+    trimmed = []
+    for item in items[: settings.news_prompt_items]:
+        out = dict(item)
+        summary = out.get("summary")
+        if isinstance(summary, str) and len(summary) > settings.news_prompt_summary_chars:
+            out["summary"] = summary[: settings.news_prompt_summary_chars].rstrip() + "…"
+        content = out.get("content")
+        if isinstance(content, str) and len(content) > settings.news_prompt_content_chars:
+            out["content"] = content[: settings.news_prompt_content_chars].rstrip() + "…"
+        trimmed.append(out)
+    return trimmed
 
 
 def _portfolio_context(
@@ -825,10 +943,11 @@ async def analyze_ticker(
                 "data_fetch", get_stock_data(ticker, forecast=forecast_hook)
             )
         except Exception as exc:  # noqa: BLE001
-            logger.warning("[analysis] %s aborted: market data failed: %s", ticker, exc)
-            await emit("ticker_failed", {"ticker": ticker, "error": str(exc)[:200]})
+            detail = redact(str(exc))
+            logger.warning("[analysis] %s aborted: market data failed: %s", ticker, detail)
+            await emit("ticker_failed", {"ticker": ticker, "error": detail[:200]})
             return StockAnalysis(
-                ticker=ticker, error=f"market data failed: {exc}"[:300]
+                ticker=ticker, error=f"market data failed: {detail}"[:300]
             )
 
     indicators = compute_indicators(
@@ -1015,9 +1134,14 @@ async def analyze_ticker(
                 token_totals=token_totals,
                 role_usage=role_usage,
                 live=live_context,
-                payload={"items": market.news, "user_context": user_ctx},
+                payload={"items": _trim_news_items(market.news), "user_context": user_ctx},
             )
         if key == "sentiment":
+            social_items = (
+                market.social[: settings.social_prompt_items]
+                if settings.prompt_trim
+                else market.social
+            )
             return await _run_agent(
                 sentiment,
                 ticker,
@@ -1026,7 +1150,7 @@ async def analyze_ticker(
                 role_usage=role_usage,
                 live=live_context,
                 payload={
-                    "items": market.social,
+                    "items": social_items,
                     "crowd_proxy": market.crowd_proxy,
                     "user_context": user_ctx,
                 },
@@ -1415,7 +1539,7 @@ async def analyze_ticker(
                 },
             )
         except Exception as exc:  # noqa: BLE001 - best-effort like the portfolio
-            logger.warning("[memory] could not record decision: %s", exc)
+            logger.warning("[memory] could not record decision: %s", redact(str(exc)))
     await emit(
         "ticker_completed",
         {

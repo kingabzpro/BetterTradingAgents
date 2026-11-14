@@ -1,6 +1,28 @@
 """Shared helpers for the agent modules."""
 
+from dataclasses import dataclass
+
 from app.models import AgentResult
+
+
+@dataclass
+class TaskSpec:
+    """One agent call's prompt: a description the model answers and the prose
+    contract for what a good answer looks like. Mutable description on purpose:
+    corrective retries prepend the validation error to it. No output_type is
+    set on purpose: the SDK's structured-output path forces a strict
+    json_schema request that some OpenAI-compatible providers (e.g.
+    api.deepseek.com) reject, so JSON stays a prompt contract parsed by
+    workflow.extract_json."""
+
+    description: str
+    expected_output: str
+
+
+def agent_instructions(role: str, goal: str, backstory: str) -> str:
+    """System prompt for one agent, keeping the role/goal/backstory split the
+    framework used to format for us."""
+    return f"You are {role}.\n\n{backstory}\n\nYour goal: {goal}"
 
 VALID_SIGNALS = {
     "bullish",

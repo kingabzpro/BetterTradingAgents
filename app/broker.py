@@ -14,22 +14,22 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import math
 import re
 import sqlite3
 import time
 import uuid
 from datetime import datetime, timezone
 from enum import Enum
+from typing import TYPE_CHECKING
 
 import requests
-from alpaca.common.exceptions import APIError
-from alpaca.trading.client import TradingClient
-from alpaca.trading.enums import OrderSide, OrderType, QueryOrderStatus, TimeInForce
-from alpaca.trading.requests import (
-    GetOrdersRequest,
-    GetPortfolioHistoryRequest,
-    MarketOrderRequest,
-)
+if TYPE_CHECKING:
+    # alpaca-py is imported lazily at each use site (P2.10): only the broker
+    # paths need it, and every server boot (mock mode included) used to pay
+    # for the import.
+    from alpaca.common.exceptions import APIError
+    from alpaca.trading.client import TradingClient
 
 from app.config import settings
 from app.models import (
@@ -86,6 +86,8 @@ def _client() -> TradingClient:
             "Alpaca paper trading is not configured; add the API key ID and "
             "secret key on the Settings page"
         )
+    from alpaca.trading.client import TradingClient
+
     return TradingClient(
         settings.alpaca_api_key_id,
         settings.alpaca_api_secret_key,
@@ -115,6 +117,7 @@ async def _call(fn):
     backoff (P2.3); auth/validation errors map through immediately. Only
     reads go through here - the order POST path retries nothing blindly.
     """
+    from alpaca.common.exceptions import APIError
     for attempt in range(BROKER_READ_RETRIES + 1):
         try:
             return await asyncio.to_thread(fn)
@@ -141,6 +144,19 @@ async def _call(fn):
 def _f(value) -> float | None:
     """Alpaca ships money fields as strings; empty stays None, never 0."""
     return None if value in (None, "") else float(value)
+
+
+def floor_qty(qty: float) -> float:
+    """Alpaca accepts at most 6 decimal places on share quantities; round
+    DOWN so a capped sell can never round itself back above the holding."""
+    return math.floor(qty * 1_000_000) / 1_000_000
+
+
+def clean_qty(qty: float) -> float:
+    """Proposed order sizes come in half-share steps: whole or .5 shares,
+    never a long fraction. Round DOWN so the notional budget still holds;
+    a size that floors below half a share is not tradeable here."""
+    return math.floor(qty * 2) / 2
 
 
 def _text(value) -> str:
@@ -278,6 +294,7 @@ async def positions() -> list[BrokerPosition]:
             BrokerPosition(
                 symbol=row.symbol,
                 quantity=float(row.qty),
+                available=_f(getattr(row, "qty_available", None)),
                 avg_entry_price=float(row.avg_entry_price),
                 current_price=_f(row.current_price),
                 market_value=_f(row.market_value),
@@ -305,6 +322,7 @@ async def init() -> None:
                     run_id TEXT NOT NULL,
                     ticker TEXT NOT NULL,
                     side TEXT NOT NULL CHECK (side IN ('buy', 'sell')),
+                    qty REAL,
                     notional REAL NOT NULL,
                     order_type TEXT NOT NULL DEFAULT 'market',
                     time_in_force TEXT NOT NULL DEFAULT 'day',
@@ -324,6 +342,10 @@ async def init() -> None:
                 "CREATE INDEX IF NOT EXISTS idx_broker_orders_created "
                 "ON broker_orders(created_at)"
             )
+            try:
+                connection.execute("ALTER TABLE broker_orders ADD COLUMN qty REAL")
+            except sqlite3.OperationalError:
+                pass  # pre-qty table: the column is already there
             connection.execute(
                 """
                 CREATE TABLE IF NOT EXISTS broker_sync (
@@ -373,11 +395,15 @@ def _row_to_order(row: sqlite3.Row) -> BrokerOrder:
         run_id=row["run_id"],
         ticker=row["ticker"],
         side=row["side"],
+        qty=row["qty"],
         notional=row["notional"],
         status=row["status"],
         decision=row["decision"],
         confidence=row["confidence"],
         decision_as_of=row["decision_as_of"],
+        # The note column arrives by migration (P2.2); a database that has
+        # not run it yet still reads fine without the column.
+        note=row["note"] if "note" in row.keys() else None,
         filled_qty=row["filled_qty"],
         filled_avg_price=row["filled_avg_price"],
         error=row["error"],
@@ -418,29 +444,37 @@ def _insert_order(
     run_id: str,
     ticker: str,
     side: str,
+    qty: float,
     notional: float,
     decision: str,
     confidence: float,
     decision_as_of: str,
+    note: str | None = None,
 ) -> None:
+    # The note column exists once migrations run (startup always runs them);
+    # older rows and databases that skipped the step keep working by leaving
+    # the column out of the statement entirely.
+    columns = "client_order_id, run_id, ticker, side, qty, notional, status, decision, confidence, decision_as_of"
+    placeholders = "?, ?, ?, ?, ?, ?, 'pending_submit', ?, ?, ?"
+    params: list = [
+        client_order_id,
+        run_id,
+        ticker,
+        side,
+        qty,
+        notional,
+        decision,
+        confidence,
+        decision_as_of,
+    ]
+    if note is not None:
+        columns += ", note"
+        placeholders += ", ?"
+        params.append(note)
     with _connect() as connection:
         connection.execute(
-            """
-            INSERT INTO broker_orders (
-                client_order_id, run_id, ticker, side, notional,
-                status, decision, confidence, decision_as_of
-            ) VALUES (?, ?, ?, ?, ?, 'pending_submit', ?, ?, ?)
-            """,
-            (
-                client_order_id,
-                run_id,
-                ticker,
-                side,
-                notional,
-                decision,
-                confidence,
-                decision_as_of,
-            ),
+            f"INSERT INTO broker_orders ({columns}) VALUES ({placeholders})",
+            params,
         )
 
 
@@ -496,13 +530,107 @@ def _age_hours(as_of: str) -> float | None:
 _submit_lock = asyncio.Lock()
 
 
-async def submit_order(run_id: str, ticker: str, side: str, notional: float) -> BrokerOrder:
-    """Place one paper market/day notional order for a run's decision.
+def _describe_open_order(order) -> str:
+    """Plain-language description of a blocking order for rule messages."""
+    notional = getattr(order, "notional", None)
+    qty = getattr(order, "qty", None)
+    if notional not in (None, ""):
+        size = f"${float(notional):,.2f}"
+    elif qty not in (None, ""):
+        size = f"{qty} shares"
+    else:
+        size = "size n/a"
+    status = str(getattr(order.status, "value", order.status) or "").strip()
+    parts = [size]
+    if status:
+        parts.append(f"status {status}")
+    submitted = getattr(order, "submitted_at", None)
+    if submitted is not None:
+        try:
+            parts.append(
+                "placed " + submitted.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+            )
+        except (AttributeError, ValueError):
+            pass
+    return ", ".join(parts)
+
+
+async def _raise_if_opposite_working(ticker: str, side: str) -> None:
+    """Wash-trade pre-check: Alpaca rejects any buy and sell working in the
+    same symbol at the same time ("potential wash trade detected. use complex
+    orders", seen first on ALAB 2026-10-26). That rule is the broker's, but
+    its message is not a remedy, so the app applies the same rule earlier and
+    names the blocking order and the two ways out. The live read is the
+    authority (local rows can be stale); on a read failure the check steps
+    aside and Alpaca's own rejection stays the backstop.
+    """
+    opposite = "sell" if side == "buy" else "buy"
+
+    def _fetch():
+        from alpaca.trading.enums import OrderSide, QueryOrderStatus
+        from alpaca.trading.requests import GetOrdersRequest
+
+        return _client().get_orders(
+            GetOrdersRequest(
+                status=QueryOrderStatus.OPEN,
+                symbols=[ticker],
+                side=OrderSide(opposite),
+                limit=100,
+            )
+        )
+
+    try:
+        working = await asyncio.to_thread(_fetch)
+    except Exception as exc:  # noqa: BLE001 - fail open; the broker still rejects
+        logger.warning("[broker] wash-trade pre-check unavailable for %s: %s", ticker, exc)
+        return
+    if not working:
+        return
+    raise BrokerRuleError(
+        f"an open {opposite} order for {ticker} is already working "
+        f"({_describe_open_order(working[0])}). Buy and sell orders working in the "
+        f"same symbol at the same time are rejected by Alpaca as a potential wash "
+        f"trade: cancel it on the Trades page or wait for it to fill, then retry "
+        f"this {side}.",
+        status_code=409,
+    )
+
+
+async def _cap_sell_qty(
+    ticker: str, qty: float, price_hint: float | None
+) -> tuple[float, float]:
+    """Clamp a SELL to the shares actually owned and price its notional.
+
+    Hard limit: a sell can never exceed the shares actually held.
+    qty_available excludes shares locked in open orders; fall back to the
+    full position when the broker does not break it out. `price_hint` is the
+    decision's reference price when one exists, else the broker's own mark.
+    """
+    held = next((p for p in await positions() if p.symbol == ticker), None)
+    if held is None:
+        raise BrokerRuleError(
+            f"no paper position in {ticker} to sell; shorting is out of scope"
+        )
+    sellable = held.available if held.available is not None else held.quantity
+    qty = min(qty, floor_qty(sellable))
+    if qty <= 0:
+        raise BrokerRuleError(
+            f"cannot sell {ticker}: the request exceeds the "
+            f"{held.quantity:g} shares held "
+            f"({sellable:g} sellable right now)"
+        )
+    return qty, round(qty * (price_hint or held.current_price or 0.0), 2)
+
+
+async def submit_order(run_id: str, ticker: str, side: str, qty: float) -> BrokerOrder:
+    """Place one paper market/day order of `qty` shares for a run's decision.
 
     Every guard runs before any HTTP call. The row is inserted with status
     pending_submit before the POST, so a timeout can only leave state
     'unknown', which refresh_order resolves by client_order_id - never a
-    blind second submission.
+    blind second submission. Orders are share-based: a dollar notional gets
+    converted to shares by the broker at its own price, which let a price
+    tick turn a full exit into an over-sell (the rejected CMBT order).
     """
     from app import run_history
 
@@ -519,14 +647,13 @@ async def submit_order(run_id: str, ticker: str, side: str, notional: float) -> 
             "paper order submissions are disabled (ALPACA_TRADING_ENABLED)",
             status_code=403,
         )
-    if notional <= 0:
-        raise BrokerRuleError("notional must be positive")
-    if notional > settings.alpaca_max_order_usd:
-        raise BrokerRuleError(
-            f"notional must not exceed {settings.alpaca_max_order_usd:,.0f} USD"
-        )
-    # Alpaca accepts at most 2 decimal places on notional (42210000).
-    notional = round(notional, 2)
+    if qty <= 0:
+        raise BrokerRuleError("share quantity must be positive")
+    if qty > 1_000_000:
+        raise BrokerRuleError("share quantity must not exceed 1,000,000")
+    qty = floor_qty(qty)
+    if qty <= 0:
+        raise BrokerRuleError("share quantity is below one millionth of a share")
 
     run = await run_history.get(run_id)
     if run is None:
@@ -546,13 +673,30 @@ async def submit_order(run_id: str, ticker: str, side: str, notional: float) -> 
         raise BrokerRuleError(
             f"the decision for {ticker} is {analysis.decision}, not a {side}"
         )
-    if side == "buy" and notional < 1:
-        raise BrokerRuleError("buy notional must be at least 1 USD")
     age = _age_hours(analysis.as_of)
     if age is None or age > settings.alpaca_max_decision_age_hours:
         raise BrokerRuleError(
             "research too old to trade: reanalyze before ordering", status_code=409
         )
+
+    notional = 0.0
+    if side == "buy":
+        ref_price = analysis.price
+        if ref_price is None or ref_price <= 0:
+            raise BrokerRuleError(
+                "the decision has no reference price; reanalyze before ordering",
+                status_code=409,
+            )
+        if qty * ref_price > settings.alpaca_max_order_usd:
+            raise BrokerRuleError(
+                f"{qty:g} shares at ${ref_price:,.2f} must not exceed "
+                f"{settings.alpaca_max_order_usd:,.0f} USD"
+            )
+        if qty * ref_price < 1:
+            raise BrokerRuleError(
+                "buy order must be worth at least 1 USD at the reference price"
+            )
+        notional = round(qty * ref_price, 2)
 
     snapshot = await account()
     if snapshot.status != "ACTIVE" or snapshot.trading_blocked:
@@ -561,25 +705,10 @@ async def submit_order(run_id: str, ticker: str, side: str, notional: float) -> 
         )
 
     if side == "sell":
-        held = next(
-            (p for p in await positions() if p.symbol == ticker), None
-        )
-        if held is None:
-            raise BrokerRuleError(
-                f"no paper position in {ticker} to sell; shorting is out of scope"
-            )
-        market_value = held.market_value or 0.0
-        if market_value <= 0:
-            raise BrokerRuleError(f"the {ticker} position has no value to sell")
-        # A price tick between the position read and the POST can make an
-        # exact-value sell overshoot the holding (Alpaca 40310000), so every
-        # sell is haircut slightly: it can never short, but may leave dust.
-        # ponytail: fixed 0.5% haircut; per-tick precision if dust ever matters.
-        notional = round(min(notional, market_value * 0.995), 2)
-        if notional < 0.01:
-            raise BrokerRuleError(
-                f"the {ticker} position is worth less than a cent at the live price"
-            )
+        qty, notional = await _cap_sell_qty(ticker, qty, analysis.price)
+
+    # Alpaca's wash-trade rule, applied earlier with a readable message.
+    await _raise_if_opposite_working(ticker, side)
 
     async with _submit_lock:
         if _has_active_order(run_id, ticker, side):
@@ -600,25 +729,102 @@ async def submit_order(run_id: str, ticker: str, side: str, notional: float) -> 
             run_id,
             ticker,
             side,
+            qty,
             notional,
             analysis.decision,
             analysis.confidence,
             analysis.as_of,
         )
-    return await _submit_market_order(client_order_id, ticker, side, notional)
+    return await _submit_market_order(client_order_id, ticker, side, qty)
+
+
+AUTO_EXIT_RUN_ID = "auto-exit"
+
+
+async def submit_exit_order(ticker: str, qty: float, reason: str) -> BrokerOrder:
+    """Place one guarded full-position SELL without a research run behind it
+    (P2.4 auto-exit: the stop-loss / take-profit / max-hold sweep).
+
+    The guarded sibling of submit_order: same kill switch, account state,
+    sell cap (never more than owned), wash-trade rule, open-order dedupe,
+    and daily cap - minus only the decision-match and decision-age checks,
+    because a price-only exit has no decision to match. The order is
+    recorded with run_id AUTO_EXIT_RUN_ID and the rule name in `note`, so
+    run-less orders stay auditable in the trades table.
+    """
+    ticker = ticker.strip().upper()
+    if not TICKER_RE.match(ticker):
+        raise BrokerRuleError(f"invalid ticker symbol: '{ticker}'")
+    if not settings.alpaca_configured:
+        raise BrokerNotConfigured(
+            "Alpaca paper trading is not configured; add the API key ID and "
+            "secret key on the Settings page"
+        )
+    if not settings.alpaca_trading_enabled:
+        raise BrokerRuleError(
+            "paper order submissions are disabled (ALPACA_TRADING_ENABLED)",
+            status_code=403,
+        )
+    if qty <= 0:
+        raise BrokerRuleError("share quantity must be positive")
+    if qty > 1_000_000:
+        raise BrokerRuleError("share quantity must not exceed 1,000,000")
+    qty = floor_qty(qty)
+    if qty <= 0:
+        raise BrokerRuleError("share quantity is below one millionth of a share")
+
+    snapshot = await account()
+    if snapshot.status != "ACTIVE" or snapshot.trading_blocked:
+        raise BrokerRuleError(
+            "the paper account is not open for trading", status_code=403
+        )
+
+    qty, notional = await _cap_sell_qty(ticker, qty, None)
+
+    await _raise_if_opposite_working(ticker, "sell")
+
+    async with _submit_lock:
+        if _has_active_order(AUTO_EXIT_RUN_ID, ticker, "sell"):
+            raise BrokerRuleError(
+                f"an auto-exit order for {ticker} is already open", status_code=409
+            )
+        if _non_rejected_orders_today() >= settings.alpaca_max_orders_per_day:
+            raise BrokerRuleError(
+                f"daily paper order cap reached ({settings.alpaca_max_orders_per_day})",
+                status_code=429,
+            )
+        client_order_id = f"bta-{uuid.uuid4()}"
+        await asyncio.to_thread(
+            _insert_order,
+            client_order_id,
+            AUTO_EXIT_RUN_ID,
+            ticker,
+            "sell",
+            qty,
+            notional,
+            "SELL",
+            None,
+            None,
+            note=reason,
+        )
+    return await _submit_market_order(client_order_id, ticker, "sell", qty)
 
 
 async def _submit_market_order(
-    client_order_id: str, ticker: str, side: str, notional: float
+    client_order_id: str, ticker: str, side: str, qty: float
 ) -> BrokerOrder:
-    """POST one market/day notional order and settle the local row from the
-    response. The caller must have inserted the row before this runs."""
+    """POST one market/day order of `qty` shares and settle the local row from
+    the response. The caller must have inserted the row before this runs."""
+    from alpaca.common.exceptions import APIError
 
     def _submit():
+        from alpaca.trading.enums import OrderSide, OrderType, TimeInForce
+        from alpaca.trading.requests import MarketOrderRequest
+
         return _client().submit_order(
             MarketOrderRequest(
                 symbol=ticker,
-                notional=notional,
+                qty=qty,
                 side=OrderSide(side),
                 type=OrderType.MARKET,
                 time_in_force=TimeInForce.DAY,
@@ -666,6 +872,7 @@ def _update_from_remote_order(client_order_id: str, order) -> None:
 
 
 async def refresh_order(client_order_id: str) -> BrokerOrder:
+    from alpaca.common.exceptions import APIError
     """Reconcile one local row against Alpaca by client_order_id.
 
     This is the single recovery path for pending_submit/unknown rows and the
@@ -725,6 +932,8 @@ async def equity(period: str = "1M") -> dict:
     """Paper-account equity timeseries for the performance card."""
 
     def _fetch():
+        from alpaca.trading.requests import GetPortfolioHistoryRequest
+
         return _client().get_portfolio_history(
             GetPortfolioHistoryRequest(period=period, timeframe="1D")
         )
@@ -797,6 +1006,7 @@ async def order_performance(limit: int = 50) -> list[dict]:
                 "run_id": row["run_id"],
                 "ticker": row["ticker"],
                 "side": row["side"],
+                "qty": row["qty"],
                 "notional": row["notional"],
                 "filled_qty": row["filled_qty"],
                 "filled_avg_price": entry,
@@ -817,6 +1027,7 @@ async def order_performance(limit: int = 50) -> list[dict]:
 
 
 async def cancel_order(client_order_id: str) -> BrokerOrder:
+    from alpaca.common.exceptions import APIError
     """Cancel a non-terminal order; 422 passes through when Alpaca says it
     can no longer be canceled."""
     row = await asyncio.to_thread(_get_order_row, client_order_id)
@@ -919,6 +1130,8 @@ async def sync_state(max_age_s: float = 0.0) -> dict:
 
 
 async def sync_once() -> dict:
+    from alpaca.trading.enums import QueryOrderStatus
+    from alpaca.trading.requests import GetOrdersRequest
     """One reconciliation sweep (P2.3).
 
     Every non-terminal local row is refreshed against Alpaca by client
@@ -970,6 +1183,7 @@ async def sync_once() -> dict:
                 "client_order_id": client_order_id,
                 "symbol": str(getattr(order, "symbol", "") or ""),
                 "side": _text(getattr(order, "side", "")),
+                "qty": _f(getattr(order, "qty", None)),
                 "notional": _f(getattr(order, "notional", None)),
                 "submitted_at": str(getattr(order, "submitted_at", "") or ""),
             }
