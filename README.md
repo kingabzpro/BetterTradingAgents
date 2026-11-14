@@ -88,6 +88,23 @@ flowchart LR
 
 ## Quick start
 
+Choose the portable archive for your platform under **Assets** on [GitHub Releases](https://github.com/kingabzpro/BetterTradingAgents/releases).
+Extract it, open a terminal in the extracted `bettertradingagents` folder, and run
+the command for your platform. The archive bundles Python and the app.
+
+| Platform | Archive | Command |
+|---|---|---|
+| Windows x64 | `bettertradingagents-windows-x64.zip` | `.\bettertradingagents.exe` |
+| Linux x64 (Ubuntu 22.04 or newer) | `bettertradingagents-linux-x64.tar.gz` | `./bettertradingagents` |
+
+Open the local address printed in the terminal and use **Settings** to add
+provider keys. The app stores its SQLite database beside the executable and
+looks for an optional `.env` file in the same folder. Keep the extracted
+`_internal` folder alongside the executable. GitHub Actions attaches binaries
+to new releases after the archive smoke tests pass.
+
+### Run from source
+
 You need [Python 3.12+](https://www.python.org/) and [uv](https://docs.astral.sh/uv/).
 
 ```bash

@@ -1,6 +1,7 @@
 """Application configuration loaded from environment variables / .env file."""
 
 import os
+import sys
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -10,7 +11,12 @@ from dotenv import load_dotenv
 # from ever warning about or exporting to an absent OPENAI_API_KEY.
 os.environ.setdefault("OPENAI_AGENTS_DISABLE_TRACING", "1")
 
-BASE_DIR = Path(__file__).resolve().parent.parent
+# The portable executable keeps user files beside the launcher, outside its runtime files.
+BASE_DIR = (
+    Path(sys.executable).resolve().parent
+    if getattr(sys, "frozen", False)
+    else Path(__file__).resolve().parent.parent
+)
 load_dotenv(BASE_DIR / ".env", override=True)
 
 # P2.11: the LLM API key follows base_url to whatever host it names, so a
