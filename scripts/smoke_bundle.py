@@ -36,6 +36,8 @@ def smoke(archive: Path) -> None:
             if key in os.environ
         }
         env["PYTHON_KEYRING_BACKEND"] = "keyring.backends.fail.Keyring"
+        if os.name != "nt" and "-desktop-" in archive.name:
+            env["QT_DEBUG_PLUGINS"] = "1"
         client = build_opener(ProxyHandler({}))
         base = f"http://127.0.0.1:{port}"
         with (root / "server.log").open("w+b") as log:
