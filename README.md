@@ -2,7 +2,7 @@
 
 <img src="static/logo-full.png" width="700" alt="BetterTradingAgents multi-agent market intelligence"/>
 
-**Real-time, multi-agent AI stock research and paper trading, on the OpenAI Agents SDK.**
+**AI stock research and paper trading, powered by the OpenAI Agents SDK.**
 
 [![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-3776ab?logo=python&logoColor=white)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
@@ -10,81 +10,24 @@
 [![uv](https://img.shields.io/badge/uv-managed-de5fe9?logo=uv&logoColor=white)](https://docs.astral.sh/uv/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](#disclaimer)
 
-[Highlights](#highlights) · [Head-to-head](#head-to-head-with-tradingagents) · [Quick start](#quick-start) · [Using the app](#using-the-app) · [Configuration](#configuration) · [API](#api) · [Backtesting](#backtesting) · [Wiki](https://github.com/kingabzpro/BetterTradingAgents/wiki)
+[Quick start](#quick-start) · [Highlights](#highlights) · [Head-to-head](#head-to-head-with-tradingagents) · [Using the app](#using-the-app) · [Configuration](#configuration) · [API](#api) · [Backtesting](#backtesting) · [Wiki](https://github.com/kingabzpro/BetterTradingAgents/wiki)
 
 </div>
 
 ---
 
-Six analysts research each ticker in parallel (market regime, technicals, fundamentals,
-news, sentiment, forecast), a bull/bear debate with a neutral judge sharpens the case,
-and a risk-gated **BUY / HOLD / SELL** call comes back with sizing and the full
-reasoning trail. Every call is later graded against what the market actually did.
-Paper trading only. Research base: the
+BetterTradingAgents researches stocks with a team of AI agents and presents a
+**BUY / HOLD / SELL** decision with its reasoning and risk checks. Choose how
+much research to run, ask the manager follow-up questions, and place simulated
+orders through an Alpaca paper account. Completed calls can be graded against
+subsequent market performance.
+
+The app runs locally and supports OpenAI-compatible model providers. It is for
+research and paper trading, and does not place live trades. It is inspired by the
 [TradingAgents framework](https://arxiv.org/abs/2412.20138); the
-[wiki](https://github.com/kingabzpro/BetterTradingAgents/wiki) carries the details.
+[wiki](https://github.com/kingabzpro/BetterTradingAgents/wiki) has the details.
 
 ![BetterTradingAgents home screen](static/screenshots/home.png?v=99340e7)
-
-## Highlights
-
-| | Feature | What it means |
-|:---:|---|---|
-| ⚡ | **Parallel by design** | Researchers, data fetches, and tickers run concurrently. |
-| 🌍 | **Market regime** | A dedicated analyst reads S&P 500, Nasdaq, VIX, and the 10-year yield. |
-| ⚔️ | **Real debate** | Bull vs bear, then a neutral judge cross-examines both at Max depth. |
-| 🗣️ | **Social sentiment** | Reads Reddit and StockTwits; flags thin crowds as noise. |
-| ⚖️ | **Risk-gated decisions** | Volatility-scaled sizing capped by per-ticker, invested, and cash limits. |
-| 📜 | **Learns from its calls** | Every decision graded on return and alpha vs SPY; lessons feed the next run. |
-| 💬 | **Chat with the manager** | Follow-up chat grounded in that run's research. |
-| 🕶️ | **Incognito mode** | Market-only run: no account, no saving; download the report and it is gone. |
-| 🧪 | **Walk-forward backtests** | Replay past dates with point-in-time data, graded vs SPY after costs. |
-| ✅ | **Tested end to end** | 32 automated check groups plus a real-browser smoke; every setting round-trips exactly through the API and the web UI. |
-| 🕘 | **Durable history** | Every run saved in SQLite, reopenable from the Runs page. |
-| 📊 | **Real market data** | Finnhub, Olostep, yfinance; Bako (TimesFM) forecasts at the run's horizon, with a local ridge-model fallback. |
-| 🧠 | **Model flexibility** | Any OpenAI-compatible endpoint (OpenAI, DeepSeek, OpenRouter, Z.AI, vLLM, Ollama), per role or per agent, with automatic fallback when a provider rejects an output format. |
-| 🛡️ | **Autopilot with guard rails** | Scheduled paper sessions through the same risk gate and caps, plus a deployment budget, bear-market brake, and session webhook. |
-| 🪶 | **No frontend build step** | Vanilla HTML, CSS, and JavaScript served by FastAPI. |
-
-## Head-to-head with TradingAgents
-
-Six shared NVDA / AMD / MSFT calls, same model, same endpoint, same grading. Measured 2026-10-28.
-
-| | BetterTradingAgents (pro) | TradingAgents |
-|---|---|---|
-| Cost per decision | ~$0.011 | ~$0.069 |
-| Time per decision | ~9 s | ~3 min |
-| LLM calls per decision | 7 | ~16 |
-| Net P&L, $10k per BUY | Same (-$633) | -$633 |
-| Paper orders + risk caps | Yes | No ¹ |
-| Backtest A/B, holdout, baselines | Yes | Grid scoring |
-| Web app + guarded autopilot | Yes | - |
-| Local-only guard, OS-keychain keys | Yes | - |
-| LLM providers | OpenAI-compatible | Wider (native Anthropic, Google, Azure, Bedrock) |
-| Crash-resume | No | Yes |
-
-Call quality is a wash: both net -$633 on the same card, and a plain momentum baseline beats both. Around the model, this project pulls ahead: paper orders behind risk caps, backtest controls, web app, autopilot; upstream counters with a wider provider list and crash-resume.
-
-Full report: `backtests/report-vs-upstream-benchmark.md`.
-
-¹ Upstream's own backtest docs: "not a portfolio simulator, and must not grow one" - orders do not exist there.
-
-## How it works
-
-```mermaid
-flowchart LR
-    T["📈 Tickers<br/>up to five"] --> D["📡 Market data<br/>yfinance core · optional Finnhub / Olostep / Bako"]
-    D --> S["🔬 Researchers in parallel<br/>market · technical · fundamental · news<br/>sentiment (crowd proxy) · forecast (hosted → local ridge)"]
-    S --> B["⚔️ Bull vs bear debate<br/>+ judge at Max · skipped at Fast"]
-    B --> PM["👔 Portfolio Manager"]
-    TR["📜 Every call graded vs SPY"] -.-> PM
-    PA["🏦 Paper account"] -.-> PM
-    PM --> RG["🛡️ Risk gate<br/>sizing · caps vs paper equity · forecast check"]
-    PA -.-> RG
-    RG --> OUT["✅ BUY · HOLD · SELL"]
-    OUT --> C["💬 Manager chat"]
-    OUT --> O["🧾 Paper order"]
-```
 
 ## Quick start
 
@@ -96,8 +39,8 @@ Download and extract a desktop archive from [Releases](https://github.com/kingab
 - **Linux x64:** `bettertradingagents-desktop-linux-x64.tar.gz` — run `./bettertradingagents`.
 
 The app opens in its own window and includes Python. Keep `_internal` beside the executable.
-Add your provider URL, model, and API key in **Settings**; without a key, the app uses mock mode.
-Values in a `.env` file beside the executable or in system environment variables take priority and require a restart when changed.
+Add your provider URL, model, and API key in **Settings** to run real LLM analysis. Without a key, the app uses mock mode.
+Values in a `.env` file beside the executable or in system environment variables take priority over Settings and require a restart when changed.
 Windows requires the Microsoft Edge WebView2 runtime. Linux requires a graphical desktop and Qt system libraries (on Ubuntu:
 `sudo apt install libxcb-cursor0 libxkbcommon-x11-0 libxcb-xinerama0 libxcb-icccm4 libxcb-keysyms1 libxcb-render-util0 libxcb-xkb1 libxcb-shape0 libegl1`).
 
@@ -132,21 +75,82 @@ uv run app     # start the app on http://127.0.0.1:8000
 > labeled mock mode on live market data. The reverse works too: with only an
 > LLM key, every agent still gets real input (yfinance plus deterministic
 > Python math). The `uv run setup` wizard walks the first keys; everything
-> is editable later on the Settings page, no restart needed.
+> can also be configured in Settings. Fields set in `.env` or the environment
+> must be changed at their source and require a restart.
+
+## Highlights
+
+| Feature | What it does |
+|---|---|
+| Parallel research | Researchers, data fetches, and tickers run concurrently. |
+| Market regime | An analyst examines the S&P 500, Nasdaq, VIX, and 10-year yield. |
+| Debate | Bull and bear agents argue the case; at Max depth, a judge reviews both sides. |
+| Social sentiment | Uses Reddit and StockTwits results when available and treats thin crowds as noise. |
+| Risk checks | Applies volatility-scaled sizing and per-ticker, invested, and cash limits. |
+| Decision memory | Grades eligible decisions on return and alpha against SPY; lessons inform later runs. |
+| Manager chat | Answers follow-up questions using the run's research. |
+| Incognito mode | Runs market-only analysis without portfolio access or saved history; download the report before leaving. |
+| Walk-forward backtests | Replays past dates with point-in-time data and grades results against SPY after costs. |
+| Tests | Automated checks and a browser smoke test cover the API, Settings, and web UI. |
+| Run history | Saves regular runs in SQLite so they can be reopened from the Runs page. |
+| Market data | Uses Finnhub, Olostep, and yfinance; Bako (TimesFM) forecasts the selected horizon, with a local ridge-model fallback. |
+| Model providers | Supports OpenAI-compatible endpoints (OpenAI, DeepSeek, OpenRouter, Z.AI, vLLM, Ollama) per role or agent, with fallback when a provider rejects an output format. |
+| Autopilot | Schedules paper sessions with the same risk checks, a deployment budget, bear-market brake, and session webhook. |
+| Frontend | Serves vanilla HTML, CSS, and JavaScript through FastAPI without a frontend build step. |
+
+## Head-to-head with TradingAgents
+
+Six shared NVDA / AMD / MSFT calls, same model, same endpoint, same grading. Measured 2026-10-28.
+
+| | BetterTradingAgents (pro) | TradingAgents |
+|---|---|---|
+| Cost per decision | ~$0.011 | ~$0.069 |
+| Time per decision | ~9 s | ~3 min |
+| LLM calls per decision | 7 | ~16 |
+| Net P&L, $10k per BUY | Same (-$633) | -$633 |
+| Paper orders + risk caps | Yes | No ¹ |
+| Backtest A/B, holdout, baselines | Yes | Grid scoring |
+| Web app + guarded autopilot | Yes | - |
+| Local-only guard, OS-keychain keys | Yes | - |
+| LLM providers | OpenAI-compatible | Wider (native Anthropic, Google, Azure, Bedrock) |
+| Crash-resume | No | Yes |
+
+Both systems produced the same net -$633 on this small sample, while a plain momentum baseline performed better. BetterTradingAgents adds risk-capped paper orders, backtest controls, a web app, and autopilot. The upstream project supports more providers and crash-resume.
+
+Full report: `backtests/report-vs-upstream-benchmark.md`.
+
+¹ Upstream's own backtest docs: "not a portfolio simulator, and must not grow one" - orders do not exist there.
+
+## How it works
+
+```mermaid
+flowchart LR
+    T["📈 Tickers<br/>up to five"] --> D["📡 Market data<br/>yfinance core · optional Finnhub / Olostep / Bako"]
+    D --> S["🔬 Researchers in parallel<br/>market · technical · fundamental · news<br/>sentiment (crowd proxy) · forecast (hosted → local ridge)"]
+    S --> B["⚔️ Bull vs bear debate<br/>+ judge at Max · skipped at Fast"]
+    B --> PM["👔 Portfolio Manager"]
+    TR["📜 Every call graded vs SPY"] -.-> PM
+    PA["🏦 Paper account"] -.-> PM
+    PM --> RG["🛡️ Risk gate<br/>sizing · caps vs paper equity · forecast check"]
+    PA -.-> RG
+    RG --> OUT["✅ BUY · HOLD · SELL"]
+    OUT --> C["💬 Manager chat"]
+    OUT --> O["🧾 Paper order"]
+```
 
 ## Using the app
 
 | Screen | What it does |
 |---|---|
 | **Home** | Analyze up to 5 tickers with outlook and depth, or let **I Am Feeling Lucky** screen candidates. **Incognito** runs market-only and saves nothing. |
-| **History** | Every run saved with a direct `?run=<id>` link; rerun or cancel from the live view. |
+| **History** | Regular runs are saved with a direct `?run=<id>` link; rerun or cancel from the live view. |
 | **Trades** | Paper account: equity curve, positions, order lifecycle, return vs SPY, reconciliation drift banner, and the **Autopilot** card for scheduled sessions (notifications optional). |
-| **Settings** | Every knob editable live; keys go to the OS keychain. The experimentation switch adds opt-in retired pages. |
+| **Settings** | Configure providers and app behavior. Unlocked fields apply live, and the experimentation switch adds opt-in retired pages. |
 
 Screen-by-screen walkthrough with screenshots: wiki [Usage](https://github.com/kingabzpro/BetterTradingAgents/wiki/Usage).
 
 > [!TIP]
-> It is cheap to run for real. With DeepSeek V4.1 Flash, one ticker costs
+> In the recorded DeepSeek V4.1 Flash benchmark, one ticker cost
 > about **$0.02 at Fast (3 agents), $0.04 at Pro (7 agents), $0.07 at Max
 > (10 agents)** - the measured median of 88 real Max runs; news-heavy
 > sessions run higher, and DeepSeek off-peak is half price. Mock mode is
@@ -156,7 +160,7 @@ Screen-by-screen walkthrough with screenshots: wiki [Usage](https://github.com/k
 ## Configuration
 
 Configuration priority per configured field is `.env` → process environment →
-saved Settings (OS keychain for keys) → defaults. Empty values allow saved fallbacks.
+saved Settings (OS keychain for keys when available) → defaults. Empty values allow saved fallbacks.
 Fields set in `.env` or the environment are locked in Settings; edit them at their
 source and restart, or remove/comment them to use Settings. Other changes apply live. Key
 sign-up links and what is optional: wiki [Providers](https://github.com/kingabzpro/BetterTradingAgents/wiki/Providers).
@@ -182,7 +186,7 @@ wiki [Configuration](https://github.com/kingabzpro/BetterTradingAgents/wiki/Conf
 
 ## Security
 
-- Keys live in the OS keychain ([keyring](https://pypi.org/project/keyring/)), never in the database or logs.
+- Keys saved in Settings use the OS keychain ([keyring](https://pypi.org/project/keyring/)) when available. If it is unavailable, they are stored unencrypted in the local database and the app warns you.
 - Binds to `127.0.0.1` only; rejects non-loopback `Host` and cross-site `Origin` headers.
 - Paper only: the Alpaca client hardcodes `paper=True`; no live-trading path exists.
 - Found a vulnerability? Report it privately via [GitHub security advisories](https://github.com/kingabzpro/BetterTradingAgents/security/advisories/new) (see [SECURITY.md](SECURITY.md)); no public issues for exploitable findings.
