@@ -88,20 +88,18 @@ flowchart LR
 
 ## Quick start
 
-Choose the portable archive for your platform under **Assets** on [GitHub Releases](https://github.com/kingabzpro/BetterTradingAgents/releases).
-Extract it, open a terminal in the extracted `bettertradingagents` folder, and run
-the command for your platform. The archive bundles Python and the app.
+### Portable binaries (Python included)
+
+Download an archive from [Releases](https://github.com/kingabzpro/BetterTradingAgents/releases) or from **Artifacts** on the [latest successful Actions run](https://github.com/kingabzpro/BetterTradingAgents/actions/workflows/portable-binaries.yml).
+Extract it, then run the matching command from the `bettertradingagents` folder.
 
 | Platform | Archive | Command |
 |---|---|---|
 | Windows x64 | `bettertradingagents-windows-x64.zip` | `.\bettertradingagents.exe` |
 | Linux x64 (Ubuntu 22.04 or newer) | `bettertradingagents-linux-x64.tar.gz` | `./bettertradingagents` |
 
-Open the local address printed in the terminal and use **Settings** to add
-provider keys. The app stores its SQLite database beside the executable and
-looks for an optional `.env` file in the same folder. Keep the extracted
-`_internal` folder alongside the executable. GitHub Actions attaches binaries
-to new releases after the archive smoke tests pass.
+Keep `_internal` beside the executable. Open the URL printed in the terminal
+(usually `http://127.0.0.1:8000`) and add provider keys in **Settings**.
 
 ### Run from source
 
