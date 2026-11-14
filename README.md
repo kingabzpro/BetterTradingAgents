@@ -33,30 +33,14 @@ research and paper trading, and does not place live trades. It is inspired by th
 
 ### Portable binaries (Python included)
 
-Download and extract a desktop archive from [Releases](https://github.com/kingabzpro/BetterTradingAgents/releases/latest):
+Download and extract a desktop app from [Releases](https://github.com/kingabzpro/BetterTradingAgents/releases/latest):
 
 - **Windows x64:** `bettertradingagents-desktop-windows-x64.zip` — double-click `bettertradingagents.exe`.
 - **Linux x64:** `bettertradingagents-desktop-linux-x64.tar.gz` — run `./bettertradingagents`.
 
-The app opens in its own window and includes Python. Keep `_internal` beside the executable.
-Add your provider URL, model, and API key in **Settings** to run real LLM analysis. Without a key, the app uses mock mode.
-Values in a `.env` file beside the executable or in system environment variables take priority over Settings and require a restart when changed.
-Windows requires the Microsoft Edge WebView2 runtime. Linux requires a graphical desktop and Qt system libraries (on Ubuntu:
-`sudo apt install libxcb-cursor0 libxkbcommon-x11-0 libxcb-xinerama0 libxcb-icccm4 libxcb-keysyms1 libxcb-render-util0 libxcb-xkb1 libxcb-shape0 libegl1`).
+Python is included. Keep the `_internal` folder next to the app. Add your provider URL, model, and API key in **Settings**; without a key, the app runs in mock mode.
 
-Terminal-based downloads are also available. Extract the archive and run the matching command from the `bettertradingagents` folder:
-
-| Platform | Archive | Command |
-|---|---|---|
-| Windows x64 | `bettertradingagents-windows-x64.zip` | `.\bettertradingagents.exe` |
-| Linux x64 (Ubuntu 22.04 or newer) | `bettertradingagents-linux-x64.tar.gz` | `./bettertradingagents` |
-
-On Windows, you can also double-click `bettertradingagents.exe` to start the
-server in a terminal, then click the URL it prints.
-Keep the terminal open while using the app.
-
-Keep `_internal` beside the executable. Open the URL printed in the terminal
-(usually `http://127.0.0.1:8000`) and add provider keys in **Settings**.
+For terminal downloads and system requirements, see the [installation guide](https://github.com/kingabzpro/BetterTradingAgents/wiki#portable-binaries-python-included).
 
 ### Run from source
 
