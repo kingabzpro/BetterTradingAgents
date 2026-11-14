@@ -1,5 +1,5 @@
 # CI gate (ROADMAP P2.15): offline checks, lint, and the import smoke on
-# every push and pull request, so a broken check or an undeclared dependency
+# pull request and main push, so a broken check or an undeclared dependency
 # fails before merge instead of when a developer remembers `uv run test`.
 # The browser smoke is deliberately absent: it needs a system Chromium and
 # flakes often enough that a red/green gate would lie.
@@ -8,8 +8,9 @@ name: CI
 
 on:
   push:
-    branches: [main, dev]
+    branches: [main]
   pull_request:
+  workflow_dispatch:
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -35,6 +36,7 @@ jobs:
         run: uv sync --frozen
 
       - name: Lint (ruff)
+        if: matrix.python-version == '3.12'
         run: uv run ruff check app scripts
 
       - name: Offline check suite and import smoke
