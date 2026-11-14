@@ -6,6 +6,7 @@ on:
       - '.github/workflows/portable-binaries.yml'
       - 'app/**'
       - 'scripts/*bundle*.py'
+      - 'scripts/desktop.py'
       - 'static/**'
       - '.env.example'
       - 'LICENSE'
@@ -22,7 +23,7 @@ jobs:
   build:
     name: Build ${{ matrix.platform }} x64
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 20
+    timeout-minutes: 35
     strategy:
       fail-fast: false
       matrix:
@@ -30,9 +31,13 @@ jobs:
           - runner: windows-latest
             platform: Windows
             archive: bettertradingagents-windows-x64.zip
+            desktop: bettertradingagents-desktop-windows-x64.zip
+            desktop-deps: pywebview==6.1
           - runner: ubuntu-22.04
             platform: Linux
             archive: bettertradingagents-linux-x64.tar.gz
+            desktop: bettertradingagents-desktop-linux-x64.tar.gz
+            desktop-deps: pywebview[qt]==6.1
     steps:
       - uses: actions/checkout@v7
         with:
@@ -44,9 +49,25 @@ jobs:
         run: uv run --frozen --no-dev --with pyinstaller==6.22.3 python scripts/build_bundle.py packages
       - name: Launch and test the extracted bundle
         run: uv run --no-sync python scripts/smoke_bundle.py packages/${{ matrix.archive }}
+      - name: Install Linux desktop test dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y xvfb libxcb-cursor0 libxkbcommon-x11-0 libxcb-xinerama0 libxcb-icccm4 libxcb-keysyms1 libxcb-render-util0 libxcb-xkb1 libegl1
+      - name: Build desktop archive
+        run: uv run --frozen --no-dev --with pyinstaller==6.22.3 --with '${{ matrix.desktop-deps }}' python scripts/build_bundle.py packages --desktop
+      - name: Test Windows desktop archive
+        if: runner.os == 'Windows'
+        run: uv run --no-sync python scripts/smoke_bundle.py packages/${{ matrix.desktop }}
+      - name: Test Linux desktop archive
+        if: runner.os == 'Linux'
+        run: xvfb-run -a uv run --no-sync python scripts/smoke_bundle.py packages/${{ matrix.desktop }}
       - uses: actions/upload-artifact@v7
         with:
           path: packages/${{ matrix.archive }}
+          archive: false
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v7
+        with:
+          path: packages/${{ matrix.desktop }}
           archive: false
           if-no-files-found: error
 
@@ -69,4 +90,6 @@ jobs:
         run: |
           gh release upload "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
             packages/bettertradingagents-windows-x64.zip \
-            packages/bettertradingagents-linux-x64.tar.gz
+            packages/bettertradingagents-linux-x64.tar.gz \
+            packages/bettertradingagents-desktop-windows-x64.zip \
+            packages/bettertradingagents-desktop-linux-x64.tar.gz

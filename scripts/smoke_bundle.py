@@ -1,6 +1,7 @@
 """Launch an extracted release archive outside the source checkout."""
 
 import json
+import ctypes
 import os
 import shutil
 import socket
@@ -30,7 +31,8 @@ def smoke(archive: Path) -> None:
         (bundle / ".env").write_text(f"APP_PORT={port}\nMAX_TICKERS=4\n", encoding="utf-8")
         env = {
             key: os.environ[key]
-            for key in ("SystemRoot", "TEMP", "TMP", "TMPDIR")
+            for key in ("SystemRoot", "TEMP", "TMP", "TMPDIR", "HOME", "DISPLAY", "XAUTHORITY", "PATH",
+                        "USERPROFILE", "LOCALAPPDATA", "APPDATA", "PROGRAMFILES", "XDG_RUNTIME_DIR")
             if key in os.environ
         }
         env["PYTHON_KEYRING_BACKEND"] = "keyring.backends.fail.Keyring"
@@ -52,6 +54,9 @@ def smoke(archive: Path) -> None:
                     raise AssertionError(f"Packaged app failed to start:\n{log.read().decode(errors='replace')}")
 
                 assert health["mock_mode"] and health["max_tickers"] == 4, health
+                if "-desktop-" in archive.name:
+                    time.sleep(5)
+                    assert process.poll() is None, "Desktop window exited during startup"
                 with client.open(f"{base}/", timeout=5) as response:
                     assert b"BetterTradingAgents" in response.read()
                 with client.open(f"{base}/static/js/app.js", timeout=5) as response:
@@ -61,8 +66,31 @@ def smoke(archive: Path) -> None:
                 assert (bundle / "portfolio.db").is_file(), "Database should be beside the executable"
                 assert not (root / "portfolio.db").exists(), "Database escaped the portable app folder"
             finally:
-                process.terminate()
-                process.wait(timeout=10)
+                if os.name == "nt" and "-desktop-" in archive.name and process.poll() is None:
+                    user32 = ctypes.windll.user32
+                    callback_type = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p)
+
+                    @callback_type
+                    def close_window(handle, _):
+                        pid = ctypes.c_ulong()
+                        user32.GetWindowThreadProcessId(handle, ctypes.byref(pid))
+                        title = ctypes.create_unicode_buffer(128)
+                        user32.GetWindowTextW(handle, title, len(title))
+                        if pid.value == process.pid and title.value == "BetterTradingAgents":
+                            user32.PostMessageW(handle, 0x0010, 0, 0)  # WM_CLOSE
+                        return True
+
+                    user32.EnumWindows(close_window, 0)
+                    try:
+                        process.wait(timeout=15)
+                    except subprocess.TimeoutExpired:
+                        process.kill()
+                        process.wait(timeout=10)
+                        raise AssertionError("Desktop did not exit when its window closed")
+                    time.sleep(3)  # WebView2 releases its profile after the app exits.
+                elif process.poll() is None:
+                    process.terminate()
+                    process.wait(timeout=10)
     print(f"Extracted app smoke passed: {archive.name}")
 
 
