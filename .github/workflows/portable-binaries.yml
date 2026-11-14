@@ -1,0 +1,71 @@
+name: Portable binaries
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/portable-binaries.yml'
+      - 'app/**'
+      - 'scripts/*bundle*.py'
+      - 'static/**'
+      - '.env.example'
+      - 'LICENSE'
+      - 'pyproject.toml'
+      - 'uv.lock'
+  workflow_dispatch:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build ${{ matrix.platform }} x64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: windows-latest
+            platform: Windows
+            archive: bettertradingagents-windows-x64.zip
+          - runner: ubuntu-22.04
+            platform: Linux
+            archive: bettertradingagents-linux-x64.tar.gz
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@v7
+        with:
+          python-version: '3.12'
+      - name: Build portable archive
+        run: uv run --frozen --no-dev --with pyinstaller==6.22.3 python scripts/build_bundle.py packages
+      - name: Launch and test the extracted bundle
+        run: uv run --no-sync python scripts/smoke_bundle.py packages/${{ matrix.archive }}
+      - uses: actions/upload-artifact@v7
+        with:
+          path: packages/${{ matrix.archive }}
+          archive: false
+          if-no-files-found: error
+
+  publish:
+    if: github.event_name == 'release'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          path: packages
+          merge-multiple: true
+      - name: Attach binaries to the published release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          gh release upload "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
+            packages/bettertradingagents-windows-x64.zip \
+            packages/bettertradingagents-linux-x64.tar.gz
