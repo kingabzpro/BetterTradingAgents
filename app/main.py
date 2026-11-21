@@ -55,6 +55,7 @@ from app.outlook import DEFAULT_OUTLOOK, Outlook
 from app.redact import redact
 from app.runs import store
 from app.tools.market_data import get_closes_between
+from app.backtest.options.api import router as backtests_router
 
 # Quiet terminal by default (TERMINAL_LOGGING=1 in .env for the full trail):
 # warnings and errors always surface, INFO chatter does not.
@@ -70,6 +71,7 @@ CLIENT_ID_RE = re.compile(r"^[A-Za-z0-9_-]{8,64}$")
 
 app = FastAPI(title="BetterTradingAgents")
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+app.include_router(backtests_router)
 
 
 def _origin_authority(origin: str) -> str:

@@ -11,6 +11,7 @@ backups/
 .ruff_cache
 # backtest snapshot cache (regenerated on demand; reports are committed)
 backtests/*.db
+local-ops/backtests/options/
 
 # local dev artifacts
 .playwright-mcp/

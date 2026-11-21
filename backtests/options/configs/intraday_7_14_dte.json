@@ -1,0 +1,18 @@
+{
+  "rules": {
+    "mode": "options_intraday_v1",
+    "preset": "intraday_7_14_dte",
+    "min_dte": 7,
+    "max_dte": 14,
+    "target_dte": 10,
+    "holding_sessions": 1
+  },
+  "execution": {
+    "starting_cash": "2500.00",
+    "premium_budget": "0.15",
+    "commission": "0.65",
+    "other_fee_per_side": "0.00",
+    "slippage": "0.01",
+    "stress_slippage": "0.02"
+  }
+}
