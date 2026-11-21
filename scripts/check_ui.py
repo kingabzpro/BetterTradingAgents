@@ -100,7 +100,7 @@ print("module imports resolve OK")
 # ---- server-rendered nav: links, active state, chips, feature toggles ----------
 client = TestClient(app, base_url="http://127.0.0.1")
 
-for path, label in (("/", "Home"), ("/history", "History"), ("/portfolio", "Trades"), ("/settings", "Settings")):
+for path, label in (("/", "Home"), ("/history", "History"), ("/backtests", "Backtests"), ("/portfolio", "Trades"), ("/settings", "Settings")):
     response = client.get(path)
     assert response.status_code == 200, (path, response.status_code)
     text = response.text
@@ -110,7 +110,7 @@ for path, label in (("/", "Home"), ("/history", "History"), ("/portfolio", "Trad
     assert current and label in current.group(1), (path, label)
     nav = re.search(r'<nav aria-label="Primary navigation">(.*?)</nav>', text, re.S).group(1)
     links = re.findall(r'<a href="([^"]+)"', nav)
-    assert links == ["/", "/history", "/portfolio", "/settings"], (path, links)
+    assert links == ["/", "/history", "/backtests", "/portfolio", "/settings"], (path, links)
     if path == "/":
         assert "mode-chip" in nav and "incognito-chip" in nav
     else:
@@ -125,7 +125,7 @@ try:
         r'<nav aria-label="Primary navigation">(.*?)</nav>', client.get("/").text, re.S
     ).group(1)
     links = re.findall(r'<a href="([^"]+)"', nav)
-    assert links == ["/", "/history", "/watchlist", "/portfolio", "/settings"], links
+    assert links == ["/", "/history", "/backtests", "/watchlist", "/portfolio", "/settings"], links
     assert client.get("/watchlist").status_code == 200
     assert client.get("/accuracy").status_code == 404  # still off
 finally:
