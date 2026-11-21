@@ -18,6 +18,8 @@ QUOTE_LABELS = {"tick": "Historical quote backtest", "minute": "Historical minut
 SYNTHETIC_LABEL = "Synthetic mechanics test"
 REQUIRED_LABEL = "Historical options data required"
 DAILY_INTRADAY_LABEL = "Archived daily-signal intraday options replay."
+EXECUTION_POLICY_VERSION = "options-replay-v1-enforcement-1"
+MAX_PREMIUM_BUDGET = Decimal("0.15")
 SOURCE_TIME = re.compile(r"(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d)(?:\.(\d{1,9}))?(Z|[+-]\d\d:\d\d)")
 
 
@@ -57,7 +59,7 @@ PRESETS = {r.preset: r for r in (
 
 class Execution(Record):
     starting_cash: Decimal = Field(default=Decimal("2500.00"), gt=0, decimal_places=2, max_digits=10)
-    premium_budget: Decimal = Field(default=Decimal("0.15"), gt=0, le=1, decimal_places=4)
+    premium_budget: Decimal = Field(default=MAX_PREMIUM_BUDGET, gt=0, le=MAX_PREMIUM_BUDGET, decimal_places=4)
     commission: Decimal = Field(default=Decimal("0.65"), ge=0, decimal_places=2, max_digits=6)
     other_fee_per_side: Decimal = Field(default=Decimal("0.00"), ge=0, decimal_places=2, max_digits=6)
     slippage: Decimal = Field(default=Decimal("0.01"), ge=0, decimal_places=4, max_digits=6)
@@ -230,8 +232,12 @@ class Dataset(Record):
                     raise ValueError("minute quote bars require a start exactly one minute before observation")
             elif q.bar_start is not None:
                 raise ValueError("tick quotes cannot have a bar start")
-        if any(u.available_at > self.covered_through or u.ticker not in TICKERS for u in self.underlying):
-            raise ValueError("underlying observation outside the declared data archive")
+        spots = {}
+        for u in self.underlying:
+            if u.available_at > self.covered_through or u.ticker not in TICKERS:
+                raise ValueError("underlying observation outside the declared data archive")
+            if spots.setdefault((u.ticker, u.chronological_key), u.price) != u.price:
+                raise ValueError("ambiguous underlying order: conflicting observations require an original timestamp or source sequence")
         return self
 
 

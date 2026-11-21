@@ -11,6 +11,7 @@ from decimal import Decimal
 from pathlib import Path
 from threading import Event
 from unittest.mock import patch
+from uuid import uuid4
 
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
@@ -26,7 +27,7 @@ from app.backtest.options.data import batches, coverage_for, read_archive, synth
 from app.backtest.options.domain import CHICAGO, Dataset, Execution, PRESETS, Quote, schedule, session_bounds  # noqa: E402
 from app.backtest.options.identity import engine_identity  # noqa: E402
 from app.backtest.options.jobs import Jobs  # noqa: E402
-from app.backtest.options.replay import Cancelled, Tape, replay  # noqa: E402
+from app.backtest.options.replay import Account, Cancelled, Tape, replay  # noqa: E402
 from app.main import app  # noqa: E402
 
 archive = read_archive()
@@ -131,8 +132,8 @@ def check_engine():
     next_bar = same_bar.model_copy(update={"observed_at": entry+timedelta(minutes=2), "available_at": entry+timedelta(minutes=2),
                                            "bar_start": entry+timedelta(minutes=1)})
     minute = Dataset.model_validate({**fixture.model_dump(), "quotes": [same_bar, next_bar], "resolution": "minute"})
-    assert Tape(minute).entry_quote(contract, entry, entry+timedelta(seconds=1), entry+timedelta(minutes=1)) is None
-    assert Tape(minute).entry_quote(contract, entry, entry+timedelta(seconds=1), entry+timedelta(minutes=3)) == next_bar
+    assert Tape(minute).entry_quote(contract, entry, entry+timedelta(seconds=1), entry+timedelta(minutes=1)) == (same_bar, "entry_quote_precedes_order")
+    assert Tape(minute).entry_quote(contract, entry, entry+timedelta(seconds=1), entry+timedelta(minutes=3)) == (next_bar, None)
     assert not coverage_for(None, plan)["supported"]
     assert not coverage_for(fixture.model_copy(update={"quotes": []}), plan)["supported"]
     cancel = Event()
@@ -145,9 +146,142 @@ def check_engine():
         raise AssertionError("expected cooperative cancellation")
 
 
+def check_execution_boundary():
+    rules = PRESETS["swing_5_sessions"]
+    dataset, signals = synthetic(rules, archive)
+    day, entry, exit_at, rows = batches(signals, rules, days[0], days[0])[0]
+    actions = {"AMD": "BUY", "META": "BUY", "NVDA": "BUY", "AAPL": "SELL"}
+    rows = [s.model_copy(update={arm: actions.get(s.ticker, "HOLD")
+                                 for arm in ("fast", "momentum")}) for s in rows]
+    plan = [(day, entry, exit_at, rows)]
+    amd = next(c for c in dataset.contracts if c.ticker == "AMD")
+    expiry = entry.date() + timedelta(days=rules.min_dte)
+    amd = amd.model_copy(update={"expiration": expiry,
+                                 "last_trade_at": session_bounds(datetime.combine(expiry, datetime.min.time(), CHICAGO))[1]})
+    contracts = [amd if c.id == amd.id else c for c in dataset.contracts]
+    fill_observation = entry + timedelta(seconds=2)
+    quotes = []
+    for q in dataset.quotes:
+        if q.observed_at == entry:
+            q = q.model_copy(update={"bid": Decimal("1.15"), "ask": Decimal("1.20")})
+        elif q.observed_at == fill_observation:
+            q = q.model_copy(update={"bid": Decimal("1.17"), "ask": Decimal("1.22")})
+        elif q.contract_id == amd.id:
+            q = q.model_copy(update={"bid": Decimal("1.00"), "ask": Decimal("2.00")})
+        quotes.append(q)
+    dataset = Dataset.model_validate({**dataset.model_dump(), "contracts": contracts, "quotes": quotes})
+    execution = Execution()
+    for override in ({"source": "live"}, {"account_mode": "live"}):
+        try:
+            Dataset.model_validate({**dataset.model_dump(), **override})
+        except ValidationError:
+            pass
+        else:
+            raise AssertionError("market-data imports cannot supply a live mode")
+
+    result = replay(dataset, plan, rules, execution, Event(), lambda *_: None)
+    for scenario in (result["primary"], result["stress"]):
+        a = scenario["accounts"]["fast"]
+        b = scenario["accounts"]["momentum"]
+        assert a["fees"] == b["fees"] and a["ending_equity"] == b["ending_equity"]
+        assert [(t["contract_id"], t["realized_pnl"]) for t in a["trades"]] == [
+            (t["contract_id"], t["realized_pnl"]) for t in b["trades"]]
+        assert [(r["ticker"], r["status"]) for r in a["decisions"]] == [(r["ticker"], r["status"]) for r in b["decisions"]]
+        assert a["peak_batch_commitment_with_fees"] == b["peak_batch_commitment_with_fees"] <= Decimal("375.00")
+    arm = result["primary"]["accounts"]["fast"]
+    assert [t["ticker"] for t in arm["trades"]] == ["AMD", "META", "NVDA"]
+    trade = arm["trades"][0]
+    assert trade["contract_id"] == amd.id and trade["contracts"] == 1 and trade["entry_premium"] == Decimal("1.23")
+    receipt = next(row for row in arm["decisions"] if row["ticker"] == "AMD")
+    assert receipt["intent_id"] == trade["intent_id"] and receipt["status"] == "filled"
+    assert receipt["selection_quote"].available_at == entry and receipt["underlying"].price == Decimal("100")
+    assert trade["entry_cash_before"] - trade["entry_cash_after"] == Decimal("123.65")
+    assert (expiry - trade["exit_at"].astimezone(CHICAGO).date()).days < rules.min_dte
+    assert trade["exit_quote"].ask - trade["exit_quote"].bid > Decimal("0.20")
+    assert trade["exit_at"] == exit_at + timedelta(seconds=1) and trade["proceeds"] == Decimal("99.00")
+    assert trade["exit_cash_after"] - trade["exit_cash_before"] == Decimal("98.35")
+
+    # The actual fill plus both fees fits individually, and three fit before the research debit.
+    charged = [s.model_copy(update={"research_cost": Decimal("15.00")}) if s.ticker == "AMD" else s for s in rows]
+    accounts = replay(dataset, [(day, entry, exit_at, charged)], rules, execution, Event(), lambda *_: None)["primary"]["accounts"]
+    assert accounts["fast"]["research_costs"] == Decimal("15.00")
+    assert accounts["fast"]["positions_opened"] == 2 and accounts["momentum"]["positions_opened"] == 3
+    assert accounts["fast"]["peak_batch_commitment_with_fees"] == Decimal("248.60")
+    assert accounts["momentum"]["peak_batch_commitment_with_fees"] == Decimal("372.90")
+    assert {"ticker": "NVDA", "reason": "shared_premium_budget_exhausted", "count": 1} in accounts["fast"]["skips"]
+
+    account = Account(execution.starting_cash, execution, execution.slippage)
+    tape = Tape(dataset)
+    for _ in range(2):
+        account.enter_batch(tape, rules, charged, "fast", day, entry, exit_at, "")
+    assert (account.cash, account.available_cash, account.research, account.fees) == (
+        Decimal("2237.70"), Decimal("2236.40"), Decimal("15.00"), Decimal("1.30"))
+    assert len(account.decisions) == len(charged) and len(account.open) == 2
+    settle_at = exit_at + timedelta(seconds=1)
+    for _ in range(2):
+        account.settle(settle_at, intraday=False)
+    assert account.cash == accounts["fast"]["ending_equity"]
+    assert account.fees == Decimal("2.60") and len(account.trades) == 2 and not account.open
+    account.enter_batch(tape, rules, charged, "fast", day, entry, exit_at, "")
+    assert account.research == Decimal("15.00") and account.cash == accounts["fast"]["ending_equity"]
+
+    fill = next(q for q in quotes if q.contract_id == amd.id and q.observed_at == fill_observation)
+    for invalid in ({"bid": Decimal("1.25")}, {"ask_size": None}, {"ask_size": 0},
+                    {"observed_at": entry - timedelta(seconds=3)}, {"available_at": entry + timedelta(seconds=4)}):
+        changed = dataset.model_copy(update={"quotes": [fill.model_copy(update=invalid) if q == fill else q for q in quotes]})
+        arm = replay(changed, plan, rules, execution, Event(), lambda *_: None)["primary"]["accounts"]["fast"]
+        assert {"ticker": "AMD", "reason": "missing_or_unexecutable_entry_quote", "count": 1} in arm["skips"]
+        assert all(t["contract_id"] != amd.id for t in arm["trades"])
+
+    selected = next(q for q in quotes if q.contract_id == amd.id and q.observed_at == entry)
+    earlier = selected.model_copy(update={"observed_at": entry - timedelta(seconds=2)})
+    pre_listing = dataset.model_copy(update={"contracts": [amd.model_copy(update={"listed_at": entry-timedelta(seconds=1)})],
+                                              "quotes": [earlier]})
+    assert Tape(pre_listing).pick("AMD", entry, exit_at, rules)[0] is None
+    opened_at = session_bounds(entry)[0]
+    premarket_bar = selected.model_copy(update={"bar_start": opened_at-timedelta(minutes=1),
+                                                 "observed_at": opened_at, "available_at": opened_at})
+    minute = Dataset.model_validate({**dataset.model_dump(), "resolution": "minute", "quotes": [premarket_bar]})
+    assert Tape(minute).at(amd.id, opened_at) is None
+
+    closing = next(q for q in quotes if q.contract_id == amd.id and q.observed_at == settle_at)
+    newer_crossed = closing.model_copy(update={"observed_at": settle_at+timedelta(seconds=1),
+                                               "available_at": settle_at+timedelta(seconds=1),
+                                               "bid": Decimal("3.00")})
+    old_arrives_late = closing.model_copy(update={"available_at": settle_at+timedelta(seconds=2)})
+    unordered = dataset.model_copy(update={"quotes": [newer_crossed, old_arrives_late]})
+    assert Tape(unordered).exit_quote(amd, exit_at, old_arrives_late.available_at, execution.slippage) is None
+
+    observed = dataset.underlying[0]
+    try:
+        Dataset.model_validate({**dataset.model_dump(), "underlying": [observed, observed.model_copy(update={"price": Decimal("99")})]})
+    except ValidationError:
+        pass
+    else:
+        raise AssertionError("conflicting prices without chronological evidence must be rejected")
+
+    for supplied_plan, supplied_rules, supplied_execution, reason in (
+        (plan * 2, rules, execution, "duplicate signal date"),
+        ([(day, entry, exit_at - timedelta(minutes=1), rows)], rules, execution, "scheduled entry and exit"),
+        (plan, rules.model_copy(update={"min_dte": 1}), execution, "frozen rules"),
+        (plan, rules, execution.model_copy(update={"premium_budget": Decimal("0.16")}), "premium_budget"),
+    ):
+        processed = []
+        try:
+            replay(dataset, supplied_plan, supplied_rules, supplied_execution, Event(), lambda *args: processed.append(args))
+        except ValueError as error:
+            assert reason in str(error) and not processed
+        else:
+            raise AssertionError(f"invalid plan must be rejected before allocating or charging: {reason}")
+
+
 def request(preset):
     return {"preset": preset, "mode": PRESETS[preset].mode, "source": "synthetic",
             "start": str(days[0]), "end": str(days[-1])}
+
+
+def post_options(client, body):
+    return client.post("/api/backtests/runs", json=body, headers={"Idempotency-Key": str(uuid4())})
 
 
 def delayed_comparison():
@@ -236,16 +370,22 @@ def check_engine_identity():
 
 def check_api():
     api.jobs = Jobs(root / "api")
-    with TestClient(app, base_url="http://127.0.0.1:8000") as client:
+    with (TestClient(app, base_url="http://127.0.0.1:8000") as client,
+          patch("app.broker._client", side_effect=AssertionError("options replay reached a broker")) as broker_client):
         assert 'aria-current="page">Backtests' in client.get("/backtests").text
         assert len(client.get("/api/backtests").json()["presets"]) == 3
+        options = request("intraday_7_14_dte")
+        for override in ({"source": "live"}, {"account_mode": "live"}, {"execution": {"account_mode": "live"}},
+                         {"execution": {"premium_budget": "0.1501"}}):
+            assert post_options(client, {**options, **override}).status_code == 422
+        assert not api.jobs.active
         ids, hashes = [], set()
         for preset in PRESETS:
             args = request(preset)
             result = client.get("/api/backtests/readiness", params={**args, "source": "historical"}).json()
             assert not result["ready"] and len(result["unsupported"]) == 23
-            assert client.post("/api/backtests/runs", json={**args, "source": "historical"}).status_code == 409
-            response = client.post("/api/backtests/runs", json=args)
+            assert post_options(client, {**args, "source": "historical"}).status_code == 409
+            response = post_options(client, args)
             assert response.status_code == 202, response.text
             status = response.json()
             ids.append(status["run_id"])
@@ -257,8 +397,12 @@ def check_api():
                     break
                 time.sleep(.03)
             assert row["status"] == "complete", row
-            assert row["result"]["manifest"]["rules"]["preset"] == preset
-            engine = row["result"]["manifest"]["engine"]
+            result = row["result"]
+            manifest = result["manifest"]
+            assert manifest["rules"]["preset"] == preset
+            assert manifest["account_mode"] == result["account_mode"] == "simulated"
+            assert manifest["execution_policy_version"] == result["execution_policy_version"]
+            engine = manifest["engine"]
             assert engine["source_commit"] and len(engine["source_sha256"]) == 64
             assert row["label"] == "Synthetic mechanics test"
             assert "attachment" in client.get(f"{endpoint}/export").headers["content-disposition"]
@@ -273,7 +417,7 @@ def check_api():
 
         with patch("app.backtest.options.jobs.ENGINE_IDENTITY", {**engine, "source_sha256": "0" * 64}), \
              patch("app.backtest.options.jobs.replay", return_value=delayed_comparison()):
-            response = client.post("/api/backtests/runs", json=request("intraday_7_14_dte"))
+            response = post_options(client, request("intraday_7_14_dte"))
             assert response.json()["config_hash"] not in hashes
             endpoint = f"/api/backtests/runs/{response.json()['run_id']}"
             for _ in range(100):
@@ -291,7 +435,7 @@ def check_api():
             raise Cancelled
 
         with patch("app.backtest.options.jobs.replay", side_effect=wait_for_cancel):
-            response = client.post("/api/backtests/runs", json=request("intraday_7_14_dte"))
+            response = post_options(client, request("intraday_7_14_dte"))
             endpoint = f"/api/backtests/runs/{response.json()['run_id']}"
             assert client.post(f"{endpoint}/cancel").json()["cancel_requested"]
             for _ in range(100):
@@ -301,6 +445,7 @@ def check_api():
                 time.sleep(.02)
             assert row["status"] == "cancelled"
             assert client.get(f"{endpoint}/export").status_code == 409
+        broker_client.assert_not_called()
 
 
 def check_browser():
@@ -331,6 +476,7 @@ def check_browser():
             for preset, rules in PRESETS.items():
                 page.get_by_role("radio", name="Options intraday" if rules.holding_sessions == 1 else "Options swing").check()
                 page.locator("#preset").select_option(preset)
+                expect(page.locator("#exec-premium_budget")).to_have_attribute("max", "0.15")
                 page.locator("#source").select_option("historical")
                 expect(page.locator("#readiness")).to_contain_text("Historical options data required")
                 expect(page.get_by_role("button", name="Run backtest")).to_be_disabled()
@@ -343,6 +489,7 @@ def check_browser():
                     page.get_by_role("link", name="Export JSON").click()
                 record = json.loads(Path(download.value.path()).read_bytes())
                 assert record["manifest"]["rules"]["preset"] == preset
+                assert record["manifest"]["account_mode"] == "simulated"
             page.reload()
             expect(page.locator("#classification")).to_contain_text("Synthetic mechanics test")
             expect(page.get_by_text("Portfolio comparison", exact=True)).to_be_visible()
@@ -394,6 +541,7 @@ def check_browser():
 
 check_calendar()
 check_engine()
+check_execution_boundary()
 check_comparison_and_ordering()
 check_engine_identity()
 check_api()

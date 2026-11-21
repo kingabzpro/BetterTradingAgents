@@ -4,9 +4,10 @@ const money = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD
 const chicago = new Intl.DateTimeFormat('en-US', { timeZone: 'America/Chicago', dateStyle: 'short', timeStyle: 'medium' });
 const presetNames = { intraday_7_14_dte: '7–14 DTE · same session', swing_5_sessions: '14–21 DTE · 5 sessions', swing_10_sessions: '28–35 DTE · 10 sessions' };
 const names = { stock: 'Stock', options_swing_v1: 'Options swing', options_intraday_v1: 'Options intraday' };
+const pendingOptionsKey = 'bta.backtests.pending-options';
 const fields = [
   ['starting_cash', 'Starting equity ($)', '0.01', '0.01', '99999999'],
-  ['premium_budget', 'Shared premium budget (fraction)', '0.0001', '0.0001', '1'],
+  ['premium_budget', 'Shared premium budget (fraction)', '0.0001', '0.0001'],
   ['commission', 'Commission per side ($)', '0.01', '0', '9999'],
   ['other_fee_per_side', 'Other fees per side ($)', '0.01', '0', '9999'],
   ['slippage', 'Adverse slippage per unit ($)', '0.0001', '0', '99'],
@@ -17,6 +18,22 @@ let readinessVersion = 0;
 let activeRun = null;
 let viewing = null;
 let submitting = false;
+let pendingOptions = null;
+try {
+  pendingOptions = JSON.parse(sessionStorage.getItem(pendingOptionsKey));
+} catch {
+  // The in-memory request still supports retries when browser storage is unavailable.
+}
+
+function savePendingOptions(request) {
+  pendingOptions = request;
+  try {
+    if (request) sessionStorage.setItem(pendingOptionsKey, JSON.stringify(request));
+    else sessionStorage.removeItem(pendingOptionsKey);
+  } catch {
+    // The current page still retains the pending request.
+  }
+}
 
 function element(tag, content, parent) {
   const node = document.createElement(tag);
@@ -28,7 +45,10 @@ function element(tag, content, parent) {
 async function api(url, options) {
   const response = await fetch(`/api/backtests${url}`, options);
   const data = await response.json();
-  if (!response.ok) throw new Error(typeof data.detail === 'string' ? data.detail : data.detail?.map((e) => e.msg).join(' ') || 'Backtest request failed.');
+  if (!response.ok) {
+    const detail = Array.isArray(data?.detail) ? data.detail.map((e) => e.msg).join(' ') : data?.detail;
+    throw Object.assign(new Error(typeof detail === 'string' && detail ? detail : 'Backtest request failed.'), { status: response.status });
+  }
   return data;
 }
 
@@ -63,7 +83,7 @@ function buildFields() {
     const id = `exec-${key}`;
     element('label', title, group).htmlFor = id;
     const input = element('input', null, group);
-    Object.assign(input, { id, name: key, type: 'number', step, min, max, value: meta.execution[key], required: true });
+    Object.assign(input, { id, name: key, type: 'number', step, min, max: max ?? meta.execution[key], value: meta.execution[key], required: true });
   }
 }
 
@@ -309,13 +329,27 @@ setup.addEventListener('submit', async (event) => {
   submitting = true;
   byId('run').disabled = true;
   byId('result').hidden = true;
+  const optionsRun = setup.elements.mode.value !== 'stock';
   try {
-    const row = await api('/runs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload()) });
+    const body = JSON.stringify(payload());
+    const headers = { 'Content-Type': 'application/json' };
+    if (optionsRun) {
+      if (pendingOptions?.body !== body || typeof pendingOptions.key !== 'string') {
+        savePendingOptions({ body, key: crypto.randomUUID() });
+      }
+      headers['Idempotency-Key'] = pendingOptions.key;
+    }
+    const row = await api('/runs', { method: 'POST', headers, body });
+    if (optionsRun) {
+      if (typeof row?.run_id !== 'string' || !row.run_id) throw new Error('The server did not identify the options run.');
+      savePendingOptions(null);
+    }
     viewing = row.run_id;
     window.history.replaceState(null, '', `?run=${row.run_id}`);
     trackActive(row.run_id);
   } catch (error) {
-    byId('run-status').textContent = error.message;
+    if (optionsRun && error.status >= 400 && error.status < 500 && error.status !== 408) savePendingOptions(null);
+    announce(optionsRun && pendingOptions ? `${error.message} Retry with the same settings.` : error.message);
   } finally {
     submitting = false;
     coverage();

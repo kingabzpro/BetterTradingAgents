@@ -11,6 +11,7 @@ from datetime import date, datetime, timezone
 from decimal import Decimal
 from functools import lru_cache
 from pathlib import Path
+from tempfile import NamedTemporaryFile
 from threading import Event
 import time
 from typing import Literal
@@ -20,7 +21,7 @@ from pydantic import Field, model_validator
 
 from app.backtest.options.data import ROOT, batches, coverage_for, load_dataset, read_archive, synthetic
 from app.backtest.options.domain import (
-    DAILY_INTRADAY_LABEL, PRESETS, QUOTE_LABELS, REQUIRED_LABEL, SYNTHETIC_LABEL,
+    DAILY_INTRADAY_LABEL, EXECUTION_POLICY_VERSION, PRESETS, QUOTE_LABELS, REQUIRED_LABEL, SYNTHETIC_LABEL,
     Execution, Mode, Preset, Record, TICKERS,
 )
 from app.backtest.options.identity import engine_identity
@@ -82,6 +83,10 @@ def _write(path: Path, value) -> None:
         temporary.unlink(missing_ok=True)
 
 
+def _is_run_id(run_id: str) -> bool:
+    return len(run_id) == 32 and all(c in "0123456789abcdef" for c in run_id)
+
+
 class Jobs:
     def __init__(self, root: Path):
         self.root = root
@@ -128,6 +133,10 @@ class Jobs:
 
     def history(self) -> list:
         rows = [self._status(path) for path in self.root.glob("*/*/*/*/status.json")]
+        existing = {row["run_id"] for row in rows}
+        for receipt in (self.root / "requests").glob("*.json"):
+            if receipt.stem not in existing and (status := self._request_status(receipt.stem)):
+                rows.append(status)
         rows = sorted(rows, key=lambda r: r.get("started_at", ""), reverse=True)
         rows.extend({"run_id": run_id, "mode": "stock", "status": "complete", "label": path.name,
                      "preset": (path.parent.name if path.parent.parent.name == "live-sweep" else None)}
@@ -135,15 +144,59 @@ class Jobs:
         return rows
 
     def _status(self, path: Path) -> dict:
-        status = json.loads(path.read_bytes())
+        for retry in range(5):
+            try:
+                raw = path.read_bytes()
+                break
+            except PermissionError:
+                # Windows readers can also briefly race the atomic status replacement.
+                time.sleep(0.025 * (retry + 1))
+        else:
+            raw = path.read_bytes()
+        return self._interrupt_if_inactive(json.loads(raw))
+
+    def _interrupt_if_inactive(self, status: dict) -> dict:
         if status["status"] == "running" and status["run_id"] not in self.active:
             status.update(status="interrupted", message="Server stopped before this run finished.")
         return status
 
     def find(self, run_id: str) -> Path | None:
-        if len(run_id) != 32 or any(c not in "0123456789abcdef" for c in run_id):
+        if not _is_run_id(run_id):
             return None
         return next(self.root.glob(f"*/*/*/{run_id}/status.json"), None)
+
+    def _request_status(self, run_id: str, fingerprint: str | None = None) -> dict | None:
+        if not _is_run_id(run_id):
+            return None
+        try:
+            receipt = json.loads((self.root / "requests" / f"{run_id}.json").read_bytes())
+        except FileNotFoundError:
+            return None
+        if fingerprint is not None and receipt["request_sha256"] != fingerprint:
+            raise ValueError("This Idempotency-Key was already used for a different options backtest request.")
+        status = receipt["status"]
+        path = self.root / status["mode"] / status["preset"] / status["config_hash"] / run_id / "status.json"
+        try:
+            return self._status(path)
+        except FileNotFoundError:
+            # A stopped server may have claimed the request before creating the run files.
+            return self._interrupt_if_inactive(status)
+
+    def _claim_request(self, run_id: str, request_fingerprint: str, status: dict) -> bool:
+        path = self.root / "requests" / f"{run_id}.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = NamedTemporaryFile(mode="w", encoding="utf-8", dir=path.parent, suffix=".tmp", delete=False)
+        staged = Path(temporary.name)
+        try:
+            with temporary:
+                json.dump(encoded({"request_sha256": request_fingerprint, "status": status}), temporary)
+            # Publish the complete receipt exclusively, before any replay can start.
+            path.hardlink_to(staged)
+        except FileExistsError:
+            return False
+        finally:
+            staged.unlink(missing_ok=True)
+        return True
 
     def details(self, run_id: str) -> dict | None:
         path = self.find(run_id)
@@ -157,14 +210,26 @@ class Jobs:
         if archived:
             return {"run_id": run_id, "mode": "stock", "status": "complete", "label": archived.name,
                     "result": json.loads(archived.read_bytes())}
-        return None
+        return self._request_status(run_id)
 
-    async def start(self, request: Request) -> dict:
+    async def start(self, request: Request, idempotency_key: uuid.UUID | None = None) -> dict:
+        fingerprint = None
+        if request.mode == "stock":
+            run_id = uuid.uuid4().hex
+        else:
+            if idempotency_key is None:
+                raise ValueError("Options backtests require a UUID Idempotency-Key.")
+            run_id = hashlib.sha256(b"options-backtest-request\0" + idempotency_key.bytes).hexdigest()[:32]
+            fingerprint = digest(request)
+            if existing := self._request_status(run_id, fingerprint):
+                return existing
         if self.active:
             raise ValueError("Another backtest is running. Finish or cancel it first.")
         prepared = None
         if request.mode != "stock":
             prepared = await asyncio.to_thread(self.prepare, request)
+            if fingerprint and (existing := self._request_status(run_id, fingerprint)):
+                return existing
             if not prepared[-1]["ready"]:
                 raise ValueError(prepared[-1]["issue"] or REQUIRED_LABEL)
         elif getattr(sys, "frozen", False):
@@ -172,12 +237,12 @@ class Jobs:
         # A request may finish preparing while another request creates its task.
         if self.active:
             raise ValueError("Another backtest is running. Finish or cancel it first.")
-        run_id = uuid.uuid4().hex
         manifest = {"schema_version": 1, "request": request, "run_id": run_id,
                     "started_at": datetime.now(timezone.utc)}
         if prepared:
             rules, archive, dataset, identity, _, ready = prepared
-            manifest.update(rules=rules, engine=ENGINE_IDENTITY, market_data_sha256=identity, provider=dataset.provider,
+            manifest.update(account_mode="simulated", execution_policy_version=EXECUTION_POLICY_VERSION,
+                            rules=rules, engine=ENGINE_IDENTITY, market_data_sha256=identity, provider=dataset.provider,
                             entitlement=dataset.entitlement, resolution=dataset.resolution, coverage=ready,
                             signal_source=archive.source, candidate=archive.candidate, model=archive.model,
                             signal_sha256=digest(archive), provenance=archive.provenance,
@@ -192,11 +257,15 @@ class Jobs:
         config_hash = digest({k: v for k, v in manifest.items() if k not in ("run_id", "started_at", "coverage")})
         manifest["config_hash"] = config_hash
         destination = self.root / request.mode / (request.preset or "mock") / config_hash / run_id
-        destination.mkdir(parents=True, exist_ok=False)
         label = prepared[-1]["label"] if prepared else "Stock mock backtest"
         status = {"run_id": run_id, "status": "running", "label": label, "mode": request.mode,
                   "preset": request.preset, "started_at": manifest["started_at"], "progress": 0, "total": 0,
                   "config_hash": config_hash}
+        if fingerprint and not self._claim_request(run_id, fingerprint, status):
+            existing = self._request_status(run_id, fingerprint)
+            assert existing is not None  # A successful receipt is never removed by the replay lifecycle.
+            return existing
+        destination.mkdir(parents=True, exist_ok=False)
         _write(destination / "manifest.json", manifest)
         _write(destination / "status.json", status)
         cancel = Event()

@@ -2,14 +2,17 @@
 
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from decimal import Decimal, ROUND_HALF_UP
 from itertools import groupby
 from statistics import mean, median
 from threading import Event
 
 from app.backtest.options.data import coverage_for
-from app.backtest.options.domain import CHICAGO, Contract, Dataset, Execution, Quote, Rules, session_bounds
+from app.backtest.options.domain import (
+    CHICAGO, EXECUTION_POLICY_VERSION, PRESETS, Contract, Dataset, Execution, Quote, Rules, Signal, Underlying,
+    schedule, session_bounds,
+)
 
 ARMS = ("fast", "momentum")
 CENT = Decimal("0.01")
@@ -26,6 +29,7 @@ def money(value):
 class Pick:
     contract: Contract
     quote: Quote
+    underlying: Underlying
     relative_spread: Decimal
     strike_distance: Decimal
     dte: int
@@ -36,6 +40,7 @@ class Tape:
         self.dataset = dataset
         self.quotes = defaultdict(list)
         self.contracts = defaultdict(list)
+        self.contract_ids = {row.id: row for row in dataset.contracts}
         self.underlying = defaultdict(list)
         self.adjustments = defaultdict(list)
         for row in dataset.quotes:
@@ -55,15 +60,22 @@ class Tape:
 
     def at(self, contract_id: str, at: datetime) -> Quote | None:
         bounds = session_bounds(at)
-        if not bounds:
+        contract = self.contract_ids.get(contract_id)
+        if contract is None or not bounds:
             return None
         return max((q for q in self.quotes[contract_id] if q.available_at <= at
-                    and max(at - self.freshness, bounds[0]) <= q.observed_at <= at),
+                    and q.observed_at >= at - self.freshness and self.in_session(q, contract, bounds)),
                    key=lambda q: q.chronological_key, default=None)
+
+    @staticmethod
+    def in_session(q: Quote, contract: Contract, bounds: tuple[datetime, datetime]) -> bool:
+        start = q.bar_start or q.observed_at
+        return (bounds[0] <= start <= q.observed_at <= q.available_at < min(bounds[1], contract.last_trade_at)
+                and contract.listed_at <= q.observed_at)
 
     def pick(self, ticker: str, at: datetime, exit_at: datetime, rules: Rules) -> tuple[Pick | None, str]:
         spot = max((u for u in self.underlying[ticker] if u.available_at <= at
-                    and at - timedelta(minutes=2) <= u.observed_at <= at),
+                    and at - timedelta(minutes=2) <= u.observed_at <= u.available_at),
                    key=lambda u: u.chronological_key, default=None)
         if spot is None:
             return None, "missing_or_stale_underlying"
@@ -71,7 +83,7 @@ class Tape:
         for c in self.contracts[ticker]:
             dte = (c.expiration - at.astimezone(CHICAGO).date()).days
             if (c.right != "call" or c.multiplier != 100 or c.deliverable != "standard_100_shares"
-                or not c.listed_at <= at < exit_at < c.last_trade_at or exit_at.date() >= c.expiration
+                or not c.listed_at <= at < exit_at < c.last_trade_at or exit_at.astimezone(CHICAGO).date() >= c.expiration
                 or not rules.min_dte <= dte <= rules.max_dte):
                 continue
             if any(a.effective_at <= at for a in self.adjustments[c.id]):
@@ -85,36 +97,47 @@ class Tape:
             absolute = quote.ask - quote.bid
             relative = absolute / ((quote.ask + quote.bid) / 2)
             if relative <= Decimal("0.10") and absolute <= Decimal("0.20"):
-                choices.append(Pick(c, quote, relative, distance, dte))
+                choices.append(Pick(c, quote, spot, relative, distance, dte))
         if not choices:
             return None, "no_eligible_entry_contract"
         return min(choices, key=lambda p: (abs(p.dte - rules.target_dte), p.strike_distance, p.relative_spread,
                                            p.contract.expiration, p.contract.strike, p.contract.id)), ""
 
-    def entry_quote(self, c: Contract, selection: datetime, order: datetime, fill: datetime) -> Quote | None:
+    def entry_quote(self, c: Contract, selection: datetime, order: datetime, fill: datetime) -> tuple[Quote | None, str | None]:
+        bounds = session_bounds(fill)
+        if not bounds or not bounds[0] <= order <= fill < bounds[1]:
+            return None, "entry_outside_regular_session"
         adjustment = self.next_adjustment(c.id, selection)
         if adjustment and adjustment <= fill:
-            return None
+            return None, "contract_adjusted_before_fill"
         q = self.at(c.id, fill)
-        if q is None or not q.valid or (q.bar_start or q.observed_at) < order:
-            return None
+        if q is None:
+            return None, "missing_or_stale_entry_quote"
+        if not q.valid:
+            return q, "invalid_two_sided_entry_quote"
+        if (q.bar_start or q.observed_at) < order:
+            return q, "entry_quote_precedes_order"
         if q.ask_size == 0 or (q.ask_size is None and self.dataset.resolution == "tick"):
-            return None
-        return q
+            return q, "insufficient_displayed_ask_size"
+        return q, None
 
     def exit_quote(self, c: Contract, order: datetime, limit: datetime, slip: Decimal) -> Quote | None:
         adjustment = self.next_adjustment(c.id, order)
+        latest = None
         for available, quotes in groupby(self.quotes[c.id], key=lambda q: q.available_at):
             if available > limit:
                 break
             if available >= c.last_trade_at or (adjustment and available >= adjustment):
                 break
-            q = max(quotes, key=lambda quote: quote.chronological_key)
-            start = q.bar_start or q.observed_at
-            if start < order or not q.valid or q.available_at - q.observed_at > self.freshness:
+            bounds = session_bounds(available) if available >= order else None
+            if not bounds:
                 continue
-            bounds = session_bounds(q.available_at)
-            if not bounds or not bounds[0] <= start <= q.observed_at <= q.available_at < bounds[1]:
+            q = max((quote for quote in quotes if self.in_session(quote, c, bounds)),
+                    key=lambda quote: quote.chronological_key, default=None)
+            if q is None or (latest is not None and q.chronological_key <= latest):
+                continue
+            latest = q.chronological_key
+            if (q.bar_start or q.observed_at) < order or not q.valid or q.available_at - q.observed_at > self.freshness:
                 continue
             if q.bid_size == 0 or (q.bid_size is None and self.dataset.resolution == "tick"):
                 continue
@@ -149,6 +172,7 @@ class Account:
     peak_commitment: Decimal = Decimal(0)
     peak_exposure_pct: Decimal = Decimal(0)
     unpaid_research: Decimal = Decimal(0)
+    processed_signal_dates: set[date] = field(default_factory=set)
 
     @property
     def fee(self):
@@ -165,10 +189,12 @@ class Account:
                 continue
             premium = q.bid - self.slip
             proceeds = money(premium * p.contract.multiplier)
+            cash_before = self.cash
             self.cash += proceeds - self.fee
             self.fees += self.fee
             p.trade.update(exit_at=q.available_at, exit_quote=q, exit_premium=premium, proceeds=proceeds,
                            exit_order_at=p.exit_order, exit_size_unknown=q.bid_size is None,
+                           exit_cash_before=cash_before, exit_cash_after=self.cash, exit_fee=self.fee,
                            realized_pnl=proceeds - p.trade["premium_committed"] - 2 * self.fee,
                            same_day_breach=intraday and q.available_at.astimezone(CHICAGO).date() != p.trade["entry_at"].astimezone(CHICAGO).date(),
                            delayed_exit=q.available_at > p.exit_order + EXIT_WINDOW)
@@ -181,9 +207,13 @@ class Account:
         self.unpaid_research += amount - paid
         return self.unpaid_research == 0
 
-    def enter_batch(self, tape: Tape, rules: Rules, signals: list, picks: dict, arm: str, day,
+    def enter_batch(self, tape: Tape, rules: Rules, signals: list[Signal], arm: str, day: date,
                     entry: datetime, exit_at: datetime, blocked: str) -> None:
-        if arm == "fast" and not self.charge(sum((s.research_cost for s in signals), Decimal(0))):
+        if day in self.processed_signal_dates:
+            return
+        self.processed_signal_dates.add(day)
+        research_charge = sum((s.research_cost for s in signals), Decimal(0)) if arm == "fast" else Decimal(0)
+        if not self.charge(research_charge):
             blocked = "research_cost_exceeds_available_cash"
         if self.open and not blocked:
             blocked = "prior_position_still_open"
@@ -194,24 +224,29 @@ class Account:
             action = getattr(s, arm)
             row = {"signal": s, "action": action, "signal_date": day, "ticker": s.ticker, "selection_at": entry}
             self.decisions.append(row)
+            if action == "BUY":
+                row["intent_id"] = f"{day}:{s.ticker}:buy"
             if action != "BUY" or blocked:
                 row["status"] = blocked if action == "BUY" else action.lower()
                 continue
-            pick, reason = picks[s.ticker]
+            pick, reason = tape.pick(s.ticker, entry, exit_at, rules)
             if pick is None:
                 row["status"] = reason
                 continue
-            row.update(contract=pick.contract, selection_quote=pick.quote, dte=pick.dte,
-                       relative_spread=pick.relative_spread, strike_distance=pick.strike_distance, order_at=order)
+            row.update(contract=pick.contract, selection_quote=pick.quote, underlying=pick.underlying, dte=pick.dte,
+                       relative_spread=pick.relative_spread, strike_distance=pick.strike_distance, order_at=order,
+                       fill_target_at=fill_at)
             planned.append((pick, row))
         budget = min(self.available_cash, self.cash * self.execution.premium_budget)
         committed = Decimal(0)
         for pick, row in sorted(planned, key=lambda item: (item[0].relative_spread, item[0].strike_distance, item[0].contract.ticker)):
             c = pick.contract
-            q = tape.entry_quote(c, entry, order, fill_at)
-            if q is None:
-                row["status"] = "missing_or_unexecutable_entry_quote"
+            row.update(batch_budget=budget, batch_committed_before=committed, entry_fee=self.fee, exit_fee_reserve=self.fee)
+            q, reason = tape.entry_quote(c, entry, order, fill_at)
+            if reason:
+                row.update(status="missing_or_unexecutable_entry_quote", entry_evidence_reason=reason, rejected_entry_quote=q)
                 continue
+            assert q is not None
             premium = q.ask + self.slip
             cost = money(premium * c.multiplier)
             needed = cost + 2 * self.fee
@@ -221,6 +256,7 @@ class Account:
                 row["status"] = "unaffordable" if needed > budget else "shared_premium_budget_exhausted"
                 continue
             committed += needed
+            cash_before = self.cash
             self.cash -= cost + self.fee
             self.fees += self.fee
             adjustment = tape.next_adjustment(c.id, fill_at)
@@ -229,6 +265,8 @@ class Account:
                 limit = min(limit, adjustment - timedelta(microseconds=1))
             sale = tape.exit_quote(c, exit_at, limit, self.slip)
             trade = dict(signal_date=day, ticker=c.ticker, contract_id=c.id, multiplier=c.multiplier, contracts=1,
+                         intent_id=row["intent_id"], entry_cash_before=cash_before, entry_cash_after=self.cash,
+                         entry_fee=self.fee, exit_fee_reserve=self.fee,
                          selection_at=entry, entry_order_at=order, entry_at=fill_at, entry_quote=q,
                          entry_premium=premium, premium_committed=cost, fee_per_side=self.fee,
                          scheduled_exit=exit_at, expiration=c.expiration, entry_size_unknown=q.ask_size is None)
@@ -359,17 +397,15 @@ def simulate(dataset: Dataset, plan: list, rules: Rules, execution: Execution, s
         blocked = "unsupported_historical_date" if day not in supported else ""
         if not blocked and previous_exit is not None and entry <= previous_exit:
             blocked = "scheduled_cohort_overlap"
-        picks = {}
         if not blocked:
             previous_exit = exit_at
             accepted.add(day)
             if exit_at + EXIT_WINDOW > dataset.covered_through:
                 missing_marks[day] = "comparison_window_not_covered"
-            picks = {s.ticker: tape.pick(s.ticker, entry, exit_at, rules) for s in signals if "BUY" in (s.fast, s.momentum)}
         else:
             missing_marks[day] = blocked
         for arm, account in accounts.items():
-            account.enter_batch(tape, rules, signals, picks, arm, day, entry, exit_at, blocked)
+            account.enter_batch(tape, rules, signals, arm, day, entry, exit_at, blocked)
         completed += 1
         progress(completed, len(plan))
     for account in accounts.values():
@@ -386,6 +422,18 @@ def simulate(dataset: Dataset, plan: list, rules: Rules, execution: Execution, s
 
 
 def replay(dataset: Dataset, plan: list, rules: Rules, execution: Execution, cancel: Event, progress) -> dict:
+    if rules != PRESETS[dataset.preset]:
+        raise ValueError("replay requires the frozen rules for the data preset")
+    execution = Execution.model_validate(execution.model_dump())
+    seen = set()
+    for day, entry, exit_at, signals in plan:
+        if day in seen:
+            raise ValueError("duplicate signal date in replay plan")
+        if not signals or any(s.day != day for s in signals) or len({s.ticker for s in signals}) != len(signals):
+            raise ValueError("replay requires distinct ticker signals for each signal date")
+        if (entry, exit_at) != schedule(day, max(s.available_at for s in signals), rules):
+            raise ValueError("replay requires the scheduled entry and exit for the preset")
+        seen.add(day)
     coverage = coverage_for(dataset, plan)
     if not coverage["supported"]:
         raise ValueError("no scheduled dates have the required market-data coverage")
@@ -396,6 +444,7 @@ def replay(dataset: Dataset, plan: list, rules: Rules, execution: Execution, can
     incomplete = any("complete" != scenario[key] for scenario in (primary, stress) for key in ("execution_status", "data_status")) or any(
         scenario["comparison"]["status"] != "complete" for scenario in (primary, stress))
     return {"coverage": coverage, "incomplete": incomplete, "primary": primary, "stress": stress,
+            "account_mode": "simulated", "execution_policy_version": EXECUTION_POLICY_VERSION,
             "limitations": ["Exploratory research assumptions; modeled fills and charges.",
                             "Trading-only figures add back research costs on the same executed ledger.",
                             "Cohort-end marks are the only drawdown resolution. Final balances can reflect exits after scheduled marks."]}

@@ -2,8 +2,10 @@
 
 import asyncio
 from datetime import date
+from typing import Annotated
+from uuid import UUID
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Header, HTTPException
 from fastapi.responses import JSONResponse, PlainTextResponse
 
 from app import pages
@@ -52,9 +54,15 @@ def history():
 
 
 @router.post("/api/backtests/runs", status_code=202)
-async def start(request: Request):
+async def start(request: Request, idempotency_key: Annotated[str | None, Header()] = None):
+    key = None
+    if request.mode != "stock":
+        try:
+            key = UUID(idempotency_key or "")
+        except ValueError as exc:
+            raise HTTPException(422, "Options backtests require a UUID Idempotency-Key.") from exc
     try:
-        return encoded(await jobs.start(request))
+        return encoded(await jobs.start(request, key))
     except ValueError as exc:
         raise HTTPException(409, str(exc)) from exc
 
