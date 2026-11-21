@@ -167,6 +167,16 @@ function optionsResult(parent, data) {
   const { primary, stress, manifest } = data;
   if (manifest.signal_label) element('p', manifest.signal_label, parent);
   element('p', `${presetNames[manifest.rules.preset]} · ${manifest.provider} · ${data.coverage.supported.length}/${data.coverage.scheduled_dates} supported dates`, parent);
+  if (primary.comparison) {
+    for (const [label, scenario] of [['Primary', primary], ['Stress', stress]]) {
+      const comparison = scenario.comparison;
+      element('p', `${label}: execution ${scenario.execution_status} · data ${scenario.data_status} · comparison ${comparison.status} (${comparison.usable} of ${comparison.scheduled} usable, ${comparison.missing} missing)`, parent);
+    }
+    element('p', `Final account balances as of ${stamp(primary.balances_as_of)} Chicago time. The paired comparison uses the scheduled marks below.`, parent);
+  } else {
+    element('p', 'Legacy result · separate comparison status was not recorded.', parent);
+  }
+  if (!manifest.engine) element('p', 'Legacy result · the executing engine identity was not recorded.', parent);
   const metrics = [
     ['Starting equity', 'starting_equity', amount], ['Ending equity (all-in)', 'ending_equity', amount], ['Net return (all-in)', 'net_return_pct', pct],
     ['Trading-only return (same fills)', 'trading_only_return_pct_same_fills', pct], ['Realized trade P&L', 'realized_pnl', amount],
@@ -178,10 +188,20 @@ function optionsResult(parent, data) {
   ];
   table(parent, 'Portfolio comparison', ['Metric', 'Fast', 'Momentum', 'Fast · stress', 'Momentum · stress'], metrics.map(([label, key, format = String]) => [label, ...[primary, stress].flatMap((scenario) => arms.map((arm) => format(scenario.accounts[arm][key])))]));
   element('h3', 'Cohort-end equity', parent);
-  chart(parent, primary.cohort_end_marks, Object.fromEntries(arms.map((arm) => [arm, primary.accounts[arm].starting_equity])));
+  const marksByDate = new Map(primary.cohort_end_marks.map((row) => [row.signal_date, row]));
+  const chartMarks = primary.paired_differences.map((row) => marksByDate.get(row.signal_date) || {fast: {}, momentum: {}});
+  chart(parent, chartMarks, Object.fromEntries(arms.map((arm) => [arm, primary.accounts[arm].starting_equity])));
   const eq = element('details', null, parent);
-  element('summary', 'Equity and paired return differences', eq);
-  table(eq, 'Cohort marks', ['Date', 'Fast equity', 'Momentum equity', 'Fast − momentum'], primary.cohort_end_marks.map((r, i) => [r.signal_date, amount(r.fast.marked_equity), amount(r.momentum.marked_equity), primary.paired_differences[i]?.difference_pp == null ? 'Unavailable' : `${Number(primary.paired_differences[i].difference_pp).toFixed(2)} pp`]));
+  element('summary', 'Scheduled equity marks and paired return differences', eq);
+  for (const [label, scenario] of [['Primary', primary], ['Stress', stress]]) {
+    const marks = new Map(scenario.cohort_end_marks.map((row) => [row.signal_date, row]));
+    table(eq, `${label} cohort marks`, ['Date', 'Mark (Chicago)', 'Fast equity', 'Momentum equity', 'Fast − momentum', 'Missing reasons'], scenario.paired_differences.map((row) => {
+      const mark = marks.get(row.signal_date);
+      return [row.signal_date, stamp(row.at), amount(mark?.fast.marked_equity), amount(mark?.momentum.marked_equity),
+        row.difference_pp == null ? 'Unscored' : `${Number(row.difference_pp).toFixed(2)} pp`,
+        row.missing_reasons?.map((reason) => reason.replaceAll('_', ' ')).join(', ') || '—'];
+    }));
+  }
   for (const [title, scenario] of [['Primary execution', primary], ['Stressed execution', stress]]) {
     const drill = element('details', null, parent);
     element('summary', `${title} trades and skips`, drill);
@@ -212,6 +232,8 @@ function renderResult(row) {
 
 async function history() {
   const rows = await api('/runs');
+  const running = rows.find((row) => row.status === 'running');
+  if (running) trackActive(running.run_id);
   const target = byId('history');
   target.replaceChildren();
   table(target, 'History', ['Mode', 'Preset', 'Result type', 'Status', 'Run'], rows.map((r) => {
@@ -226,30 +248,59 @@ async function history() {
   }));
 }
 
+function announce(text) {
+  const status = byId('run-status');
+  if (status.textContent !== text) status.textContent = text;
+}
+
+function trackActive(runId) {
+  if (activeRun === runId) return;
+  activeRun = runId;
+  byId('run').disabled = true;
+  byId('cancel').disabled = false;
+  byId('progress').hidden = false;
+  byId('progress').removeAttribute('value');
+  pollActive(runId);
+}
+
+async function pollActive(runId) {
+  try {
+    const row = await api(`/runs/${encodeURIComponent(runId)}`);
+    if (activeRun !== runId) return;
+    if (row.status === 'running') {
+      const progress = byId('progress');
+      if (row.total) { progress.max = row.total; progress.value = row.progress; }
+      else progress.removeAttribute('value');
+      announce(`Running ${row.label}…`);
+      window.setTimeout(() => pollActive(runId), 500);
+      return;
+    }
+    activeRun = null;
+    byId('progress').hidden = true;
+    byId('cancel').disabled = true;
+    announce(row.message || `${row.label} · ${row.status}`);
+    if (viewing === runId) showSelectedResult(row);
+    await Promise.all([history(), coverage()]);
+  } catch (error) {
+    announce(error.message);
+    if (activeRun === runId) window.setTimeout(() => pollActive(runId), 1000);
+  }
+}
+
+function showSelectedResult(row) {
+  if (row.result) renderResult(row);
+  else byId('result').hidden = true;
+}
+
 async function inspect(runId) {
   viewing = runId;
   try {
     const row = await api(`/runs/${encodeURIComponent(runId)}`);
     if (viewing !== runId) return;
-    const running = row.status === 'running';
-    const progress = byId('progress');
-    progress.hidden = !running;
-    if (row.total) { progress.max = row.total; progress.value = row.progress; }
-    else progress.removeAttribute('value');
-    byId('run-status').textContent = row.message || (running ? `Running ${row.label}…` : `${row.label} · ${row.status}`);
-    if (running) {
-      activeRun = runId;
-      byId('run').disabled = true;
-      byId('cancel').disabled = false;
-      window.setTimeout(() => { if (viewing === runId) inspect(runId); }, 500);
-      return;
-    }
-    if (activeRun === runId) activeRun = null;
-    byId('cancel').disabled = !activeRun;
-    if (row.result) renderResult(row);
-    else byId('result').hidden = true;
-    await Promise.all([history(), coverage()]);
-  } catch (error) { byId('run-status').textContent = error.message; }
+    showSelectedResult(row);
+    if (row.status === 'running') trackActive(runId);
+    else if (!activeRun) announce(row.message || `${row.label} · ${row.status}`);
+  } catch (error) { announce(error.message); }
 }
 
 setup.addEventListener('submit', async (event) => {
@@ -260,9 +311,9 @@ setup.addEventListener('submit', async (event) => {
   byId('result').hidden = true;
   try {
     const row = await api('/runs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload()) });
-    activeRun = row.run_id;
+    viewing = row.run_id;
     window.history.replaceState(null, '', `?run=${row.run_id}`);
-    inspect(row.run_id);
+    trackActive(row.run_id);
   } catch (error) {
     byId('run-status').textContent = error.message;
   } finally {
@@ -273,7 +324,7 @@ setup.addEventListener('submit', async (event) => {
 
 byId('cancel').addEventListener('click', async () => {
   if (!activeRun) return;
-  try { await api(`/runs/${activeRun}/cancel`, { method: 'POST' }); await inspect(activeRun); }
+  try { await api(`/runs/${activeRun}/cancel`, { method: 'POST' }); }
   catch (error) { byId('run-status').textContent = error.message; }
 });
 byId('refresh').addEventListener('click', () => history().catch((e) => { byId('run-status').textContent = e.message; }));

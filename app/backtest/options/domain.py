@@ -1,6 +1,6 @@
 """Versioned option replay inputs and exchange scheduling."""
 
-from datetime import date, datetime, time, timedelta
+from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
 from functools import lru_cache
 import re
@@ -18,6 +18,21 @@ QUOTE_LABELS = {"tick": "Historical quote backtest", "minute": "Historical minut
 SYNTHETIC_LABEL = "Synthetic mechanics test"
 REQUIRED_LABEL = "Historical options data required"
 DAILY_INTRADAY_LABEL = "Archived daily-signal intraday options replay."
+SOURCE_TIME = re.compile(r"(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d)(?:\.(\d{1,9}))?(Z|[+-]\d\d:\d\d)")
+
+
+def _nanoseconds(value: datetime) -> int:
+    utc = value.astimezone(timezone.utc)
+    seconds = (utc.date() - date(1970, 1, 1)).days * 86400 + utc.hour * 3600 + utc.minute * 60 + utc.second
+    return seconds * 1_000_000_000 + utc.microsecond * 1000
+
+
+def _source_nanoseconds(value: str) -> int:
+    parts = SOURCE_TIME.fullmatch(value)
+    if parts is None:
+        raise ValueError("source_timestamp must be a timezone-aware RFC 3339 timestamp of up to nanosecond precision")
+    seconds, fraction, offset = parts.groups()
+    return _nanoseconds(datetime.fromisoformat(seconds + offset)) + int((fraction or "").ljust(9, "0"))
 
 
 class Record(BaseModel):
@@ -77,10 +92,18 @@ class Observation(Record):
     observed_at: AwareDatetime
     available_at: AwareDatetime
     source_timestamp: str | None = None
+    source_sequence: int | None = Field(default=None, ge=0, strict=True)
+
+    @property
+    def chronological_key(self) -> tuple:
+        original = _source_nanoseconds(self.source_timestamp) if self.source_timestamp else _nanoseconds(self.observed_at)
+        return self.observed_at, original, self.source_sequence if self.source_sequence is not None else -1, self.available_at
 
     @field_validator("observed_at", "available_at", mode="before")
     @classmethod
     def check_precision(cls, value):
+        if not isinstance(value, (str, datetime)):
+            raise ValueError("normalized timestamps must use ISO 8601 with a timezone offset")
         fraction = re.search(r"[.,](\d+)", value) if isinstance(value, str) else None
         if fraction and any(digit != "0" for digit in fraction[1][6:]):
             raise ValueError("round source timestamps up to a microsecond and retain the original source timestamp")
@@ -90,6 +113,10 @@ class Observation(Record):
     def check_causality(self):
         if self.available_at < self.observed_at:
             raise ValueError("an observation cannot be available before it is observed")
+        if self.source_timestamp is not None:
+            original = _source_nanoseconds(self.source_timestamp)
+            if -(-original // 1000) * 1000 != _nanoseconds(self.observed_at):
+                raise ValueError("observed_at must equal source_timestamp rounded up to a microsecond")
         return self
 
 
@@ -190,9 +217,14 @@ class Dataset(Record):
             raise ValueError("contract underlying is outside the study universe")
         if any(a.contract_id not in ids for a in self.adjustments):
             raise ValueError("adjustment refers to an unknown contract")
+        seen = {}
         for q in self.quotes:
             if q.contract_id not in ids or q.available_at > self.covered_through:
                 raise ValueError("option quote outside the declared data archive")
+            key = (q.contract_id, q.chronological_key)
+            previous = seen.setdefault(key, (q.bid, q.ask, q.bid_size, q.ask_size, q.bar_start))
+            if previous != (q.bid, q.ask, q.bid_size, q.ask_size, q.bar_start):
+                raise ValueError("ambiguous quote order: conflicting updates require an original timestamp or source sequence")
             if self.resolution == "minute":
                 if q.bar_start is None or q.observed_at - q.bar_start != timedelta(minutes=1):
                     raise ValueError("minute quote bars require a start exactly one minute before observation")

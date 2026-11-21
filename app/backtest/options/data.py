@@ -108,7 +108,7 @@ def synthetic(rules: Rules, archive: SignalArchive) -> tuple[Dataset, SignalArch
             coverage[day][ticker] = Coverage(discovery=True, entry_quotes=True, exit_quotes=True, underlying=True, adjustments=True)
     return (
         Dataset(schema_version=1, preset=rules.preset, source="synthetic", resolution="tick",
-                provider="Invented fixture", entitlement="Local test data", covered_through=max(q.available_at for q in quotes),
+                provider="Invented fixture", entitlement="Local test data", covered_through=max(q.available_at for q in quotes) + timedelta(minutes=2),
                 coverage=coverage, contracts=contracts, underlying=prices, quotes=quotes),
         SignalArchive(source="synthetic", model="None", candidate="Invented BUY/HOLD/SELL fixtures",
                       provenance={"note": "Mechanics only; prices and signals are invented"}, signals=signals),

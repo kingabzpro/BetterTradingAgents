@@ -23,9 +23,11 @@ from app.backtest.options.domain import (
     DAILY_INTRADAY_LABEL, PRESETS, QUOTE_LABELS, REQUIRED_LABEL, SYNTHETIC_LABEL,
     Execution, Mode, Preset, Record, TICKERS,
 )
+from app.backtest.options.identity import engine_identity
 from app.backtest.options.replay import Cancelled, replay
 
 logger = logging.getLogger("backtests")
+ENGINE_IDENTITY = engine_identity(ROOT)
 
 
 def encoded(value):
@@ -175,7 +177,7 @@ class Jobs:
                     "started_at": datetime.now(timezone.utc)}
         if prepared:
             rules, archive, dataset, identity, _, ready = prepared
-            manifest.update(rules=rules, market_data_sha256=identity, provider=dataset.provider,
+            manifest.update(rules=rules, engine=ENGINE_IDENTITY, market_data_sha256=identity, provider=dataset.provider,
                             entitlement=dataset.entitlement, resolution=dataset.resolution, coverage=ready,
                             signal_source=archive.source, candidate=archive.candidate, model=archive.model,
                             signal_sha256=digest(archive), provenance=archive.provenance,

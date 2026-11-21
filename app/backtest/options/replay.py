@@ -4,6 +4,7 @@ from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from decimal import Decimal, ROUND_HALF_UP
+from itertools import groupby
 from statistics import mean, median
 from threading import Event
 
@@ -40,7 +41,7 @@ class Tape:
         for row in dataset.quotes:
             self.quotes[row.contract_id].append(row)
         for rows in self.quotes.values():
-            rows.sort(key=lambda row: (row.available_at, row.observed_at))
+            rows.sort(key=lambda row: (row.available_at, row.chronological_key))
         for row in dataset.contracts:
             self.contracts[row.ticker].append(row)
         for row in dataset.underlying:
@@ -58,12 +59,12 @@ class Tape:
             return None
         return max((q for q in self.quotes[contract_id] if q.available_at <= at
                     and max(at - self.freshness, bounds[0]) <= q.observed_at <= at),
-                   key=lambda q: (q.observed_at, q.available_at), default=None)
+                   key=lambda q: q.chronological_key, default=None)
 
     def pick(self, ticker: str, at: datetime, exit_at: datetime, rules: Rules) -> tuple[Pick | None, str]:
         spot = max((u for u in self.underlying[ticker] if u.available_at <= at
                     and at - timedelta(minutes=2) <= u.observed_at <= at),
-                   key=lambda u: (u.observed_at, u.available_at), default=None)
+                   key=lambda u: u.chronological_key, default=None)
         if spot is None:
             return None, "missing_or_stale_underlying"
         choices = []
@@ -103,11 +104,12 @@ class Tape:
 
     def exit_quote(self, c: Contract, order: datetime, limit: datetime, slip: Decimal) -> Quote | None:
         adjustment = self.next_adjustment(c.id, order)
-        for q in self.quotes[c.id]:
-            if q.available_at > limit:
+        for available, quotes in groupby(self.quotes[c.id], key=lambda q: q.available_at):
+            if available > limit:
                 break
-            if q.available_at >= c.last_trade_at or (adjustment and q.available_at >= adjustment):
+            if available >= c.last_trade_at or (adjustment and available >= adjustment):
                 break
+            q = max(quotes, key=lambda quote: quote.chronological_key)
             start = q.bar_start or q.observed_at
             if start < order or not q.valid or q.available_at - q.observed_at > self.freshness:
                 continue
@@ -299,15 +301,49 @@ class Cancelled(Exception):
     pass
 
 
+def _paired_comparison(plan: list, marks: list, missing_marks: dict, starting_cash: Decimal) -> tuple[list, dict]:
+    marks_by_day = {row["signal_date"]: row for row in marks}
+    previous = dict.fromkeys(ARMS, starting_cash)
+    rows = []
+    reasons = Counter()
+    for day, _, exit_at, _ in sorted(plan, key=lambda cohort: (cohort[2], cohort[0])):
+        mark = marks_by_day.get(day)
+        gap = missing_marks.get(day)
+        values = {arm: mark[arm]["marked_equity"] if mark else None for arm in ARMS}
+        row_reasons = [gap] if gap else []
+        returns = dict.fromkeys(ARMS)
+        if not gap:
+            for arm in ARMS:
+                if values[arm] is None:
+                    row_reasons.append(f"{arm}_scheduled_mark_unavailable")
+                elif previous[arm] is None:
+                    row_reasons.append(f"{arm}_previous_scheduled_mark_unavailable")
+                elif not previous[arm]:
+                    row_reasons.append(f"{arm}_previous_equity_zero")
+                else:
+                    returns[arm] = 100 * (values[arm] / previous[arm] - 1)
+        difference = returns["fast"] - returns["momentum"] if not row_reasons else None
+        reasons.update(row_reasons)
+        rows.append({"signal_date": day, "at": exit_at + EXIT_WINDOW, **returns,
+                     "difference_pp": difference, "missing_reasons": row_reasons})
+        previous = values
+    usable = sum(row["difference_pp"] is not None for row in rows)
+    return rows, {"status": "unavailable" if not usable else "complete" if usable == len(rows) else "partial",
+                  "scheduled": len(rows), "usable": usable, "missing": len(rows) - usable,
+                  "missing_reasons": dict(sorted(reasons.items()))}
+
+
 def simulate(dataset: Dataset, plan: list, rules: Rules, execution: Execution, slip: Decimal,
              cancel: Event, progress, coverage: dict) -> dict:
     tape = Tape(dataset)
     accounts = {arm: Account(execution.starting_cash, execution, slip) for arm in ARMS}
     supported = {row["signal_date"] for row in coverage["supported"]}
     events = [(entry, 1, i) for i, (_, entry, _, _) in enumerate(plan)]
-    events += [(min(exit_at + EXIT_WINDOW, dataset.covered_through), 0, i)
-               for i, (_, entry, exit_at, _) in enumerate(plan) if dataset.covered_through >= entry]
+    events += [(exit_at + EXIT_WINDOW, 0, i)
+               for i, (_, _, exit_at, _) in enumerate(plan) if dataset.covered_through >= exit_at + EXIT_WINDOW]
     marks, accepted = [], set()
+    missing_marks = {}
+    completed = 0
     previous_exit = None
     intraday = rules.holding_sessions == 1
     for stamp, kind, i in sorted(events):
@@ -327,20 +363,25 @@ def simulate(dataset: Dataset, plan: list, rules: Rules, execution: Execution, s
         if not blocked:
             previous_exit = exit_at
             accepted.add(day)
+            if exit_at + EXIT_WINDOW > dataset.covered_through:
+                missing_marks[day] = "comparison_window_not_covered"
             picks = {s.ticker: tape.pick(s.ticker, entry, exit_at, rules) for s in signals if "BUY" in (s.fast, s.momentum)}
+        else:
+            missing_marks[day] = blocked
         for arm, account in accounts.items():
             account.enter_batch(tape, rules, signals, picks, arm, day, entry, exit_at, blocked)
-        progress(i + 1, len(plan))
+        completed += 1
+        progress(completed, len(plan))
     for account in accounts.values():
         account.settle(dataset.covered_through, intraday)
-    paired, previous = [], {arm: execution.starting_cash for arm in ARMS}
-    for row in marks:
-        values = {arm: row[arm]["marked_equity"] for arm in ARMS}
-        returns = {arm: 100 * (values[arm] / previous[arm] - 1) if values[arm] is not None and previous[arm] else None for arm in ARMS}
-        paired.append({"signal_date": row["signal_date"], "at": row["at"], **returns,
-                       "difference_pp": returns["fast"] - returns["momentum"] if all(v is not None for v in returns.values()) else None})
-        previous = values
-    return {"slippage_per_unit": slip, "accounts": {arm: a.summary(tape, intraday, marks, arm) for arm, a in accounts.items()},
+    paired, comparison = _paired_comparison(plan, marks, missing_marks, execution.starting_cash)
+    summaries = {arm: a.summary(tape, intraday, marks, arm) for arm, a in accounts.items()}
+    execution_complete = all(not (row["unresolved_positions"] or row["unpaid_research"]) for row in summaries.values())
+    data_complete = not (coverage["unsupported"] or any(reason == "comparison_window_not_covered" for reason in missing_marks.values())
+                         or any(row[arm]["marked_equity"] is None for row in marks for arm in ARMS))
+    return {"slippage_per_unit": slip, "accounts": summaries, "balances_as_of": dataset.covered_through,
+            "execution_status": "complete" if execution_complete else "incomplete",
+            "data_status": "complete" if data_complete else "incomplete", "comparison": comparison,
             "cohort_end_marks": marks, "paired_differences": paired}
 
 
@@ -352,11 +393,9 @@ def replay(dataset: Dataset, plan: list, rules: Rules, execution: Execution, can
                        lambda n, total: progress(n, 2 * total), coverage)
     stress = simulate(dataset, plan, rules, execution, execution.stress_slippage, cancel,
                       lambda n, total: progress(total + n, 2 * total), coverage)
-    incomplete = bool(coverage["unsupported"]) or any(
-        row["unresolved_positions"] or row["unpaid_research"]
-        for scenario in (primary, stress) for row in scenario["accounts"].values()
-    )
+    incomplete = any("complete" != scenario[key] for scenario in (primary, stress) for key in ("execution_status", "data_status")) or any(
+        scenario["comparison"]["status"] != "complete" for scenario in (primary, stress))
     return {"coverage": coverage, "incomplete": incomplete, "primary": primary, "stress": stress,
             "limitations": ["Exploratory research assumptions; modeled fills and charges.",
                             "Trading-only figures add back research costs on the same executed ledger.",
-                            "Cohort-end marks are the only drawdown resolution."]}
+                            "Cohort-end marks are the only drawdown resolution. Final balances can reflect exits after scheduled marks."]}

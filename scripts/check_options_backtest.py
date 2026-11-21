@@ -13,6 +13,7 @@ from threading import Event
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
+from pydantic import ValidationError
 
 scratch = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
 root = Path(scratch.name)
@@ -23,6 +24,7 @@ os.environ.update(DB_PATH=str(root / "options-test.db"), BTA_KEYRING_SERVICE=f"B
 from app.backtest.options import api  # noqa: E402
 from app.backtest.options.data import batches, coverage_for, read_archive, synthetic  # noqa: E402
 from app.backtest.options.domain import CHICAGO, Dataset, Execution, PRESETS, Quote, schedule, session_bounds  # noqa: E402
+from app.backtest.options.identity import engine_identity  # noqa: E402
 from app.backtest.options.jobs import Jobs  # noqa: E402
 from app.backtest.options.replay import Cancelled, Tape, replay  # noqa: E402
 from app.main import app  # noqa: E402
@@ -148,6 +150,90 @@ def request(preset):
             "start": str(days[0]), "end": str(days[-1])}
 
 
+def delayed_comparison():
+    rules = PRESETS["intraday_7_14_dte"]
+    dataset, signals = synthetic(rules, archive)
+    day, entry, exit_at, rows = batches(signals, rules, days[0], days[0])[0]
+    # Momentum closes AMD at 14:45:01 while Fast's NVDA closes at 14:50.
+    late = exit_at + timedelta(minutes=5)
+    quotes = [q.model_copy(update={"observed_at": late, "available_at": late})
+              if q.contract_id.endswith("NVDA") and q.observed_at == exit_at + timedelta(seconds=1) else q
+              for q in dataset.quotes if q.available_at <= exit_at + timedelta(seconds=1)]
+    underlying = [observation for observation in dataset.underlying if observation.available_at <= late]
+    dataset = Dataset.model_validate({**dataset.model_dump(), "quotes": quotes, "underlying": underlying, "covered_through": late})
+    rows = [s.model_copy(update={"fast": "BUY" if s.ticker == "NVDA" else "HOLD",
+                                 "momentum": "BUY" if s.ticker == "AMD" else "HOLD"}) for s in rows]
+    return replay(dataset, [(day, entry, exit_at, rows)], rules, Execution(), Event(), lambda *_: None)
+
+
+def check_comparison_and_ordering():
+    result = delayed_comparison()
+    assert result["incomplete"]
+    primary = result["primary"]
+    assert primary["execution_status"] == "complete" and primary["data_status"] == "incomplete"
+    assert primary["comparison"] == {"status": "unavailable", "scheduled": 1, "usable": 0, "missing": 1,
+                                      "missing_reasons": {"fast_scheduled_mark_unavailable": 1}}
+    pair = primary["paired_differences"][0]
+    assert pair["difference_pp"] is None and pair["at"].strftime("%H:%M:%S") == "14:47:00"
+    assert primary["balances_as_of"].strftime("%H:%M:%S") == "14:50:00"
+    assert primary["accounts"]["fast"]["ending_equity"] == Decimal("2515.70")
+    assert primary["accounts"]["momentum"]["ending_equity"] == Decimal("2503.70")
+    assert primary["accounts"]["fast"]["trades"][0]["delayed_exit"]
+
+    rules = PRESETS["intraday_7_14_dte"]
+    dataset, signals = synthetic(rules, archive)
+    plan = batches(signals, rules, days[0], days[-1])
+    with_gap = dataset.model_copy(update={"coverage": {day: coverage for day, coverage in dataset.coverage.items() if day != days[0]}})
+    primary = replay(with_gap, plan, rules, Execution(), Event(), lambda *_: None)["primary"]
+    assert primary["comparison"]["usable"] == 1 and primary["comparison"]["missing"] == 2
+    assert primary["paired_differences"][0]["missing_reasons"] == ["unsupported_historical_date"]
+    assert primary["paired_differences"][1]["difference_pp"] is None
+    assert primary["paired_differences"][2]["difference_pp"] is not None
+
+    _, entry, exit_at, _ = plan[0]
+    contract = dataset.contracts[0]
+    stamp = exit_at + timedelta(microseconds=1)
+    base = dict(contract_id=contract.id, observed_at=stamp, available_at=stamp, bid_size=1, ask_size=1)
+    early = Quote(**base, source_timestamp=f"{exit_at:%Y-%m-%dT%H:%M:%S}.000000101-05:00", bid="1.00", ask="1.05")
+    late = Quote(**base, source_timestamp=f"{exit_at:%Y-%m-%dT%H:%M:%S}.000000899-05:00", bid="1.10", ask="1.15")
+    for quotes in ([early, late], [late, early]):
+        tape = Tape(Dataset.model_validate({**dataset.model_dump(), "quotes": quotes}))
+        assert tape.at(contract.id, exit_at) is None  # rounded quotes remain unavailable at the boundary
+        assert tape.at(contract.id, stamp) == late
+        assert tape.exit_quote(contract, exit_at, stamp, Decimal("0.01")) == late
+    ordered = [early.model_copy(update={"source_sequence": 8, "bid": Decimal("1.02")}),
+               early.model_copy(update={"source_sequence": 7})]
+    tape = Tape(Dataset.model_validate({**dataset.model_dump(), "quotes": ordered}))
+    assert tape.at(contract.id, stamp) == ordered[0]
+    try:
+        Quote(**base, source_timestamp=f"{exit_at:%Y-%m-%dT%H:%M:%S}.000001899-05:00", bid="1", ask="1.05")
+    except ValidationError as error:
+        assert "rounded up" in str(error)
+    else:
+        raise AssertionError("source timestamps cannot occur after their normalized observation")
+    try:
+        Dataset.model_validate({**dataset.model_dump(), "quotes": [early, early.model_copy(update={"bid": Decimal("0.90")})]})
+    except ValidationError as error:
+        assert "ambiguous quote order" in str(error)
+    else:
+        raise AssertionError("conflicting records without chronological evidence must be rejected")
+
+
+def check_engine_identity():
+    fake_checkout = root / "engine"
+    source = fake_checkout / "app" / "backtest" / "options" / "replay.py"
+    source.parent.mkdir(parents=True)
+    source.write_bytes(b"rule = 1\r\n")
+    with patch("app.backtest.options.identity._git", side_effect=["a" * 40, " M app/backtest/options/replay.py"]):
+        original = engine_identity(fake_checkout)
+    assert original["source_commit"] == "a" * 40 and original["dirty"]
+    assert original["dirty_source_sha256"] == original["source_sha256"]
+    source.write_bytes(b"rule = 2\n")
+    with patch("app.backtest.options.identity._git", side_effect=["a" * 40, " M app/backtest/options/replay.py"]):
+        updated = engine_identity(fake_checkout)
+    assert original["source_sha256"] != updated["source_sha256"]
+
+
 def check_api():
     api.jobs = Jobs(root / "api")
     with TestClient(app, base_url="http://127.0.0.1:8000") as client:
@@ -172,6 +258,8 @@ def check_api():
                 time.sleep(.03)
             assert row["status"] == "complete", row
             assert row["result"]["manifest"]["rules"]["preset"] == preset
+            engine = row["result"]["manifest"]["engine"]
+            assert engine["source_commit"] and len(engine["source_sha256"]) == 64
             assert row["label"] == "Synthetic mechanics test"
             assert "attachment" in client.get(f"{endpoint}/export").headers["content-disposition"]
             assert client.post(f"{endpoint}/cancel").json() == {"cancel_requested": False}
@@ -182,6 +270,21 @@ def check_api():
         assert client.get(f"/api/backtests/runs/{stock['run_id']}").json()["result"]["overall"]["decisions"]
         for row in saved[:3]:
             assert api.jobs.find(row["run_id"]).parts[-5:-2] == (row["mode"], row["preset"], row["config_hash"])
+
+        with patch("app.backtest.options.jobs.ENGINE_IDENTITY", {**engine, "source_sha256": "0" * 64}), \
+             patch("app.backtest.options.jobs.replay", return_value=delayed_comparison()):
+            response = client.post("/api/backtests/runs", json=request("intraday_7_14_dte"))
+            assert response.json()["config_hash"] not in hashes
+            endpoint = f"/api/backtests/runs/{response.json()['run_id']}"
+            for _ in range(100):
+                if client.get(endpoint).json()["status"] != "running":
+                    break
+                time.sleep(.02)
+            assert client.get(endpoint).json()["status"] == "incomplete"
+            exported = client.get(f"{endpoint}/export").json()
+            assert exported["manifest"]["engine"]["source_sha256"] == "0" * 64
+            assert exported["primary"]["comparison"]["usable"] == 0
+            assert exported["primary"]["paired_differences"][0]["difference_pp"] is None
 
         def wait_for_cancel(dataset, plan, rules, execution, cancellation, progress):
             assert cancellation.wait(5)
@@ -243,6 +346,44 @@ def check_browser():
             page.reload()
             expect(page.locator("#classification")).to_contain_text("Synthetic mechanics test")
             expect(page.get_by_text("Portfolio comparison", exact=True)).to_be_visible()
+
+            older_link = page.url.split("?", 1)[1]
+            older_export = page.locator("#export").get_attribute("href")
+            legacy_path = api.jobs.find(older_link.split("=", 1)[1]).with_name("result.json")
+            legacy = json.loads(legacy_path.read_bytes())
+            legacy["manifest"].pop("engine")
+            for scenario in (legacy["primary"], legacy["stress"]):
+                scenario.pop("comparison")
+            legacy_path.write_text(json.dumps(legacy), encoding="utf-8")
+            release = Event()
+
+            def pause(*args):
+                assert release.wait(10)
+                return delayed_comparison()
+
+            page.get_by_role("radio", name="Options intraday").check()
+            page.locator("#source").select_option("synthetic")
+            expect(page.get_by_role("button", name="Run backtest")).to_be_enabled()
+            with patch("app.backtest.options.jobs.replay", side_effect=pause):
+                page.get_by_role("button", name="Run backtest").click()
+                expect(page.get_by_role("progressbar")).to_be_visible()
+                active_link = page.url.split("?", 1)[1]
+                page.locator(f'#history a[href="?{older_link}"]').click()
+                expect(page.locator("#export")).to_have_attribute("href", older_export)
+                expect(page.get_by_text('Legacy result · the executing engine identity was not recorded.', exact=True)).to_be_visible()
+                expect(page.get_by_role("button", name="Run backtest")).to_be_disabled()
+                release.set()
+                expect(page.get_by_role("button", name="Run backtest")).to_be_enabled()
+                expect(page.get_by_role("progressbar")).to_be_hidden()
+                expect(page.locator("#export")).to_have_attribute("href", older_export)
+            expect(page.locator(f'#history a[href="?{active_link}"]')).to_be_visible()
+            page.locator(f'#history a[href="?{active_link}"]').click()
+            expect(page.locator("#classification")).to_contain_text("Incomplete")
+            expect(page.get_by_text("Primary: execution complete · data incomplete · comparison unavailable (0 of 1 usable, 1 missing)", exact=True)).to_be_visible()
+            page.get_by_text("Scheduled equity marks and paired return differences", exact=True).click()
+            expect(page.get_by_text("fast scheduled mark unavailable", exact=True).first).to_be_visible()
+            page.get_by_role("button", name="Run backtest").click()
+            expect(page.locator("#classification")).to_have_text("Synthetic mechanics test")
             assert not errors, errors
             browser.close()
     finally:
@@ -253,6 +394,8 @@ def check_browser():
 
 check_calendar()
 check_engine()
+check_comparison_and_ordering()
+check_engine_identity()
 check_api()
 if os.environ.get("BTA_CHECK_OPTIONS_BROWSER") == "1":
     check_browser()
