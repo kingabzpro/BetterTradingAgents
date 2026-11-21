@@ -1,0 +1,18 @@
+{
+  "rules": {
+    "mode": "options_swing_v1",
+    "preset": "swing_5_sessions",
+    "min_dte": 14,
+    "max_dte": 21,
+    "target_dte": 18,
+    "holding_sessions": 5
+  },
+  "execution": {
+    "starting_cash": "2500.00",
+    "premium_budget": "0.15",
+    "commission": "0.65",
+    "other_fee_per_side": "0.00",
+    "slippage": "0.01",
+    "stress_slippage": "0.02"
+  }
+}

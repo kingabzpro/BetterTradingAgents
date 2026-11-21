@@ -19,6 +19,8 @@ import logging
 import re
 import time
 from collections import OrderedDict
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass
 from types import SimpleNamespace
 from typing import Any, Awaitable, Callable
@@ -76,6 +78,17 @@ _llm_roles_initialized: set[str] = set()
 _llm_configs: dict[str, tuple] = {}
 _THINK_BLOCK = re.compile(r"<think>.*?</think>", re.DOTALL)
 _BACKOFF_SECONDS = (1.0, 4.0, 16.0, 60.0)  # HTTP 429/5xx: wait, retry, wait longer
+_pinned_analysis_llms: ContextVar[dict[str, Any] | None] = ContextVar("pinned_analysis_llms", default=None)
+
+
+@contextmanager
+def pinned_analysis_clients(clients: dict[str, Any]):
+    """Use per-agent clients for this research context without changing app settings."""
+    token = _pinned_analysis_llms.set(clients)
+    try:
+        yield
+    finally:
+        _pinned_analysis_llms.reset(token)
 
 # LLM_CONCURRENCY: shared endpoints cap concurrent requests per workspace
 # (e.g. Modal's shared DeepSeek endpoints at 16), and a multi-ticker run can
@@ -148,6 +161,7 @@ def _make_llm(
     reasoning_effort: str | None,
     stream: bool,
     additional_params: dict,
+    client_hook: Callable[[Any], None] | None = None,
 ) -> AppLLM:
     """Construct the SDK stack for one role. Own function so the offline
     checks can patch it and assert on the exact request kwargs."""
@@ -161,6 +175,8 @@ def _make_llm(
         timeout=timeout,
         max_retries=0,  # the app's own retry loop owns backoff + classification
     )
+    if client_hook is not None:
+        client_hook(client)
     model_obj = OpenAIChatCompletionsModel(model=model, openai_client=client)
     # include_usage matters on custom base_urls: without it a streamed call
     # reports requests=1 and zero tokens (the SDK only adds stream_options for
@@ -544,8 +560,11 @@ async def _run_agent(
     await emit("agent_started", {"ticker": ticker, "agent": agent_name})
     started = time.perf_counter()
     try:
-        llm = get_llm(llm_key)
+        pinned = _pinned_analysis_llms.get()
+        llm = get_llm(llm_key) if pinned is None else pinned.get(mod.NAME)
         if llm is None:
+            if pinned is not None:
+                raise RuntimeError("Real LLM provider unavailable; prospective studies do not use mock agents.")
             await asyncio.sleep(0.4)  # mock mode: give the UI a moment
             data = mod.mock(ticker, **task_payload)
             usage: dict = {}

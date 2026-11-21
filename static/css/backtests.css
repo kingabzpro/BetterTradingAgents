@@ -1,0 +1,21 @@
+main { display: grid; gap: 18px; }
+.bt-card { border: 1px solid var(--border); border-radius: var(--radius); background: var(--panel); padding: clamp(15px, 3vw, 24px); }
+.bt-card h2, .bt-card h3 { margin: 0 0 8px; }
+.bt-card p { margin: 8px 0; }
+.bt-modes { display: flex; flex-wrap: wrap; gap: 8px 18px; padding: 6px 12px 10px; margin: 0 0 12px; border: 1px solid var(--border); border-radius: var(--r-sm); }
+.bt-modes label { white-space: nowrap; }
+.bt-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(160px, 100%), 1fr)); gap: 12px; margin: 12px 0; }
+.bt-fields label { display: block; margin-bottom: 4px; }
+.bt-fields input, .bt-fields select { width: 100%; padding: 8px; background: var(--bg); color: var(--text); border: 1px solid var(--border-strong); border-radius: var(--r-sm); font: inherit; }
+.bt-fields :user-invalid { border-color: var(--danger); }
+.bt-actions, .bt-title { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; }
+.bt-actions { justify-content: flex-start; margin-top: 14px; }
+.bt-card details { margin: 10px 0; }
+.bt-card summary { cursor: pointer; }
+.bt-muted { color: var(--muted); }
+.bt-warning { color: var(--warn); }
+.bt-table { max-width: 100%; overflow-x: auto; margin: 8px 0 14px; }
+.bt-table caption { text-align: left; font-weight: 600; padding: 6px 0; }
+.bt-card pre { max-height: 20rem; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
+.bt-chart { display: block; width: 100%; height: auto; max-height: 280px; }
+[hidden] { display: none !important; }

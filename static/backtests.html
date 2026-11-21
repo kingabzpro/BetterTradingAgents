@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Backtests · BetterTradingAgents</title>
+  <link rel="icon" href="/static/favicon.ico" sizes="any">
+  <link rel="stylesheet" href="/static/css/base.css">
+  <link rel="stylesheet" href="/static/css/backtests.css">
+  <script defer src="/static/js/ui.js"></script>
+  <script type="module" src="/static/js/backtests.js"></script>
+</head>
+<body>
+  <a class="skip-link" href="#main-content">Skip to content</a>
+  <div class="container">
+    <header>
+      <div class="brand">
+        <a href="/" class="logo-home" aria-label="Go to BetterTradingAgents home"><img class="logo-img" src="/static/logo.png" alt=""></a>
+        <div><h1>Backtests</h1><p class="tagline">Historical replay and simulation</p></div>
+      </div>
+<!--@nav-->
+    </header>
+    <main id="main-content" tabindex="-1">
+      <section class="bt-card" aria-labelledby="setup-heading">
+        <h2 id="setup-heading">Configure a backtest</h2>
+        <form id="setup" action="/api/backtests/runs" method="POST" aria-labelledby="setup-heading">
+          <fieldset class="bt-modes">
+            <legend>Mode</legend>
+            <label><input type="radio" name="mode" value="stock" checked> Stock</label>
+            <label><input type="radio" name="mode" value="options_swing_v1"> Options swing</label>
+            <label><input type="radio" name="mode" value="options_intraday_v1"> Options intraday</label>
+          </fieldset>
+          <div class="bt-fields">
+            <div data-option hidden><label for="preset">Preset</label><select id="preset" name="preset"></select></div>
+            <div data-option hidden><label for="source">Data source</label><select id="source" name="source">
+              <option value="historical">Historical options quotes</option><option value="synthetic">Synthetic mechanics test</option>
+            </select></div>
+            <div data-stock><label for="depth">Mock agent depth</label><select id="depth" name="depth">
+              <option value="fast">Fast</option><option value="pro">Pro</option><option value="max">Max</option>
+            </select></div>
+            <div><label for="start">First signal date</label><input id="start" name="start" type="date" required></div>
+            <div><label for="end">Last signal date</label><input id="end" name="end" type="date" required></div>
+          </div>
+          <div id="signal-source" class="bt-muted" data-option hidden></div>
+          <p id="assumptions" class="bt-muted" data-option hidden></p>
+          <details data-option hidden>
+            <summary>Capital and execution assumptions</summary>
+            <div class="bt-fields" id="execution-fields"></div>
+          </details>
+          <p id="readiness" role="status">Loading backtest settings…</p>
+          <details id="coverage" data-option hidden>
+            <summary>Scheduled dates and coverage</summary><div id="coverage-content"></div>
+            <a href="/backtests/market-data">Historical data and import instructions</a>
+          </details>
+          <div class="bt-actions">
+            <button class="secondary-btn" id="run" type="submit">Run backtest</button>
+            <button class="secondary-btn" id="cancel" type="button" disabled>Cancel run</button>
+            <progress id="progress" aria-label="Backtest progress" hidden></progress>
+          </div>
+        </form>
+        <p id="run-status" role="status" aria-live="polite"></p>
+      </section>
+
+      <section class="bt-card" id="result" aria-labelledby="result-heading" hidden>
+        <div class="bt-title"><div><h2 id="result-heading">Result</h2><p id="classification"></p></div>
+          <a class="secondary-btn" id="export" download>Export JSON</a></div>
+        <div id="result-body"></div>
+      </section>
+
+      <section class="bt-card" aria-labelledby="saved-heading">
+        <div class="bt-title"><h2 id="saved-heading">Saved backtests</h2>
+          <button type="button" class="secondary-btn" id="refresh">Refresh</button></div>
+        <div id="history"></div>
+      </section>
+    </main>
+  </div>
+</body>
+</html>

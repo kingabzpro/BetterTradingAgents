@@ -44,7 +44,7 @@ def render_nav(active: str, features: dict[str, bool]) -> str:
         parts.append(
             '<span id="incognito-chip" class="chip incognito hidden" aria-label="Incognito mode on: market-only analysis, nothing saved">incognito</span>'
         )
-    links = [("home", "Home", "/"), ("history", "History", "/history")]
+    links = [("home", "Home", "/"), ("history", "History", "/history"), ("backtests", "Backtests", "/backtests")]
     links += [
         (key, label, href) for key, label, href in FEATURE_LINKS if features.get(key)
     ]
