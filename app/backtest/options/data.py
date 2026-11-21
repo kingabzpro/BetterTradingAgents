@@ -44,7 +44,7 @@ def batches(archive: SignalArchive, rules: Rules, start: date, end: date) -> lis
     ]
 
 
-def coverage_for(dataset: Dataset | None, plan: list) -> dict:
+def coverage_for(dataset: Dataset | None, plan: list, *, entry_only: bool = False) -> dict:
     prices, entry_quotes = defaultdict(list), defaultdict(list)
     if dataset:
         tickers = {c.id: c.ticker for c in dataset.contracts}
@@ -53,23 +53,27 @@ def coverage_for(dataset: Dataset | None, plan: list) -> dict:
         for row in dataset.quotes:
             entry_quotes[tickers[row.contract_id]].append(row.available_at)
     supported, unsupported = [], []
+    required = ("discovery", "entry_quotes", "underlying", "adjustments")
+    if not entry_only:
+        required = ("discovery", "entry_quotes", "exit_quotes", "underlying", "adjustments")
     for day, entry, exit_at, signals in plan:
         gaps = {}
         for ticker in TICKERS:
             status = dataset.coverage.get(day, {}).get(ticker) if dataset else None
             if status is None:
                 gaps[ticker] = ["no historical coverage record"]
-            elif not status.ready:
-                gaps[ticker] = [key for key in ("discovery", "entry_quotes", "exit_quotes", "underlying", "adjustments")
+            elif not all(getattr(status, key) for key in required):
+                gaps[ticker] = [key for key in required
                                 if not getattr(status, key)] + ([status.note] if status.note else [])
             elif not any(entry - timedelta(minutes=2) <= row.observed_at <= row.available_at <= entry for row in prices[ticker]):
                 gaps[ticker] = ["missing compatible underlying observation"]
-            elif not any(entry - timedelta(minutes=2) <= stamp <= entry + timedelta(minutes=3) for stamp in entry_quotes[ticker]):
+            elif (dataset.source != "prospective"
+                  and not any(entry - timedelta(minutes=2) <= stamp <= entry + timedelta(minutes=3) for stamp in entry_quotes[ticker])):
                 gaps[ticker] = ["no historical option observations in entry window"]
         missing_signals = sorted(set(TICKERS) - {signal.ticker for signal in signals})
         if missing_signals:
             gaps["signals"] = missing_signals
-        if dataset and exit_at > dataset.covered_through:
+        if dataset and not entry_only and exit_at > dataset.covered_through:
             gaps["archive"] = ["scheduled exit lies beyond the data cutoff"]
         row = {"signal_date": day, "entry_target": entry, "exit_target": exit_at}
         if gaps:

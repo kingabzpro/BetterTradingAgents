@@ -132,7 +132,10 @@ class Jobs:
         return {"archive-" + hashlib.sha256(str(p.relative_to(ROOT)).encode()).hexdigest()[:16]: p for p in candidates}
 
     def history(self) -> list:
+        from app.backtest.options.prospective import Prospective
+
         rows = [self._status(path) for path in self.root.glob("*/*/*/*/status.json")]
+        rows.extend(Prospective(self.root).history())
         existing = {row["run_id"] for row in rows}
         for receipt in (self.root / "requests").glob("*.json"):
             if receipt.stem not in existing and (status := self._request_status(receipt.stem)):
@@ -199,6 +202,11 @@ class Jobs:
         return True
 
     def details(self, run_id: str) -> dict | None:
+        if _is_run_id(run_id):
+            from app.backtest.options.prospective import Prospective
+
+            if (cohort := Prospective(self.root).details(run_id)) is not None:
+                return cohort
         path = self.find(run_id)
         if path:
             status = self._status(path)

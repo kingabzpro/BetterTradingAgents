@@ -8,9 +8,11 @@ from itertools import groupby
 from statistics import mean, median
 from threading import Event
 
+from fastapi.encoders import jsonable_encoder
+
 from app.backtest.options.data import coverage_for
 from app.backtest.options.domain import (
-    CHICAGO, EXECUTION_POLICY_VERSION, PRESETS, Contract, Dataset, Execution, Quote, Rules, Signal, Underlying,
+    CHICAGO, EXECUTION_POLICY_VERSION, PRESETS, TICKERS, Contract, Dataset, Execution, Quote, Rules, Signal, Underlying,
     schedule, session_bounds,
 )
 
@@ -19,6 +21,7 @@ CENT = Decimal("0.01")
 TICK_ENTRY_DELAY = timedelta(seconds=3)
 MINUTE_ENTRY_DELAY = timedelta(minutes=3)
 EXIT_WINDOW = timedelta(minutes=2)
+Cohort = tuple[date, datetime, datetime, list[Signal]]
 
 
 def money(value):
@@ -56,7 +59,7 @@ class Tape:
 
     @property
     def freshness(self):
-        return timedelta(seconds=2 if self.dataset.resolution == "tick" else 120)
+        return timedelta(seconds=120 if self.dataset.resolution == "minute" else 2)
 
     def at(self, contract_id: str, at: datetime) -> Quote | None:
         bounds = session_bounds(at)
@@ -117,7 +120,7 @@ class Tape:
             return q, "invalid_two_sided_entry_quote"
         if (q.bar_start or q.observed_at) < order:
             return q, "entry_quote_precedes_order"
-        if q.ask_size == 0 or (q.ask_size is None and self.dataset.resolution == "tick"):
+        if q.ask_size == 0 or (q.ask_size is None and self.dataset.resolution != "minute"):
             return q, "insufficient_displayed_ask_size"
         return q, None
 
@@ -139,7 +142,7 @@ class Tape:
             latest = q.chronological_key
             if (q.bar_start or q.observed_at) < order or not q.valid or q.available_at - q.observed_at > self.freshness:
                 continue
-            if q.bid_size == 0 or (q.bid_size is None and self.dataset.resolution == "tick"):
+            if q.bid_size == 0 or (q.bid_size is None and self.dataset.resolution != "minute"):
                 continue
             if q.bid <= slip:
                 continue
@@ -208,7 +211,7 @@ class Account:
         return self.unpaid_research == 0
 
     def enter_batch(self, tape: Tape, rules: Rules, signals: list[Signal], arm: str, day: date,
-                    entry: datetime, exit_at: datetime, blocked: str) -> None:
+                    entry: datetime, exit_at: datetime, blocked: str, *, resolve_exits: bool = True) -> None:
         if day in self.processed_signal_dates:
             return
         self.processed_signal_dates.add(day)
@@ -218,7 +221,7 @@ class Account:
         if self.open and not blocked:
             blocked = "prior_position_still_open"
         order = entry + timedelta(seconds=1)
-        fill_at = entry + (TICK_ENTRY_DELAY if tape.dataset.resolution == "tick" else MINUTE_ENTRY_DELAY)
+        fill_at = entry + (MINUTE_ENTRY_DELAY if tape.dataset.resolution == "minute" else TICK_ENTRY_DELAY)
         planned = []
         for s in signals:
             action = getattr(s, arm)
@@ -259,11 +262,6 @@ class Account:
             cash_before = self.cash
             self.cash -= cost + self.fee
             self.fees += self.fee
-            adjustment = tape.next_adjustment(c.id, fill_at)
-            limit = min(tape.dataset.covered_through, c.last_trade_at)
-            if adjustment:
-                limit = min(limit, adjustment - timedelta(microseconds=1))
-            sale = tape.exit_quote(c, exit_at, limit, self.slip)
             trade = dict(signal_date=day, ticker=c.ticker, contract_id=c.id, multiplier=c.multiplier, contracts=1,
                          intent_id=row["intent_id"], entry_cash_before=cash_before, entry_cash_after=self.cash,
                          entry_fee=self.fee, exit_fee_reserve=self.fee,
@@ -271,12 +269,24 @@ class Account:
                          entry_premium=premium, premium_committed=cost, fee_per_side=self.fee,
                          scheduled_exit=exit_at, expiration=c.expiration, entry_size_unknown=q.ask_size is None)
             self.trades.append(trade)
-            self.open.append(Position(c, trade, exit_at, sale, adjustment))
+            position = Position(c, trade, exit_at, None, None)
+            self.open.append(position)
+            if resolve_exits:
+                self.resolve_exit(tape, position)
             row["status"] = "filled"
         self.peak_commitment = max(self.peak_commitment, committed)
         if budget and committed:
             opening_equity = self.cash + sum(p.trade["premium_committed"] + self.fee for p in self.open)
             self.peak_exposure_pct = max(self.peak_exposure_pct, 100 * committed / opening_equity)
+
+    def resolve_exit(self, tape: Tape, position: Position) -> None:
+        contract = position.contract
+        adjustment = tape.next_adjustment(contract.id, position.trade["entry_at"])
+        limit = min(tape.dataset.covered_through, contract.last_trade_at)
+        if adjustment:
+            limit = min(limit, adjustment - timedelta(microseconds=1))
+        position.adjustment_at = adjustment
+        position.exit_quote = tape.exit_quote(contract, position.exit_order, limit, self.slip)
 
     def mark(self, tape: Tape, at: datetime) -> dict:
         values = []
@@ -372,10 +382,12 @@ def _paired_comparison(plan: list, marks: list, missing_marks: dict, starting_ca
 
 
 def simulate(dataset: Dataset, plan: list, rules: Rules, execution: Execution, slip: Decimal,
-             cancel: Event, progress, coverage: dict) -> dict:
+             cancel: Event, progress, coverage: dict, sealed_accounts: dict | None = None) -> dict:
     tape = Tape(dataset)
     accounts = {arm: Account(execution.starting_cash, execution, slip) for arm in ARMS}
     supported = {row["signal_date"] for row in coverage["supported"]}
+    if sealed_accounts is not None:
+        supported.add(plan[0][0])
     events = [(entry, 1, i) for i, (_, entry, _, _) in enumerate(plan)]
     events += [(exit_at + EXIT_WINDOW, 0, i)
                for i, (_, _, exit_at, _) in enumerate(plan) if dataset.covered_through >= exit_at + EXIT_WINDOW]
@@ -405,7 +417,14 @@ def simulate(dataset: Dataset, plan: list, rules: Rules, execution: Execution, s
         else:
             missing_marks[day] = blocked
         for arm, account in accounts.items():
-            account.enter_batch(tape, rules, signals, arm, day, entry, exit_at, blocked)
+            account.enter_batch(tape, rules, signals, arm, day, entry, exit_at, blocked,
+                                resolve_exits=sealed_accounts is None)
+        if sealed_accounts is not None:
+            if _entry_accounts(accounts) != sealed_accounts:
+                raise ValueError("replay entry does not reproduce the sealed decisions and cash ledger")
+            for account in accounts.values():
+                for position in account.open:
+                    account.resolve_exit(tape, position)
         completed += 1
         progress(completed, len(plan))
     for account in accounts.values():
@@ -421,7 +440,7 @@ def simulate(dataset: Dataset, plan: list, rules: Rules, execution: Execution, s
             "cohort_end_marks": marks, "paired_differences": paired}
 
 
-def replay(dataset: Dataset, plan: list, rules: Rules, execution: Execution, cancel: Event, progress) -> dict:
+def _validate_plan(dataset: Dataset, plan: list[Cohort], rules: Rules, execution: Execution) -> Execution:
     if rules != PRESETS[dataset.preset]:
         raise ValueError("replay requires the frozen rules for the data preset")
     execution = Execution.model_validate(execution.model_dump())
@@ -434,17 +453,93 @@ def replay(dataset: Dataset, plan: list, rules: Rules, execution: Execution, can
         if (entry, exit_at) != schedule(day, max(s.available_at for s in signals), rules):
             raise ValueError("replay requires the scheduled entry and exit for the preset")
         seen.add(day)
+    return execution
+
+
+def _entry_accounts(accounts: dict[str, Account]) -> dict:
+    missing = set()
+    for account in accounts.values():
+        for row in account.decisions:
+            reason = row.get("entry_evidence_reason")
+            if not reason or reason == "contract_adjusted_before_fill":
+                continue
+            quote = row["rejected_entry_quote"]
+            if (quote is None or quote.observed_at < row["order_at"]
+                or (reason == "insufficient_displayed_ask_size" and quote.ask_size is None)):
+                missing.add(row["ticker"])
+    if missing:
+        tickers = ", ".join(sorted(missing))
+        raise ValueError(f"prospective entry evidence is incomplete: missing fill-time quote evidence for {tickers}")
+    return jsonable_encoder({
+        arm: {"cash": account.cash, "available_cash": account.available_cash, "research_costs": account.research,
+              "entry_fees": account.fees, "unpaid_research": account.unpaid_research,
+              "trades": account.trades, "decisions": account.decisions}
+        for arm, account in accounts.items()
+    }, custom_encoder={Decimal: str})
+
+
+def _prospective_metadata(dataset: Dataset, cohort: Cohort, rules: Rules, execution: Execution) -> dict:
+    day, entry, exit_at, signals = cohort
+    if (dataset.source != "prospective" or rules.preset != "swing_5_sessions" or dataset.resolution == "minute"
+        or execution != Execution()):
+        raise ValueError("prospective entry requires the five-session preset and frozen execution assumptions")
+    if day != entry.astimezone(CHICAGO).date() or any(s.available_at > entry - timedelta(minutes=5) for s in signals):
+        raise ValueError("prospective decisions must freeze by 08:35 for this session's 08:40 entry")
+    if set(s.ticker for s in signals) != set(TICKERS) or any(s.generated_at is None or s.fast == "FAILED" for s in signals):
+        raise ValueError("prospective entry requires six complete timestamped decisions")
+    if dataset.covered_through < entry + TICK_ENTRY_DELAY:
+        raise ValueError("prospective entry evidence must cover the modeled fill time")
+    if not coverage_for(dataset, [cohort], entry_only=True)["supported"]:
+        raise ValueError("prospective entry evidence is incomplete")
+    return {"execution_policy_version": EXECUTION_POLICY_VERSION, "preset": rules.preset, "signal_date": day.isoformat(),
+            "entry_at": entry.astimezone(CHICAGO).isoformat(), "exit_at": exit_at.astimezone(CHICAGO).isoformat(),
+            "resolution": dataset.resolution, "execution": execution.model_dump(mode="json")}
+
+
+def seal_entry(dataset: Dataset, cohort: Cohort, rules: Rules, execution: Execution) -> dict:
+    """Capture both ledgers at the modeled fill without resolving or requiring an exit."""
+    execution = _validate_plan(dataset, [cohort], rules, execution)
+    metadata = _prospective_metadata(dataset, cohort, rules, execution)
+    day, entry, exit_at, signals = cohort
+    tape = Tape(dataset)
+    receipts = {}
+    for scenario, slip in (("primary", execution.slippage), ("stress", execution.stress_slippage)):
+        accounts = {arm: Account(execution.starting_cash, execution, slip) for arm in ARMS}
+        for arm, account in accounts.items():
+            account.enter_batch(tape, rules, signals, arm, day, entry, exit_at, "", resolve_exits=False)
+        receipts[scenario] = _entry_accounts(accounts)
+    return {**metadata, "accounts": receipts}
+
+
+def replay(dataset: Dataset, plan: list, rules: Rules, execution: Execution, cancel: Event, progress,
+           *, sealed_entry: dict | None = None) -> dict:
+    execution = _validate_plan(dataset, plan, rules, execution)
+    sealed_accounts = {}
+    if dataset.source == "prospective" or sealed_entry is not None:
+        if len(plan) != 1 or sealed_entry is None:
+            raise ValueError("prospective replay requires exactly one cohort and a sealed entry")
+        metadata = _prospective_metadata(dataset, plan[0], rules, execution)
+        if {key: sealed_entry.get(key) for key in metadata} != metadata:
+            raise ValueError("prospective replay does not match the sealed entry configuration")
+        sealed_accounts = sealed_entry.get("accounts")
+        if not isinstance(sealed_accounts, dict) or set(sealed_accounts) != {"primary", "stress"} or any(
+            not isinstance(accounts, dict) or set(accounts) != set(ARMS) for accounts in sealed_accounts.values()
+        ):
+            raise ValueError("sealed entry is missing account receipts")
+        if dataset.covered_through < plan[0][2]:
+            raise ValueError("awaiting scheduled exit evidence")
     coverage = coverage_for(dataset, plan)
-    if not coverage["supported"]:
+    if not coverage["supported"] and sealed_entry is None:
         raise ValueError("no scheduled dates have the required market-data coverage")
     primary = simulate(dataset, plan, rules, execution, execution.slippage, cancel,
-                       lambda n, total: progress(n, 2 * total), coverage)
+                       lambda n, total: progress(n, 2 * total), coverage, sealed_accounts.get("primary"))
     stress = simulate(dataset, plan, rules, execution, execution.stress_slippage, cancel,
-                      lambda n, total: progress(total + n, 2 * total), coverage)
+                      lambda n, total: progress(total + n, 2 * total), coverage, sealed_accounts.get("stress"))
     incomplete = any("complete" != scenario[key] for scenario in (primary, stress) for key in ("execution_status", "data_status")) or any(
         scenario["comparison"]["status"] != "complete" for scenario in (primary, stress))
     return {"coverage": coverage, "incomplete": incomplete, "primary": primary, "stress": stress,
             "account_mode": "simulated", "execution_policy_version": EXECUTION_POLICY_VERSION,
+            **({"sealed_entry_reproduced": True} if sealed_entry is not None else {}),
             "limitations": ["Exploratory research assumptions; modeled fills and charges.",
                             "Trading-only figures add back research costs on the same executed ledger.",
                             "Cohort-end marks are the only drawdown resolution. Final balances can reflect exits after scheduled marks."]}

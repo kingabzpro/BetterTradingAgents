@@ -238,6 +238,8 @@ function renderResult(row) {
   const body = byId('result-body');
   body.replaceChildren();
   byId('result').hidden = false;
+  byId('result-heading').textContent = row.prospective ? 'Prospective comparison' : 'Result';
+  byId('export').hidden = false;
   const breach = ['primary', 'stress'].some((scenario) => Object.values(row.result[scenario]?.accounts || {}).some((arm) => arm.intraday_breaches > 0));
   byId('classification').textContent = `${row.label}${row.status === 'incomplete' ? ' · Incomplete' : ''}${breach ? ' · Same-day rule breached' : ''}`;
   byId('classification').classList.toggle('bt-warning', row.status === 'incomplete' || breach || row.result?.manifest?.request?.source === 'synthetic');
@@ -264,7 +266,7 @@ async function history() {
       window.history.replaceState(null, '', link.href);
       inspect(r.run_id);
     });
-    return [names[r.mode], presetNames[r.preset] || r.preset, r.label, r.status, link];
+    return [names[r.mode], presetNames[r.preset] || r.preset, r.label, r.status.replaceAll('_', ' '), link];
   }));
 }
 
@@ -308,8 +310,30 @@ async function pollActive(runId) {
 }
 
 function showSelectedResult(row) {
-  if (row.result) renderResult(row);
-  else byId('result').hidden = true;
+  if (row.result) {
+    renderResult(row);
+    return;
+  }
+  byId('result').hidden = !row.prospective;
+  if (!row.prospective) return;
+  byId('export').hidden = true;
+  byId('result-heading').textContent = 'Prospective cohort';
+  byId('classification').textContent = row.label;
+  byId('classification').classList.toggle('bt-warning', ['missed', 'failed', 'incomplete'].includes(row.status));
+  const body = byId('result-body');
+  body.replaceChildren();
+  element('h3', row.status === 'awaiting_exit' ? 'Awaiting scheduled exit' : row.status.replaceAll('_', ' '), body);
+  if (row.message) element('p', row.message, body);
+  table(body, 'Frozen schedule (Chicago time)', ['Event', 'Time'], [
+    ['Daily input cutoff', stamp(row.input_cutoff)], ['Decision-freeze deadline', stamp(row.freeze_deadline)],
+    ['Entry', stamp(row.entry_at)], ['Fifth-session exit', stamp(row.exit_at)],
+    ['Paired comparison mark', stamp(row.comparison_at)],
+  ]);
+  if (row.signal_records?.length) {
+    table(body, 'Frozen signals', ['Ticker', 'Luna/Fast', 'Momentum', 'Reason'],
+      row.signal_records.map((record) => [record.ticker, record.status, record.momentum, record.reason]));
+  }
+  if (row.spending_run_id) element('p', `Spending receipt ID ${row.spending_run_id}`, body);
 }
 
 async function inspect(runId) {

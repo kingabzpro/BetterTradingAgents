@@ -13,7 +13,7 @@ CHICAGO = ZoneInfo("America/Chicago")
 TICKERS = ("NVDA", "AMD", "META", "MSFT", "AAPL", "TSLA")
 Mode = Literal["options_intraday_v1", "options_swing_v1"]
 Preset = Literal["intraday_7_14_dte", "swing_5_sessions", "swing_10_sessions"]
-Resolution = Literal["tick", "minute"]
+Resolution = Literal["tick", "minute", "snapshot"]
 QUOTE_LABELS = {"tick": "Historical quote backtest", "minute": "Historical minute-quote estimate"}
 SYNTHETIC_LABEL = "Synthetic mechanics test"
 REQUIRED_LABEL = "Historical options data required"
@@ -154,7 +154,7 @@ class Signal(Record):
     input_cutoff: AwareDatetime
     available_at: AwareDatetime
     generated_at: AwareDatetime | None = None
-    research_cost: Decimal = Field(default=Decimal("0.00"), ge=0, decimal_places=2)
+    research_cost: Decimal = Field(default=Decimal("0.00"), ge=0, decimal_places=6)
 
     @model_validator(mode="after")
     def check_causality(self):
@@ -199,7 +199,7 @@ class Coverage(Record):
 class Dataset(Record):
     schema_version: Literal[1]
     preset: Preset
-    source: Literal["historical", "synthetic"]
+    source: Literal["historical", "synthetic", "prospective"]
     resolution: Resolution
     provider: str = Field(min_length=1, max_length=160)
     entitlement: str = Field(min_length=1)
@@ -212,6 +212,8 @@ class Dataset(Record):
 
     @model_validator(mode="after")
     def check_tape(self):
+        if (self.source == "prospective") != (self.resolution == "snapshot"):
+            raise ValueError("prospective datasets use polled snapshot observations exclusively")
         ids = {c.id for c in self.contracts}
         if len(ids) != len(self.contracts):
             raise ValueError("duplicate option contract identifiers")
@@ -231,7 +233,7 @@ class Dataset(Record):
                 if q.bar_start is None or q.observed_at - q.bar_start != timedelta(minutes=1):
                     raise ValueError("minute quote bars require a start exactly one minute before observation")
             elif q.bar_start is not None:
-                raise ValueError("tick quotes cannot have a bar start")
+                raise ValueError("tick and snapshot quotes cannot have a bar start")
         spots = {}
         for u in self.underlying:
             if u.available_at > self.covered_through or u.ticker not in TICKERS:

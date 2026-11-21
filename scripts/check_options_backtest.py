@@ -531,12 +531,27 @@ def check_browser():
             expect(page.get_by_text("fast scheduled mark unavailable", exact=True).first).to_be_visible()
             page.get_by_role("button", name="Run backtest").click()
             expect(page.locator("#classification")).to_have_text("Synthetic mechanics test")
+            from app.backtest.options.prospective import Prospective
+
+            prospective = Prospective(api.jobs.root, now=lambda: datetime(2026, 11, 23, 16, tzinfo=CHICAGO))
+            pending = prospective.plan(date(2026, 11, 24))
+            cohort_id = pending["run_id"]
+            # This browser fixture tests presentation of a sealed pending row. The lifecycle
+            # check verifies how real coordinator artifacts reach this state.
+            (prospective.root / cohort_id / "entry_receipt.json").write_text("{}", encoding="utf-8")
+            page.get_by_role("button", name="Refresh").click()
+            page.locator(f'#history a[href="?run={cohort_id}"]').click()
+            expect(page.get_by_role("heading", name="Awaiting scheduled exit")).to_be_visible()
+            expect(page.get_by_role("link", name="Export JSON")).to_be_hidden()
+            expect(page.get_by_text("Fifth-session exit", exact=True)).to_be_visible()
+            page.locator(f'#history a[href="?{active_link}"]').click()
+            expect(page.get_by_role("link", name="Export JSON")).to_be_visible()
             assert not errors, errors
             browser.close()
     finally:
         server.should_exit = True
         thread.join(timeout=8)
-    print("Headless Edge verified all three dashboard presets, readiness, exports and reopening saved history")
+    print("Headless Edge verified all three presets, readiness, exports, history and a pending prospective exit")
 
 
 check_calendar()

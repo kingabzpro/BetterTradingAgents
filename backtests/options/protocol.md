@@ -42,6 +42,30 @@ The manifest records `account_mode: "simulated"` and `execution_policy_version`.
 
 Readiness evaluates date coverage before any performance calculation. Actual contract picks only inspect observations available at selection. An observation can still be missing or invalid inside a covered window. Keep that signal, reason, and costs. Each execution scenario reports execution status, market-data status, and scheduled, usable, and missing paired observations with reasons. The scheduled comparison mark is two minutes after the exit target. A missing mark remains unscored. The next pair also needs a valid preceding scheduled mark, so reported returns never silently span a gap. End balances are separately timestamped at the data cutoff and can reflect late exits. They do not substitute for missing scheduled marks. Results carry all unsupported dates and an **Incomplete** label when execution, required data, or comparison is incomplete. Cohort-end drawdown uses cohort-end marks only. Fewer than three executions is labeled insufficiently executable for this initial display. Results are exploratory and do not grant trading authority or use the stock study’s economic hurdle.
 
+## Prospective five-session cohort
+
+This lane uses Luna/Fast short-term decisions and deterministic momentum over the same six frozen sets of completed daily bars. The cutoff is the prior regular session close and the decision freeze is due at 08:35 Chicago. The recorded study uses the after-risk decision, local forecasting, isolated decision memory and portfolio context, two separate $2,500 simulated accounts, and the existing five-session selector and execution policy. Research runs through the installed shared spending ledger. Exactly which model name the provider returns is logged with each request, together with the model alias limitation, prompt, settings, response timing and cost. Unresolved charges block a complete freeze. A missed or interrupted attempt stays visible without regenerating signals. Spend from an interrupted attempt is recoverable using its recorded batch ID.
+
+After reviewing the opening feed check, choose one session in advance. Run the following manually from the installed checkout. Use the cohort ID printed by `plan`. Run `freeze` only when explicitly starting the paid study, after the prior close and before 08:35 on entry day. The UI lists the cohort under **Backtests → Saved backtests**, including **Awaiting scheduled exit**. Reload the running application after a source update so the history API includes the prospective lane.
+
+```powershell
+uv run --no-sync python -m app.backtest.options.prospective reference-schema
+uv run --no-sync python -m app.backtest.options.prospective plan YYYY-MM-DD
+uv run --no-sync python -m app.backtest.options.prospective freeze COHORT_ID --run-inference
+uv run --no-sync python -m app.backtest.options.prospective entry COHORT_ID --reference entry-reference.json
+uv run --no-sync python -m app.backtest.options.prospective seal-entry COHORT_ID --reference through-fill-reference.json
+uv run --no-sync python -m app.backtest.options.prospective exit COHORT_ID --reference exit-start-reference.json
+uv run --no-sync python -m app.backtest.options.prospective finish COHORT_ID --reference through-exit-reference.json
+uv run --no-sync python -m app.backtest.options.prospective status COHORT_ID
+```
+
+- **Before entry.** Supply six actual time-stamped underlying observations available by the capture start within two minutes of the 08:40 entry, documentary last-trade terms for potentially eligible contracts, verified adjustments through the reference timestamp, and the corresponding data source references. Start `entry` between 08:38 and 08:39:58 Chicago. The collector obtains the listed calls, follows bounded pages, and requests coordinated snapshots for the complete candidate set. Insufficient time, spots, metadata, quota or observations stay visible as evidence gaps.
+- **Seal entry after 08:40:03.** Supply independently checked adjustment coverage through the actual fill cutoff. The seal uses only the already recorded candidate chain, spots and option observations available at the frozen selection and fill times. It uses the original two-second quote freshness, one-second order delay and three-second fill. A missed BUY fill window blocks a performance result. Known liquidity or affordability refusals remain recorded as skips.
+- **On the fifth exchange session.** Launch `exit` from 30 seconds before its declared target, which is 15 minutes before the exchange close. The collector captures only the union of actual sealed positions, through the two-minute comparison mark and a 30-second tail for delayed fills. All-cash cohorts still wait through the real mark. Supply verified adjustments through actual capture for `finish` if any positions were opened. Settlement and comparison evidence remain distinct. The final replay must reproduce the sealed entries before publishing a result and **Export JSON**.
+- **Evidence and recovery.** The local directory `local-ops/backtests/options/prospective/cohorts/<cohort_id>/` stores frozen inputs, attempts, reference documents, capture receipts, the sealed entry dataset and positions, and the final export. Use `status COHORT_ID --recover-costs` to inspect an interrupted freeze’s shared ledger receipt. The dashboard accepts cohort IDs. Reference file paths are local CLI arguments.
+
+Prospective Webull data are polled snapshots with original provider quote time and actual local receipt time. The workflow cannot supply independent spot, last-trade or corporate action evidence automatically. Qualifying open-session evidence at the required clock, real model responses, and a completed paired cycle remain live checks. The branch needs the installed shared spending integration for real inference. It fails closed without that integration.
+
 ## Local data import
 
 See `data-feasibility.md` for current provider findings. Export a targeted, locally licensed dataset as a normalized JSON package per preset, then run:
