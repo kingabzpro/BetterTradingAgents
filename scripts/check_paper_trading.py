@@ -553,12 +553,11 @@ async def checks() -> None:
         _restore()
 
     # ================= M5: equity curve and performance loop ==================
-    from datetime import date, timedelta
+    from datetime import timedelta
+    from zoneinfo import ZoneInfo
 
     from app.tools import market_data
 
-    today = date.today().isoformat()
-    tomorrow = (date.today() + timedelta(days=1)).isoformat()
     fake.history = SimpleNamespace(
         timestamp=[1_759_000_000, 1_759_086_400],
         equity=[100000.0, 101000.0],
@@ -590,9 +589,17 @@ async def checks() -> None:
         print("equity mapping OK")
 
         # ---- per-order return math and alpha vs SPY on fake closes ------------
+        # SQLite records UTC. Use a fixed instant where Chicago is still on
+        # the previous day, with the SPY basis aligned to the stored UTC date.
+        placed_at = datetime(2025, 6, 4, 0, 30, tzinfo=timezone.utc)
+        local_day = placed_at.astimezone(ZoneInfo("America/Chicago")).date().isoformat()
+        order_day = placed_at.date().isoformat()
+        next_day = (placed_at.date() + timedelta(days=1)).isoformat()
+
         async def fake_spy(ticker, start, end):
             assert ticker == "SPY"
-            return {today: 100.0, tomorrow: 105.0}
+            assert start == order_day
+            return {local_day: 95.0, order_day: 100.0, next_day: 105.0}
 
         async def fake_live_price(ticker):
             return 110.0
@@ -602,11 +609,17 @@ async def checks() -> None:
         # P2.9: a SELL's alpha is the BUY formula inverted - a good exit is
         # the ticker lagging SPY afterwards.
         with sqlite3.connect(os.environ["DB_PATH"]) as connection:
+            order_stamp = placed_at.strftime("%Y-%m-%d %H:%M:%S")
+            connection.execute(
+                "UPDATE broker_orders SET created_at = ? WHERE status = 'filled' AND filled_avg_price = 191.0",
+                (order_stamp,),
+            )
             connection.execute(
                 "INSERT INTO broker_orders (client_order_id, run_id, ticker, side,"
-                " notional, status, filled_qty, filled_avg_price)"
+                " notional, status, filled_qty, filled_avg_price, created_at)"
                 " VALUES ('bta-sell-perf', 'paperrun06', 'MSFT', 'sell', 400,"
-                " 'filled', 2, 200.0)"
+                " 'filled', 2, 200.0, ?)",
+                (order_stamp,),
             )
         perf = await broker.order_performance()
         filled = [row for row in perf if row["filled_avg_price"] == 191.0]
